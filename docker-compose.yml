@@ -74,7 +74,15 @@ services:
     restart: unless-stopped
     env_file:
       - .env
-    command: ["celery", "-A", "app.workers.celery_app", "beat", "--loglevel=INFO"]
+    command:
+      [
+        "celery",
+        "-A",
+        "app.workers.celery_app",
+        "beat",
+        "--loglevel=INFO",
+        "--schedule=/tmp/celerybeat-schedule"
+      ]
     depends_on:
       redis:
         condition: service_healthy
@@ -87,6 +95,8 @@ services:
     restart: unless-stopped
     environment:
       NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-/api}
+      HOSTNAME: 0.0.0.0
+      PORT: 3000
     networks:
       - internal
     healthcheck:

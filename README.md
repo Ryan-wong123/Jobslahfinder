@@ -20,17 +20,107 @@ This repository currently contains the Phase 0 and Phase 1 skeleton:
 
 Authentication, authorization, account flows, scraping workers, resume upload processing, recommendations, cover letters, and admin features are intentionally left for later phases.
 
-## Local Setup
+## Prerequisites
 
-1. Copy `.env.example` to `.env`.
-2. Replace all placeholder values in `.env` with local development values.
-3. Start services:
+Install Docker Desktop before running the project:
+
+- Docker Desktop for Windows: https://docs.docker.com/installation/windows/
+
+Docker Desktop includes Docker Compose. You do not need to install PostgreSQL or Redis separately because they run inside Docker containers.
+
+Check Docker is available:
+
+```powershell
+docker --version
+docker compose version
+```
+
+## Start The Project
+
+Start and show logs in the terminal:
 
 ```powershell
 docker compose up --build
 ```
 
-The Nginx reverse proxy listens on `http://localhost:8080` by default.
+Or start in the background:
+
+```powershell
+docker compose up --build -d
+```
+
+Open the app:
+
+```text
+http://localhost:8080
+```
+
+Backend health check:
+
+```text
+http://localhost:8080/health
+```
+
+## Database Setup
+
+After the containers are running, apply database migrations:
+
+```powershell
+docker compose run --rm backend alembic upgrade head
+```
+
+## Check Running Services
+
+Show container status:
+
+```powershell
+docker compose ps
+```
+
+Show logs for all services:
+
+```powershell
+docker compose logs
+```
+
+Show logs for one service:
+
+```powershell
+docker compose logs backend
+docker compose logs frontend
+docker compose logs worker
+docker compose logs beat
+```
+
+## Stop The Project
+
+Stop containers but keep database/upload volumes:
+
+```powershell
+docker compose down
+```
+
+Stop and remove volumes, including local PostgreSQL data:
+
+```powershell
+docker compose down -v
+```
+
+Only use `docker compose down -v` when you are okay deleting the local database data.
+
+## Rebuild After Code Changes
+
+If dependencies or Dockerfiles changed:
+
+```powershell
+docker compose up --build
+```
+
+If only backend/frontend source changed, this also works:
+
+```powershell
+docker compose up -d --build
+```
 
 ## Backend Development
 
@@ -57,6 +147,12 @@ alembic upgrade head
 ```
 
 Do not run migrations against production without reviewing generated SQL.
+
+When using Docker, prefer:
+
+```powershell
+docker compose run --rm backend alembic upgrade head
+```
 
 ## Frontend Development
 
