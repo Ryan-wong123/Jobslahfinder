@@ -1,0 +1,51 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+pytest-cache-files-*/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Local data and generated files
+uploads/
+protected_uploads/
+resume_storage/
+logs/
+Logs/
+backups/
+*.log
+*.sqlite
+*.db
+*.csv
+bronze_datasets/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

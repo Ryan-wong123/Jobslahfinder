@@ -1,0 +1,9 @@
+Alembic migration environment.
+
+Generate the first migration after reviewing SQLAlchemy models:
+
+    alembic revision --autogenerate -m "initial schema"
+
+Apply migrations:
+
+    alembic upgrade head
