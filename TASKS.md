@@ -379,42 +379,42 @@ A task is only done when:
 ## Phase 7: Secure Resume Upload and Extraction
 
 ### Secure Storage
-- [ ] Implement protected resume storage directory outside public web root.
-- [ ] Ensure storage path is configurable.
-- [ ] Ensure storage directory is not served by Nginx.
-- [ ] Generate randomized stored filename.
-- [ ] Store original filename only as metadata.
-- [ ] Store file hash.
-- [ ] Prevent path traversal.
+- [x] Implement protected resume storage directory outside public web root.
+- [x] Ensure storage path is configurable.
+- [x] Ensure storage directory is not served by Nginx.
+- [x] Generate randomized stored filename.
+- [x] Store original filename only as metadata.
+- [x] Store file hash.
+- [x] Prevent path traversal.
 
 ### Upload Validation
-- [ ] Implement file allowlist for PDF and DOCX.
-- [ ] Implement file extension validation.
-- [ ] Implement MIME validation.
-- [ ] Implement basic file signature/content validation.
-- [ ] Implement file size limit.
-- [ ] Reject empty files.
-- [ ] Reject unsupported files with safe error message.
-- [ ] Add rate limiting for upload endpoint.
+- [x] Implement file allowlist for PDF and DOCX.
+- [x] Implement file extension validation.
+- [x] Implement MIME validation.
+- [x] Implement basic file signature/content validation.
+- [x] Implement file size limit.
+- [x] Reject empty files.
+- [x] Reject unsupported files with safe error message.
+- [x] Add rate limiting for upload endpoint.
 
 ### Upload API
-- [ ] Create resume upload endpoint.
-- [ ] Create resume list endpoint.
-- [ ] Create resume detail endpoint.
-- [ ] Create resume delete endpoint if required.
-- [ ] Enforce resume ownership on all resume endpoints.
-- [ ] Add audit logging for upload success/failure.
+- [x] Create resume upload endpoint.
+- [x] Create resume list endpoint.
+- [x] Create resume detail endpoint.
+- [x] Create resume delete endpoint if required.
+- [x] Enforce resume ownership on all resume endpoints.
+- [x] Add audit logging for upload success/failure.
 
 ### Extraction Worker
-- [ ] Enqueue extraction task after upload.
-- [ ] Implement worker task for resume parsing.
+- [x] Enqueue extraction task after upload.
+- [~] Implement worker task for resume parsing.
 - [ ] Add parser timeout.
 - [ ] Add memory/resource safeguards where practical.
-- [ ] Handle parser failure safely.
-- [ ] Store extracted skills, education, experience, and years of experience.
-- [ ] Store processing status.
-- [ ] Add audit logging for extraction success/failure.
-- [ ] Ensure full resume content is not written to ordinary logs.
+- [x] Handle parser failure safely.
+- [~] Store extracted skills, education, experience, and years of experience.
+- [x] Store processing status.
+- [x] Add audit logging for extraction success/failure.
+- [x] Ensure full resume content is not written to ordinary logs.
 
 ### Profile Review
 - [ ] Allow user to view extracted profile.
@@ -423,19 +423,19 @@ A task is only done when:
 - [ ] Add audit logging for profile edits.
 
 ### Frontend
-- [ ] Build frontend resume upload page.
-- [ ] Build frontend upload status page or component.
+- [x] Build frontend resume upload page.
+- [x] Build frontend upload status page or component.
 - [ ] Build frontend extracted profile review page.
 - [ ] Build frontend extracted profile edit page.
 
 ### Tests
-- [ ] Add tests for valid PDF upload.
-- [ ] Add tests for valid DOCX upload.
-- [ ] Add tests for invalid file extension rejection.
-- [ ] Add tests for invalid MIME rejection.
-- [ ] Add tests for oversized file rejection.
-- [ ] Add tests for path traversal filename rejection.
-- [ ] Add tests for unauthorized resume access.
+- [x] Add tests for valid PDF upload.
+- [x] Add tests for valid DOCX upload.
+- [x] Add tests for invalid file extension rejection.
+- [x] Add tests for invalid MIME rejection.
+- [x] Add tests for oversized file rejection.
+- [x] Add tests for path traversal filename rejection.
+- [x] Add tests for unauthorized resume access.
 - [ ] Add tests for extraction failure handling.
 
 ---

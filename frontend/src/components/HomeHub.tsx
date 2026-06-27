@@ -7,7 +7,7 @@ import { apiFetch, type User } from "@/lib/api";
 const workspaces = [
   { label: "Jobs", value: "Browse", href: "/jobs" },
   { label: "Saved jobs", value: "Review", href: "/saved-jobs" },
-  { label: "Resume", value: "Upload", href: "#" },
+  { label: "Resume", value: "Upload", href: "/resumes" },
   { label: "Cover letters", value: "Draft", href: "#" }
 ];
 

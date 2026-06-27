@@ -59,12 +59,39 @@ export type SavedJobListResponse = {
   total: number;
 };
 
+export type Resume = {
+  id: number;
+  original_filename: string;
+  file_hash: string;
+  mime_type: string;
+  file_size_bytes: number;
+  upload_status: "PENDING" | "STORED" | "REJECTED" | "DELETED" | string;
+  uploaded_at: string;
+};
+
+export type ResumeListResponse = {
+  items: Resume[];
+  total: number;
+};
+
+export type ResumeExtraction = {
+  id: number;
+  resume_id: number;
+  processing_status: "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED" | string;
+  skills_json: Record<string, unknown> | null;
+  experience_json: Record<string, unknown> | null;
+  education_json: Record<string, unknown> | null;
+  years_experience: number | null;
+  processed_at: string | null;
+};
+
 export async function apiFetch<TResponse>(
   path: string,
   options: RequestInit = {}
 ): Promise<TResponse> {
   const headers = new Headers(options.headers);
-  if (options.body && !headers.has("Content-Type")) {
+  const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
+  if (options.body && !isFormData && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
 
@@ -108,4 +135,14 @@ export function formatDateTime(value: string | null): string {
     dateStyle: "medium",
     timeStyle: "short"
   }).format(new Date(value));
+}
+
+export function formatBytes(value: number): string {
+  if (value < 1024) {
+    return `${value} B`;
+  }
+  if (value < 1024 * 1024) {
+    return `${(value / 1024).toFixed(1)} KB`;
+  }
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }
