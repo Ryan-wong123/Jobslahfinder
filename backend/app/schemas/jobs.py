@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -33,5 +33,59 @@ class ScrapingRunResponse(BaseModel):
 
 class ScrapingRunTriggerRequest(BaseModel):
     source_id: int = Field(gt=0)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class JobSourcePublicResponse(BaseModel):
+    id: int
+    source_name: str
+
+    model_config = ConfigDict(extra="forbid", from_attributes=True)
+
+
+class JobSummaryResponse(BaseModel):
+    id: int
+    title: str
+    company: str
+    location: str | None
+    category: str | None
+    source: JobSourcePublicResponse
+    posting_date: date | None
+    scraped_at: datetime
+    is_active: bool
+    is_suspicious: bool
+    application_url_is_valid: bool
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class JobDetailResponse(JobSummaryResponse):
+    description: str | None
+    job_url: str
+    external_link_warning: str
+
+
+class JobListResponse(BaseModel):
+    items: list[JobSummaryResponse]
+    page: int
+    page_size: int
+    total: int
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class SavedJobResponse(BaseModel):
+    job: JobSummaryResponse
+    saved_at: datetime
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class SavedJobListResponse(BaseModel):
+    items: list[SavedJobResponse]
+    page: int
+    page_size: int
+    total: int
 
     model_config = ConfigDict(extra="forbid")

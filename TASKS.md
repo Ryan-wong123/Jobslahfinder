@@ -333,46 +333,46 @@ A task is only done when:
 ## Phase 6: Job Browsing and Saved Jobs
 
 ### Job Search API
-- [ ] Implement `GET /jobs` with keyword filter.
-- [ ] Implement company filter.
-- [ ] Implement location filter.
-- [ ] Implement category filter.
-- [ ] Implement active-only filtering by default.
-- [ ] Add pagination.
-- [ ] Add query size limits.
-- [ ] Prevent expensive unbounded queries.
-- [ ] Use ORM/parameterized queries only.
+- [x] Implement `GET /jobs` with keyword filter.
+- [x] Implement company filter.
+- [x] Implement location filter.
+- [x] Implement category filter.
+- [x] Implement active-only filtering by default.
+- [x] Add pagination.
+- [x] Add query size limits.
+- [x] Prevent expensive unbounded queries.
+- [x] Use ORM/parameterized queries only.
 
 ### Job Detail API
-- [ ] Implement `GET /jobs/{job_id}`.
-- [ ] Sanitize/encode job descriptions for display.
-- [ ] Do not render untrusted HTML unsafely.
-- [ ] Validate external job URLs against approved source domains.
-- [ ] Add external link warning behaviour.
-- [ ] Hide or mark suspicious/inactive jobs appropriately.
+- [x] Implement `GET /jobs/{job_id}`.
+- [x] Sanitize/encode job descriptions for display.
+- [x] Do not render untrusted HTML unsafely.
+- [x] Validate external job URLs against approved source domains.
+- [x] Add external link warning behaviour.
+- [x] Hide or mark suspicious/inactive jobs appropriately.
 
 ### Saved Jobs
-- [ ] Implement save job endpoint.
-- [ ] Implement unsave job endpoint.
-- [ ] Implement list saved jobs endpoint.
-- [ ] Ensure users can only view and manage their own saved jobs.
-- [ ] Add audit logging for saved job changes if required.
+- [x] Implement save job endpoint.
+- [x] Implement unsave job endpoint.
+- [x] Implement list saved jobs endpoint.
+- [x] Ensure users can only view and manage their own saved jobs.
+- [x] Add audit logging for saved job changes if required.
 
 ### Frontend
-- [ ] Build frontend job listing page.
-- [ ] Build frontend job filter/search UI.
-- [ ] Build frontend job detail page.
-- [ ] Build frontend saved jobs page.
-- [ ] Add external link warning UI.
-- [ ] Add safe display for job descriptions.
+- [x] Build frontend job listing page.
+- [x] Build frontend job filter/search UI.
+- [x] Build frontend job detail page.
+- [x] Build frontend saved jobs page.
+- [x] Add external link warning UI.
+- [x] Add safe display for job descriptions.
 
 ### Tests
-- [ ] Add tests for job search.
-- [ ] Add tests for filters.
-- [ ] Add tests for pagination.
-- [ ] Add tests for job detail.
-- [ ] Add tests for saved jobs access control.
-- [ ] Add tests for XSS payloads in job descriptions.
+- [x] Add tests for job search.
+- [x] Add tests for filters.
+- [x] Add tests for pagination.
+- [x] Add tests for job detail.
+- [x] Add tests for saved jobs access control.
+- [x] Add tests for XSS payloads in job descriptions.
 
 ---
 

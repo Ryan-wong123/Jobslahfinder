@@ -8,16 +8,33 @@ import re
 from typing import Any
 from urllib.parse import urlsplit
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from fastapi import Request
+from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import Settings
+from app.models.activity import SavedJob
 from app.models.enums import AuditOutcome
 from app.models.job import JobPosting, JobSource
+from app.schemas.jobs import (
+    JobDetailResponse,
+    JobListResponse,
+    JobSourcePublicResponse,
+    JobSummaryResponse,
+    SavedJobListResponse,
+    SavedJobResponse,
+)
 from app.services.audit import create_audit_log
 
 
 MAX_TEXT_LENGTH = 20_000
+MAX_JOB_DESCRIPTION_RESPONSE_LENGTH = 20_000
+MAX_JOB_FIELD_RESPONSE_LENGTH = 255
+MAX_SEARCH_TERM_LENGTH = 100
+DEFAULT_PAGE_SIZE = 20
+MAX_PAGE_SIZE = 50
+EXTERNAL_LINK_WARNING = "You are leaving this platform for an approved external job source."
 APPROVED_JOB_SOURCES = {
     "JobStreet": {
         "base_url": "https://sg.jobstreet.com",
@@ -38,6 +55,10 @@ class JobSourceValidationError(ValueError):
 
 
 class JobValidationError(ValueError):
+    pass
+
+
+class JobNotFoundError(ValueError):
     pass
 
 
@@ -89,6 +110,10 @@ def is_domain_allowed(hostname: str, allowed_domains: set[str] | tuple[str, ...]
     return normalized in set(allowed_domains)
 
 
+def escape_like_term(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def validate_source_base_url(source_name: str, base_url: str, settings: Settings) -> str:
     if source_name not in APPROVED_JOB_SOURCES:
         raise JobSourceValidationError("Job source is not approved.")
@@ -110,6 +135,14 @@ def validate_job_url_for_source(job_url: str, source: JobSource) -> str:
     return cleaned
 
 
+def is_job_url_valid_for_source(job: JobPosting) -> bool:
+    try:
+        validate_job_url_for_source(job.job_url, job.source)
+    except (JobSourceValidationError, JobValidationError):
+        return False
+    return True
+
+
 def clean_text(value: Any, *, max_length: int) -> str:
     if value is None:
         return ""
@@ -117,6 +150,11 @@ def clean_text(value: Any, *, max_length: int) -> str:
     text = TAG_PATTERN.sub(" ", text)
     text = WHITESPACE_PATTERN.sub(" ", text).strip()
     return text[:max_length]
+
+
+def safe_response_text(value: Any, *, max_length: int = MAX_JOB_FIELD_RESPONSE_LENGTH) -> str | None:
+    cleaned = clean_text(value, max_length=max_length)
+    return cleaned or None
 
 
 def raw_value(raw_job: dict[str, Any], *keys: str) -> Any:
@@ -320,3 +358,225 @@ def store_normalized_job(
             details={"reasons": list(normalized_job.suspicious_reasons), "source_id": source.id},
         )
     return posting, created, duplicate_reason
+
+
+def job_to_summary_response(job: JobPosting) -> JobSummaryResponse:
+    return JobSummaryResponse(
+        id=job.id,
+        title=safe_response_text(job.title) or "Untitled job",
+        company=safe_response_text(job.company) or "Unknown company",
+        location=safe_response_text(job.location),
+        category=safe_response_text(job.category, max_length=100),
+        source=JobSourcePublicResponse(id=job.source.id, source_name=job.source.source_name),
+        posting_date=job.posting_date,
+        scraped_at=job.scraped_at,
+        is_active=job.is_active,
+        is_suspicious=job.is_suspicious,
+        application_url_is_valid=is_job_url_valid_for_source(job),
+    )
+
+
+def job_to_detail_response(job: JobPosting) -> JobDetailResponse:
+    summary = job_to_summary_response(job)
+    return JobDetailResponse(
+        **summary.model_dump(),
+        description=safe_response_text(
+            job.description,
+            max_length=MAX_JOB_DESCRIPTION_RESPONSE_LENGTH,
+        ),
+        job_url=validate_job_url_for_source(job.job_url, job.source),
+        external_link_warning=EXTERNAL_LINK_WARNING,
+    )
+
+
+def visible_job_filters(*, active_only: bool, include_suspicious: bool) -> list[Any]:
+    filters: list[Any] = []
+    if active_only:
+        filters.append(JobPosting.is_active.is_(True))
+    if not include_suspicious:
+        filters.append(JobPosting.is_suspicious.is_(False))
+    return filters
+
+
+def list_jobs(
+    db: Session,
+    *,
+    keyword: str | None = None,
+    company: str | None = None,
+    location: str | None = None,
+    category: str | None = None,
+    source: str | None = None,
+    active_only: bool = True,
+    include_suspicious: bool = False,
+    page: int = 1,
+    page_size: int = DEFAULT_PAGE_SIZE,
+) -> JobListResponse:
+    filters = visible_job_filters(active_only=active_only, include_suspicious=include_suspicious)
+
+    if keyword:
+        pattern = f"%{escape_like_term(keyword.strip())}%"
+        filters.append(
+            or_(
+                JobPosting.title.ilike(pattern, escape="\\"),
+                JobPosting.company.ilike(pattern, escape="\\"),
+                JobPosting.location.ilike(pattern, escape="\\"),
+                JobPosting.category.ilike(pattern, escape="\\"),
+                JobPosting.description.ilike(pattern, escape="\\"),
+            )
+        )
+    if company:
+        filters.append(JobPosting.company.ilike(f"%{escape_like_term(company.strip())}%", escape="\\"))
+    if location:
+        filters.append(JobPosting.location.ilike(f"%{escape_like_term(location.strip())}%", escape="\\"))
+    if category:
+        filters.append(JobPosting.category.ilike(f"%{escape_like_term(category.strip())}%", escape="\\"))
+    if source:
+        filters.append(JobSource.source_name == source)
+
+    base_stmt = select(JobPosting).join(JobPosting.source).where(*filters)
+    total = db.scalar(select(func.count()).select_from(base_stmt.subquery())) or 0
+    jobs = list(
+        db.scalars(
+            base_stmt.options(selectinload(JobPosting.source))
+            .order_by(JobPosting.posting_date.desc().nullslast(), JobPosting.id.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        ).all()
+    )
+    return JobListResponse(
+        items=[job_to_summary_response(job) for job in jobs],
+        page=page,
+        page_size=page_size,
+        total=total,
+    )
+
+
+def get_visible_job_detail(db: Session, *, job_id: int) -> JobDetailResponse:
+    job = db.scalar(
+        select(JobPosting)
+        .options(selectinload(JobPosting.source))
+        .where(
+            JobPosting.id == job_id,
+            JobPosting.is_active.is_(True),
+            JobPosting.is_suspicious.is_(False),
+        )
+    )
+    if job is None or not is_job_url_valid_for_source(job):
+        raise JobNotFoundError("Resource not found.")
+    return job_to_detail_response(job)
+
+
+def get_saveable_job(db: Session, *, job_id: int) -> JobPosting:
+    job = db.scalar(
+        select(JobPosting)
+        .options(selectinload(JobPosting.source))
+        .where(
+            JobPosting.id == job_id,
+            JobPosting.is_active.is_(True),
+            JobPosting.is_suspicious.is_(False),
+        )
+    )
+    if job is None or not is_job_url_valid_for_source(job):
+        raise JobNotFoundError("Resource not found.")
+    return job
+
+
+def save_job_for_user(
+    db: Session,
+    request: Request,
+    *,
+    user_id: int,
+    job_id: int,
+) -> SavedJobResponse:
+    job = get_saveable_job(db, job_id=job_id)
+    saved_job = db.scalar(select(SavedJob).where(SavedJob.user_id == user_id, SavedJob.job_id == job.id))
+    if saved_job is None:
+        saved_job = SavedJob(user_id=user_id, job_id=job.id)
+        db.add(saved_job)
+        try:
+            db.flush()
+            audit_details = {"action": "saved"}
+        except IntegrityError:
+            db.rollback()
+            saved_job = db.scalar(
+                select(SavedJob).where(SavedJob.user_id == user_id, SavedJob.job_id == job.id)
+            )
+            if saved_job is None:
+                raise
+            audit_details = {"action": "already_saved"}
+    else:
+        audit_details = {"action": "already_saved"}
+
+    create_audit_log(
+        db,
+        event_type="saved_job.save",
+        outcome=AuditOutcome.SUCCESS,
+        request=request,
+        user_id=user_id,
+        target_type="job_posting",
+        target_id=job.id,
+        details=audit_details,
+    )
+    db.commit()
+    db.refresh(saved_job)
+    saved_job.job = job
+    return SavedJobResponse(job=job_to_summary_response(job), saved_at=saved_job.saved_at)
+
+
+def unsave_job_for_user(
+    db: Session,
+    request: Request,
+    *,
+    user_id: int,
+    job_id: int,
+) -> None:
+    saved_job = db.scalar(select(SavedJob).where(SavedJob.user_id == user_id, SavedJob.job_id == job_id))
+    if saved_job is None:
+        raise JobNotFoundError("Resource not found.")
+
+    db.delete(saved_job)
+    create_audit_log(
+        db,
+        event_type="saved_job.unsave",
+        outcome=AuditOutcome.SUCCESS,
+        request=request,
+        user_id=user_id,
+        target_type="job_posting",
+        target_id=job_id,
+        details={"action": "unsaved"},
+    )
+    db.commit()
+
+
+def list_saved_jobs_for_user(
+    db: Session,
+    *,
+    user_id: int,
+    page: int = 1,
+    page_size: int = DEFAULT_PAGE_SIZE,
+) -> SavedJobListResponse:
+    filters = (
+        SavedJob.user_id == user_id,
+        JobPosting.is_active.is_(True),
+        JobPosting.is_suspicious.is_(False),
+    )
+    base_stmt = select(SavedJob).join(SavedJob.job).join(JobPosting.source).where(*filters)
+    total = db.scalar(select(func.count()).select_from(base_stmt.subquery())) or 0
+    saved_jobs = list(
+        db.scalars(
+            base_stmt.options(selectinload(SavedJob.job).selectinload(JobPosting.source))
+            .order_by(SavedJob.saved_at.desc(), SavedJob.job_id.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        ).all()
+    )
+    return SavedJobListResponse(
+        items=[
+            SavedJobResponse(job=job_to_summary_response(saved_job.job), saved_at=saved_job.saved_at)
+            for saved_job in saved_jobs
+            if is_job_url_valid_for_source(saved_job.job)
+        ],
+        page=page,
+        page_size=page_size,
+        total=total,
+    )

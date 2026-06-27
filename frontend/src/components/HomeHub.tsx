@@ -5,9 +5,9 @@ import { useEffect, useState } from "react";
 import { apiFetch, type User } from "@/lib/api";
 
 const workspaces = [
-  { label: "Jobs", value: "Browse", href: "#" },
+  { label: "Jobs", value: "Browse", href: "/jobs" },
+  { label: "Saved jobs", value: "Review", href: "/saved-jobs" },
   { label: "Resume", value: "Upload", href: "#" },
-  { label: "Recommendations", value: "Review", href: "#" },
   { label: "Cover letters", value: "Draft", href: "#" }
 ];
 

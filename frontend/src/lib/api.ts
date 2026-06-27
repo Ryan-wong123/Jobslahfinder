@@ -15,6 +15,50 @@ export type User = {
   last_login_at: string | null;
 };
 
+export type JobSource = {
+  id: number;
+  source_name: "JobStreet" | "MyCareersFuture" | string;
+};
+
+export type JobSummary = {
+  id: number;
+  title: string;
+  company: string;
+  location: string | null;
+  category: string | null;
+  source: JobSource;
+  posting_date: string | null;
+  scraped_at: string;
+  is_active: boolean;
+  is_suspicious: boolean;
+  application_url_is_valid: boolean;
+};
+
+export type JobDetail = JobSummary & {
+  description: string | null;
+  job_url: string;
+  external_link_warning: string;
+};
+
+export type JobListResponse = {
+  items: JobSummary[];
+  page: number;
+  page_size: number;
+  total: number;
+};
+
+export type SavedJob = {
+  job: JobSummary;
+  saved_at: string;
+};
+
+export type SavedJobListResponse = {
+  items: SavedJob[];
+  page: number;
+  page_size: number;
+  total: number;
+};
+
 export async function apiFetch<TResponse>(
   path: string,
   options: RequestInit = {}
@@ -45,6 +89,15 @@ export async function apiFetch<TResponse>(
   }
 
   return (await response.json()) as TResponse;
+}
+
+export function formatDate(value: string | null): string {
+  if (!value) {
+    return "Not listed";
+  }
+  return new Intl.DateTimeFormat("en-SG", {
+    dateStyle: "medium"
+  }).format(new Date(value));
 }
 
 export function formatDateTime(value: string | null): string {
