@@ -17,6 +17,11 @@ class Settings(BaseSettings):
 
     session_secret: SecretStr = Field(validation_alias="SESSION_SECRET")
     password_reset_secret: SecretStr = Field(validation_alias="PASSWORD_RESET_SECRET")
+    session_cookie_name: str = Field(default="job_platform_session", validation_alias="SESSION_COOKIE_NAME")
+    session_expire_minutes: int = Field(default=60 * 8, validation_alias="SESSION_EXPIRE_MINUTES")
+    password_reset_expire_minutes: int = Field(
+        default=30, validation_alias="PASSWORD_RESET_EXPIRE_MINUTES"
+    )
 
     upload_dir: Path = Field(validation_alias="UPLOAD_DIR")
     max_upload_bytes: int = Field(default=5 * 1024 * 1024, validation_alias="MAX_UPLOAD_BYTES")
@@ -50,6 +55,10 @@ class Settings(BaseSettings):
     @property
     def enable_docs(self) -> bool:
         return self.app_env.lower() != "production"
+
+    @property
+    def secure_cookies(self) -> bool:
+        return self.app_env.lower() == "production"
 
     @property
     def allowed_job_source_domain_list(self) -> list[str]:

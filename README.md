@@ -8,7 +8,7 @@ Security is a baseline requirement. Do not commit real secrets, `.env` files, up
 
 ## Current Phase
 
-This repository currently contains the Phase 0 and Phase 1 skeleton:
+This repository currently contains the Phase 0 through Phase 3 backend foundations:
 
 - Docker Compose service definitions.
 - FastAPI backend skeleton.
@@ -17,8 +17,12 @@ This repository currently contains the Phase 0 and Phase 1 skeleton:
 - Next.js TypeScript Tailwind frontend skeleton.
 - Nginx reverse proxy configuration.
 - Import-safe scraper modules.
+- Secure backend registration, login, logout, password change, password reset token storage, and `GET /me`.
+- Server-side session storage with hashed session tokens and HttpOnly cookies.
+- RBAC foundations with admin route protection and ownership-check helpers.
+- Audit logging for authentication and denied authorization events.
 
-Authentication, authorization, account flows, scraping workers, resume upload processing, recommendations, cover letters, and admin features are intentionally left for later phases.
+Frontend account pages, full account CRUD UI, scraping workers, resume upload processing, recommendations, cover letters, and full admin dashboard features are intentionally left for later phases.
 
 ## Prerequisites
 
@@ -59,6 +63,18 @@ Backend health check:
 
 ```text
 http://localhost:8080/health
+```
+
+Authenticated user check after login:
+
+```text
+http://localhost:8080/api/me
+```
+
+Admin RBAC check:
+
+```text
+http://localhost:8080/api/admin/health
 ```
 
 ## Database Setup

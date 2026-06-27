@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, Numeric, String, Text, func
+from sqlalchemy import JSON, BigInteger, CheckConstraint, DateTime, ForeignKey, Numeric, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -58,9 +58,9 @@ class ResumeExtraction(Base):
         BigInteger, ForeignKey("resumes.id", ondelete="CASCADE"), nullable=False, index=True
     )
     extracted_text: Mapped[str | None] = mapped_column(Text)
-    skills_json: Mapped[dict | None] = mapped_column(JSONB)
-    experience_json: Mapped[dict | None] = mapped_column(JSONB)
-    education_json: Mapped[dict | None] = mapped_column(JSONB)
+    skills_json: Mapped[dict | None] = mapped_column(JSONB().with_variant(JSON(), "sqlite"))
+    experience_json: Mapped[dict | None] = mapped_column(JSONB().with_variant(JSON(), "sqlite"))
+    education_json: Mapped[dict | None] = mapped_column(JSONB().with_variant(JSON(), "sqlite"))
     years_experience: Mapped[float | None] = mapped_column(Numeric(4, 1))
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     processing_status: Mapped[str] = mapped_column(
