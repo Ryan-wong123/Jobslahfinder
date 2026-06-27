@@ -13,6 +13,7 @@ from app.main import app
 from app.models.account import PasswordResetToken, Session as UserSession, User, UserProfile
 from app.models.audit import AuditLog
 from app.models.enums import UserRole
+from app.models.job import JobPosting, JobSource, ScrapingRun
 from app.security.auth import assert_owner_or_admin
 from app.security.passwords import hash_password
 
@@ -34,6 +35,9 @@ def db_session() -> Generator[Session, None, None]:
         UserSession.__table__,
         PasswordResetToken.__table__,
         AuditLog.__table__,
+        JobSource.__table__,
+        ScrapingRun.__table__,
+        JobPosting.__table__,
     ]
     Base.metadata.create_all(bind=engine, tables=tables)
     TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)

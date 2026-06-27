@@ -14,7 +14,9 @@ if TYPE_CHECKING:
 class JobSource(Base):
     __tablename__ = "job_sources"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True
+    )
     source_name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
     base_url: Mapped[str] = mapped_column(Text, nullable=False)
     is_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
@@ -35,7 +37,9 @@ class ScrapingRun(Base):
         ),
     )
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True
+    )
     source_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("job_sources.id"), nullable=False)
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), index=True
@@ -62,7 +66,9 @@ class JobPosting(Base):
         Index("ix_job_postings_content_hash", "content_hash"),
     )
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True
+    )
     source_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("job_sources.id"), nullable=False)
     external_job_id: Mapped[str | None] = mapped_column(String(255))
     title: Mapped[str] = mapped_column(String(255), nullable=False)

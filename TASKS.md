@@ -285,48 +285,48 @@ A task is only done when:
 ## Phase 5: Job Sources, Scraping, and Job Data
 
 ### Job Source Management
-- [ ] Implement job source model and admin CRUD for enabled/disabled sources.
-- [ ] Ensure only admins can create/update/disable job sources.
-- [ ] Validate source base URL.
-- [ ] Prevent unapproved source scraping.
-- [ ] Add audit logging for source management.
+- [~] Implement job source model and admin CRUD for enabled/disabled sources.
+- [x] Ensure only admins can create/update/disable job sources.
+- [x] Validate source base URL.
+- [x] Prevent unapproved source scraping.
+- [x] Add audit logging for source management.
 
 ### Scraper Framework
-- [ ] Implement scraper service interface.
-- [ ] Implement at least one approved source adapter or mock adapter for coursework.
+- [x] Implement scraper service interface.
+- [x] Implement at least one approved source adapter or mock adapter for coursework.
 - [ ] Add adapter for JobStreet if feasible.
 - [ ] Add adapter for MyCareersFuture if feasible.
-- [ ] If real scraping is not feasible, implement seeded/mock scraper with the same data model and logs.
-- [ ] Respect source allowlist.
-- [ ] Handle network failures safely.
+- [x] If real scraping is not feasible, implement seeded/mock scraper with the same data model and logs.
+- [x] Respect source allowlist.
+- [x] Handle network failures safely.
 - [ ] Add retry policy with limits.
 - [ ] Add timeout for scraping requests.
 
 ### Job Normalization and Validation
-- [ ] Normalize job fields: title, company, location, category, description, source, posting date, application link.
-- [ ] Validate required fields: title, company, source, application link.
-- [ ] Validate job URLs.
-- [ ] Store source attribution.
-- [ ] Store scraped timestamp.
-- [ ] Implement content hash.
-- [ ] Implement duplicate detection using source ID, external job ID, normalized fields, and/or content hash.
-- [ ] Flag malformed jobs.
-- [ ] Flag suspicious jobs.
+- [x] Normalize job fields: title, company, location, category, description, source, posting date, application link.
+- [x] Validate required fields: title, company, source, application link.
+- [x] Validate job URLs.
+- [x] Store source attribution.
+- [x] Store scraped timestamp.
+- [x] Implement content hash.
+- [x] Implement duplicate detection using source ID, external job ID, normalized fields, and/or content hash.
+- [x] Flag malformed jobs.
+- [x] Flag suspicious jobs.
 
 ### Scraping Runs
-- [ ] Implement scraping run records.
-- [ ] Track started time, completed time, source, status, jobs retrieved, and safe error message.
+- [x] Implement scraping run records.
+- [x] Track started time, completed time, source, status, jobs retrieved, and safe error message.
 - [ ] Implement weekly scheduled scraping task.
-- [ ] Add manual trigger for admin if needed.
-- [ ] Add admin view/API for scraping success/failure and jobs retrieved.
-- [ ] Add audit logging for scraping failures and admin-triggered scraping.
+- [x] Add manual trigger for admin if needed.
+- [x] Add admin view/API for scraping success/failure and jobs retrieved.
+- [x] Add audit logging for scraping failures and admin-triggered scraping.
 
 ### Tests
-- [ ] Add tests for job normalization.
-- [ ] Add tests for duplicate detection.
-- [ ] Add tests for suspicious job flagging.
-- [ ] Add tests for source allowlist enforcement.
-- [ ] Add tests for scraper failure handling.
+- [x] Add tests for job normalization.
+- [x] Add tests for duplicate detection.
+- [x] Add tests for suspicious job flagging.
+- [x] Add tests for source allowlist enforcement.
+- [x] Add tests for scraper failure handling.
 
 ---
 
