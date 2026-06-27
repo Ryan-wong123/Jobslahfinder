@@ -11,7 +11,7 @@ from app.core.config import get_settings
 from app.core.database import Base, get_db
 from app.core.rate_limit import AUTH_RATE_LIMITER
 from app.main import app
-from app.models.account import PasswordResetToken, Session as UserSession, User, UserProfile
+from app.models.account import PasswordResetToken, Session as UserSession, User
 from app.models.audit import AuditLog
 from app.security.passwords import verify_password
 from app.security.tokens import hash_token
@@ -29,21 +29,14 @@ def db_session() -> Generator[Session, None, None]:
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    tables = [
-        User.__table__,
-        UserProfile.__table__,
-        UserSession.__table__,
-        PasswordResetToken.__table__,
-        AuditLog.__table__,
-    ]
-    Base.metadata.create_all(bind=engine, tables=tables)
+    Base.metadata.create_all(bind=engine)
     TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
     session = TestingSessionLocal()
     try:
         yield session
     finally:
         session.close()
-        Base.metadata.drop_all(bind=engine, tables=tables)
+        Base.metadata.drop_all(bind=engine)
         engine.dispose()
 
 
@@ -148,6 +141,149 @@ def test_get_me_requires_valid_session(client: TestClient) -> None:
 
     assert response.status_code == 200
     assert response.json()["email"] == "user@example.com"
+
+
+def test_profile_update_validates_fields_and_audits_change(
+    client: TestClient, db_session: Session
+) -> None:
+    assert register(client).status_code == 201
+    assert login(client).status_code == 200
+
+    response = client.patch(
+        "/me/profile",
+        json={
+            "full_name": "  Alice Tan  ",
+            "phone": "+65 9123 4567",
+            "location": "Singapore",
+            "summary": "Security analyst",
+            "skills": ["Python", "python", " FastAPI "],
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["full_name"] == "Alice Tan"
+    assert body["skills"] == ["Python", "FastAPI"]
+
+    user = db_session.scalar(select(User).where(User.email == "user@example.com"))
+    assert user is not None
+    assert user.profile is not None
+    assert user.profile.full_name == "Alice Tan"
+    assert user.profile.skills_json == {"items": ["Python", "FastAPI"]}
+
+    audit = db_session.scalar(
+        select(AuditLog).where(AuditLog.event_type == "account.profile_update")
+    )
+    assert audit is not None
+    assert audit.outcome == "SUCCESS"
+    assert audit.details_json == {
+        "changed_fields": ["full_name", "phone", "location", "summary", "skills"]
+    }
+
+
+def test_profile_update_rejects_invalid_fields(client: TestClient) -> None:
+    assert register(client).status_code == 201
+    assert login(client).status_code == 200
+
+    response = client.patch("/me/profile", json={"phone": "<script>alert(1)</script>"})
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": "Invalid request."}
+
+
+def test_account_update_rejects_protected_role_field(
+    client: TestClient, db_session: Session
+) -> None:
+    assert register(client).status_code == 201
+    assert login(client).status_code == 200
+
+    response = client.patch("/me", json={"role": "ADMIN"})
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": "Invalid request."}
+    user = db_session.scalar(select(User).where(User.email == "user@example.com"))
+    assert user is not None
+    assert user.role == "USER"
+
+
+def test_account_update_changes_allowed_fields_and_audits(
+    client: TestClient, db_session: Session
+) -> None:
+    assert register(client).status_code == 201
+    assert login(client).status_code == 200
+
+    response = client.patch(
+        "/me",
+        json={
+            "email": "new@example.com",
+            "full_name": "New Name",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["email"] == "new@example.com"
+    user = db_session.scalar(select(User).where(User.email == "new@example.com"))
+    assert user is not None
+    assert user.profile is not None
+    assert user.profile.full_name == "New Name"
+    audit = db_session.scalar(select(AuditLog).where(AuditLog.event_type == "account.update"))
+    assert audit is not None
+    assert audit.details_json == {"changed_fields": ["email", "full_name"]}
+
+
+def test_account_deletion_requires_password(client: TestClient, db_session: Session) -> None:
+    assert register(client).status_code == 201
+    assert login(client).status_code == 200
+
+    response = client.request("DELETE", "/me", json={"password": "wrong-password"})
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Unable to delete account."}
+    assert client.get("/me").status_code == 200
+    audit = db_session.scalar(
+        select(AuditLog).where(AuditLog.event_type == "account.deletion_request")
+    )
+    assert audit is not None
+    assert audit.outcome == "FAILURE"
+    assert audit.details_json == {"reason": "invalid_password"}
+
+
+def test_account_deletion_soft_deletes_user_and_invalidates_sessions(
+    client: TestClient, db_session: Session
+) -> None:
+    assert register(client).status_code == 201
+    assert login(client).status_code == 200
+    assert client.patch("/me/profile", json={"full_name": "Delete Me"}).status_code == 200
+    user = db_session.scalar(select(User).where(User.email == "user@example.com"))
+    assert user is not None
+    user_id = user.id
+
+    response = client.request("DELETE", "/me", json={"password": STRONG_PASSWORD})
+
+    assert response.status_code == 200
+    assert response.json() == {"message": "Account deleted."}
+    assert client.get("/me").status_code == 401
+
+    deleted_user = db_session.get(User, user_id)
+    assert deleted_user is not None
+    assert deleted_user.is_active is False
+    assert deleted_user.email == f"deleted-user-{user_id}@deleted.invalid"
+    assert deleted_user.profile is not None
+    assert deleted_user.profile.full_name is None
+
+    session = db_session.scalar(select(UserSession).where(UserSession.user_id == user_id))
+    assert session is not None
+    assert session.revoked_at is not None
+
+    audit_events = db_session.scalars(
+        select(AuditLog)
+        .where(AuditLog.event_type.in_(["account.deletion_request", "account.deletion"]))
+        .order_by(AuditLog.id)
+    ).all()
+    assert [event.outcome for event in audit_events[-2:]] == ["SUCCESS", "SUCCESS"]
+    assert audit_events[-1].details_json["strategy"] == "soft_delete"
+
+    assert register(client, email="user@example.com").status_code == 201
 
 
 def test_logout_revokes_session(client: TestClient, db_session: Session) -> None:

@@ -17,12 +17,12 @@ This repository currently contains the Phase 0 through Phase 3 backend foundatio
 - Next.js TypeScript Tailwind frontend skeleton.
 - Nginx reverse proxy configuration.
 - Import-safe scraper modules.
-- Secure backend registration, login, logout, password change, password reset token storage, and `GET /me`.
+- Secure backend registration, login, logout, password change, password reset token storage, profile update, and soft account deletion.
 - Server-side session storage with hashed session tokens and HttpOnly cookies.
 - RBAC foundations with admin route protection and ownership-check helpers.
-- Audit logging for authentication and denied authorization events.
+- Audit logging for authentication, profile updates, account deletion, and denied authorization events.
 
-Frontend account pages, full account CRUD UI, scraping workers, resume upload processing, recommendations, cover letters, and full admin dashboard features are intentionally left for later phases.
+Frontend profile update/delete UI, full scraping workers, recommendations, cover letters, and full admin dashboard features are intentionally left for later phases.
 
 ## Prerequisites
 
@@ -188,9 +188,3 @@ The frontend expects API traffic to go through the reverse proxy in deployment.
 - PostgreSQL and Redis are internal Docker services and are not exposed through host ports.
 - Backend routes must enforce authentication, authorization, validation, safe errors, and audit logging when implemented.
 - Scrapers must not execute at import time.
-
-## CI/CD Deployment
-
-GitHub Actions CI/CD is configured in `.github/workflows/ci-cd.yml`.
-
-For EC2 deployment setup, required GitHub Secrets, and production `.env` guidance, see `docs/DEPLOYMENT.md`.

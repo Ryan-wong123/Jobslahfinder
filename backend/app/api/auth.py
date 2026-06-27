@@ -5,15 +5,27 @@ from app.core.config import Settings, get_settings
 from app.core.database import get_db
 from app.core.rate_limit import rate_limit_auth
 from app.schemas.auth import (
+    AccountDeletionRequest,
+    AccountUpdateRequest,
     LoginRequest,
     MessageResponse,
     PasswordChangeRequest,
     PasswordResetConfirmRequest,
     PasswordResetRequest,
+    ProfileResponse,
+    ProfileUpdateRequest,
     RegisterRequest,
     UserResponse,
 )
 from app.security.auth import AuthenticatedSession, require_authenticated_session, require_authenticated_user
+from app.services.accounts import (
+    GENERIC_ACCOUNT_UPDATE_ERROR,
+    GENERIC_DELETE_ERROR,
+    delete_account_for_user,
+    profile_to_response,
+    update_account_for_user,
+    update_profile_for_user,
+)
 from app.services.auth import (
     GENERIC_LOGIN_ERROR,
     GENERIC_REGISTER_ERROR,
@@ -157,3 +169,58 @@ def password_reset_confirm(
 @router.get("/me", response_model=UserResponse)
 def me(current_user: User = Depends(require_authenticated_user)) -> User:
     return current_user
+
+
+@router.patch("/me", response_model=UserResponse)
+def update_me(
+    payload: AccountUpdateRequest,
+    request: Request,
+    current_user: User = Depends(require_authenticated_user),
+    db: Session = Depends(get_db),
+) -> User:
+    try:
+        return update_account_for_user(db, request, user=current_user, payload=payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=GENERIC_ACCOUNT_UPDATE_ERROR) from exc
+
+
+@router.get("/me/profile", response_model=ProfileResponse)
+def get_my_profile(
+    current_user: User = Depends(require_authenticated_user),
+) -> ProfileResponse:
+    if current_user.profile is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resource not found.")
+    return profile_to_response(current_user.profile)
+
+
+@router.patch("/me/profile", response_model=ProfileResponse)
+def update_my_profile(
+    payload: ProfileUpdateRequest,
+    request: Request,
+    current_user: User = Depends(require_authenticated_user),
+    db: Session = Depends(get_db),
+) -> ProfileResponse:
+    return update_profile_for_user(db, request, user=current_user, payload=payload)
+
+
+@router.delete("/me", response_model=MessageResponse)
+def delete_me(
+    payload: AccountDeletionRequest,
+    request: Request,
+    response: Response,
+    authenticated_session: AuthenticatedSession = Depends(require_authenticated_session),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> MessageResponse:
+    rate_limit_auth(request, "account-delete", limit=5, window_seconds=300)
+    try:
+        delete_account_for_user(
+            db,
+            request,
+            user=authenticated_session.user,
+            password=payload.password,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=GENERIC_DELETE_ERROR) from exc
+    clear_session_cookie(response, settings)
+    return MessageResponse(message="Account deleted.")

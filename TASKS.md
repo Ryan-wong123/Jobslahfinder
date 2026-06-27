@@ -178,19 +178,19 @@ A task is only done when:
 
 ### Account Profile
 - [x] Implement authenticated `GET /me`.
-- [ ] Implement account profile update.
-- [ ] Validate profile fields.
-- [ ] Prevent users from updating protected fields such as role directly.
-- [ ] Add audit logging for profile update.
-- [ ] Add profile tests.
+- [x] Implement account profile update.
+- [x] Validate profile fields.
+- [x] Prevent users from updating protected fields such as role directly.
+- [x] Add audit logging for profile update.
+- [x] Add profile tests.
 
 ### Account Deletion
-- [ ] Implement account deletion with re-authentication or equivalent verification.
-- [ ] Decide soft delete vs hard delete.
-- [ ] Ensure deletion does not leave corrupted references.
-- [ ] Invalidate sessions after deletion.
-- [ ] Add audit logging for deletion request and result.
-- [ ] Add account deletion tests.
+- [x] Implement account deletion with re-authentication or equivalent verification.
+- [x] Decide soft delete vs hard delete.
+- [x] Ensure deletion does not leave corrupted references.
+- [x] Invalidate sessions after deletion.
+- [x] Add audit logging for deletion request and result.
+- [x] Add account deletion tests.
 
 ### Password Change
 - [x] Implement password change for authenticated users.
@@ -271,9 +271,9 @@ A task is only done when:
 
 ### Account Pages
 - [x] Create account/profile page.
-- [ ] Create profile update form.
+- [x] Create profile update form.
 - [x] Create change password form.
-- [ ] Create delete account flow with re-authentication.
+- [x] Create delete account flow with re-authentication.
 - [x] Add success and failure messages without exposing internals.
 
 ### Frontend Tests

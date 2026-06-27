@@ -6,16 +6,12 @@
 *.key
 *.p12
 *.pfx
-infra/nginx/certs/*
-!infra/nginx/certs/.gitkeep
 
 # Python
 __pycache__/
 *.py[cod]
 .pytest_cache/
 pytest-cache-files-*/
-.tmp/
-.test-deps/
 .coverage
 htmlcov/
 .mypy_cache/
@@ -39,8 +35,6 @@ pnpm-debug.log*
 uploads/
 protected_uploads/
 resume_storage/
-risk_engine_data/
-backend/risk_engine/engine_state.json
 logs/
 Logs/
 backups/

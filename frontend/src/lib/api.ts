@@ -15,6 +15,17 @@ export type User = {
   last_login_at: string | null;
 };
 
+export type Profile = {
+  user_id: number;
+  full_name: string | null;
+  phone: string | null;
+  location: string | null;
+  summary: string | null;
+  skills: string[];
+  created_at: string;
+  updated_at: string;
+};
+
 export type JobSource = {
   id: number;
   source_name: "JobStreet" | "MyCareersFuture" | string;
