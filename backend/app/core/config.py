@@ -9,7 +9,8 @@ class Settings(BaseSettings):
     app_name: str = "Secure Job Platform API"
     app_env: str = Field(default="development", validation_alias="APP_ENV")
     debug: bool = Field(default=False, validation_alias="DEBUG")
-    api_host: str = Field(default="0.0.0.0", validation_alias="API_HOST")
+    # Docker containers intentionally bind internally on all interfaces.
+    api_host: str = Field(default="0.0.0.0", validation_alias="API_HOST")  # nosec B104
     api_port: int = Field(default=8000, validation_alias="API_PORT")
 
     database_url: str = Field(validation_alias="DATABASE_URL")

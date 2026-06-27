@@ -188,3 +188,9 @@ The frontend expects API traffic to go through the reverse proxy in deployment.
 - PostgreSQL and Redis are internal Docker services and are not exposed through host ports.
 - Backend routes must enforce authentication, authorization, validation, safe errors, and audit logging when implemented.
 - Scrapers must not execute at import time.
+
+## CI/CD Deployment
+
+GitHub Actions CI/CD is configured in `.github/workflows/ci-cd.yml`.
+
+For EC2 deployment setup, required GitHub Secrets, and production `.env` guidance, see `docs/DEPLOYMENT.md`.

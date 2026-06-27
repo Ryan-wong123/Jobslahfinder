@@ -77,7 +77,8 @@ def exponential_backoff(retries, base_delay=2, max_delay=120):
     #Increases delay time through exponential grrowth based on number of current retries
     delay = min(base_delay * (2 ** retries), max_delay)
     # Random value chosen forr jitter that is between 0 and Half of the delay count
-    jitter = random.uniform(0, delay / 2) 
+    # Scraper retry jitter is not security-sensitive randomness.
+    jitter = random.uniform(0, delay / 2)  # nosec B311
     return delay + jitter
 
 # Function to scrape job information from a specific element on the page
@@ -238,7 +239,8 @@ def scrape_page(page):
                             # Special handling for StaleElementReferenceException, if needed
                             pass
                         else:
-                            time.sleep(random.uniform(5, 10))
+                            # Scraper pacing jitter is not security-sensitive randomness.
+                            time.sleep(random.uniform(5, 10))  # nosec B311
 
                         delay = exponential_backoff(retries)
                         print(f"[{threading.current_thread().name}] Retries: {retries}. Delay: {delay}")
@@ -249,7 +251,8 @@ def scrape_page(page):
             print(f"[{threading.current_thread().name}] Job card {counter} not found. Exception: {e}")
             driver.back()
 
-        time.sleep(random.uniform(2, 5))
+        # Scraper pacing jitter is not security-sensitive randomness.
+        time.sleep(random.uniform(2, 5))  # nosec B311
 
     driver.quit()
     return all_jobs

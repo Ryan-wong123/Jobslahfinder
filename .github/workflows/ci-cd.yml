@@ -1,0 +1,204 @@
+name: CI/CD
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-cd-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install backend dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -e ".[dev]"
+
+      - name: Run backend tests
+        env:
+          APP_ENV: test
+          DEBUG: "false"
+          DATABASE_URL: postgresql+psycopg://test_user:test_password@localhost:5432/test_db
+          REDIS_URL: redis://localhost:6379/15
+          SESSION_SECRET: test_session_secret_value_at_least_32_chars
+          PASSWORD_RESET_SECRET: test_reset_secret_value_at_least_32_chars
+          UPLOAD_DIR: /tmp/jobapp-test-uploads
+          ALLOWED_JOB_SOURCE_DOMAINS: sg.jobstreet.com,www.mycareersfuture.gov.sg
+        run: python -m pytest
+
+  frontend:
+    name: Frontend Checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Run frontend lint
+        run: npm run lint
+
+      - name: Run frontend typecheck
+        run: npm run typecheck
+
+      - name: Build frontend
+        run: npm run build
+
+  security:
+    name: Security Checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install security scanners
+        run: python -m pip install --upgrade pip && python -m pip install bandit[toml]
+
+      - name: Run Bandit
+        run: bandit -r backend/app -x backend/app/tests
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  docker:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Create CI environment file
+        run: cp .env.example .env
+
+      - name: Validate Compose file
+        run: docker compose config
+        env:
+          POSTGRES_DB: jobapp
+          POSTGRES_USER: jobapp
+          POSTGRES_PASSWORD: compose_config_placeholder
+          DATABASE_URL: postgresql+psycopg://jobapp:compose_config_placeholder@postgres:5432/jobapp
+          REDIS_URL: redis://redis:6379/0
+          SESSION_SECRET: compose_config_session_secret_at_least_32_chars
+          PASSWORD_RESET_SECRET: compose_config_reset_secret_at_least_32_chars
+          UPLOAD_DIR: /var/lib/jobapp/uploads
+          ALLOWED_JOB_SOURCE_DOMAINS: sg.jobstreet.com,www.mycareersfuture.gov.sg
+
+      - name: Build application images
+        run: docker compose build backend frontend worker beat
+        env:
+          POSTGRES_DB: jobapp
+          POSTGRES_USER: jobapp
+          POSTGRES_PASSWORD: compose_build_placeholder
+          DATABASE_URL: postgresql+psycopg://jobapp:compose_build_placeholder@postgres:5432/jobapp
+          REDIS_URL: redis://redis:6379/0
+          SESSION_SECRET: compose_build_session_secret_at_least_32_chars
+          PASSWORD_RESET_SECRET: compose_build_reset_secret_at_least_32_chars
+          UPLOAD_DIR: /var/lib/jobapp/uploads
+          ALLOWED_JOB_SOURCE_DOMAINS: sg.jobstreet.com,www.mycareersfuture.gov.sg
+
+  deploy:
+    name: Deploy To EC2
+    runs-on: ubuntu-latest
+    needs:
+      - backend
+      - frontend
+      - security
+      - docker
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    environment: production
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate required deployment secrets
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          test -n "$EC2_HOST"
+          test -n "$EC2_USER"
+          test -n "$EC2_SSH_KEY"
+          test -n "$DEPLOY_PATH"
+
+      - name: Configure SSH
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_PORT: ${{ secrets.EC2_PORT || '22' }}
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$EC2_SSH_KEY" > ~/.ssh/ec2_deploy_key
+          chmod 600 ~/.ssh/ec2_deploy_key
+          ssh-keyscan -p "$EC2_PORT" -H "$EC2_HOST" >> ~/.ssh/known_hosts
+
+      - name: Deploy over SSH
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+          EC2_PORT: ${{ secrets.EC2_PORT || '22' }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          DEPLOY_SHA: ${{ github.sha }}
+        run: |
+          ssh -i ~/.ssh/ec2_deploy_key -p "$EC2_PORT" "$EC2_USER@$EC2_HOST" \
+            "DEPLOY_PATH='$DEPLOY_PATH' DEPLOY_SHA='$DEPLOY_SHA' bash -s" <<'EOF'
+          set -Eeuo pipefail
+
+          cd "$DEPLOY_PATH"
+
+          if [ ! -f .env ]; then
+            echo "Missing $DEPLOY_PATH/.env on EC2. Create it before deploying." >&2
+            exit 1
+          fi
+
+          git fetch --prune origin
+          git checkout --force "$DEPLOY_SHA"
+
+          docker compose build
+          docker compose run --rm backend alembic upgrade head
+          docker compose up -d --remove-orphans
+          docker compose ps
+          EOF
