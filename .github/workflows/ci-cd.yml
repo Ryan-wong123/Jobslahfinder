@@ -195,8 +195,7 @@ jobs:
           git fetch --prune origin
           git checkout --force "$DEPLOY_SHA"
 
-          docker compose build
-          docker compose run --rm backend alembic upgrade head
-          docker compose up -d --remove-orphans
+          docker compose up -d --build --force-recreate --remove-orphans
+          docker compose exec -T backend alembic upgrade head
           docker compose ps
           EOF
