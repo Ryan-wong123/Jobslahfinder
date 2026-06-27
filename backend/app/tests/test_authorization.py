@@ -120,6 +120,31 @@ def test_admin_can_access_admin_route(client: TestClient, db_session: Session) -
     assert response.json() == {"status": "ok", "service": "backend", "access": "admin"}
 
 
+def test_profile_routes_are_scoped_to_current_user(
+    client: TestClient, db_session: Session
+) -> None:
+    owner = create_user(db_session, email="owner@example.com", role=UserRole.USER)
+    other_user = create_user(db_session, email="other@example.com", role=UserRole.USER)
+    assert owner.profile is not None
+    assert other_user.profile is not None
+    owner.profile.full_name = "Owner Name"
+    other_user.profile.full_name = "Other Name"
+    db_session.commit()
+
+    login(client, email=owner.email, password=USER_PASSWORD)
+
+    response = client.get("/me/profile")
+
+    assert response.status_code == 200
+    assert response.json()["user_id"] == owner.id
+    assert response.json()["full_name"] == "Owner Name"
+
+    update_response = client.patch("/me/profile", json={"full_name": "Owner Updated"})
+    assert update_response.status_code == 200
+    db_session.refresh(other_user.profile)
+    assert other_user.profile.full_name == "Other Name"
+
+
 def test_assert_owner_or_admin_allows_owner_and_admin(db_session: Session) -> None:
     owner = create_user(db_session, email="owner@example.com", role=UserRole.USER)
     admin = create_user(db_session, email="admin@example.com", role=UserRole.ADMIN)

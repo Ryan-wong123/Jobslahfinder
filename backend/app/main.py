@@ -3,6 +3,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.api.activity import router as activity_router
 from app.api.admin import router as admin_router
 from app.api.auth import router as auth_router
 from app.api.health import router as health_router
@@ -27,6 +28,7 @@ app.include_router(health_router)
 app.include_router(auth_router)
 app.include_router(jobs_router)
 app.include_router(resumes_router)
+app.include_router(activity_router)
 app.include_router(admin_router)
 
 

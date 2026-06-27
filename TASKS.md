@@ -231,22 +231,22 @@ A task is only done when:
 
 ### Protected Resources
 - [x] Add backend authorization to every protected endpoint.
-- [~] Enforce user ownership on account/profile routes.
+- [x] Enforce user ownership on account/profile routes.
 - [x] Enforce user ownership on resume routes.
 - [x] Enforce user ownership on resume extraction routes.
 - [x] Enforce user ownership on saved job routes.
-- [ ] Enforce user ownership on recommendation routes.
-- [ ] Enforce user ownership on cover letter routes.
-- [ ] Enforce user ownership on application history routes.
+- [x] Enforce user ownership on recommendation routes.
+- [x] Enforce user ownership on cover letter routes.
+- [x] Enforce user ownership on application history routes.
 - [x] Enforce admin role on all admin routes.
 
 ### Authorization Logging and Tests
 - [x] Add audit logging for failed authorization attempts.
-- [~] Add tests proving users cannot access another user's profile.
+- [x] Add tests proving users cannot access another user's profile.
 - [x] Add tests proving users cannot access another user's resume.
 - [x] Add tests proving users cannot access another user's saved jobs.
-- [ ] Add tests proving users cannot access another user's recommendations.
-- [ ] Add tests proving users cannot access another user's cover letters.
+- [x] Add tests proving users cannot access another user's recommendations.
+- [x] Add tests proving users cannot access another user's cover letters.
 - [x] Add tests proving normal users cannot access admin endpoints.
 
 ---
