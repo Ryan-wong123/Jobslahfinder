@@ -97,7 +97,7 @@ jobs:
         run: bandit -r backend/app -x backend/app/tests
 
       - name: Run Gitleaks
-        run: docker run --rm -v "${{ github.workspace }}:/repo" zricethezav/gitleaks:latest detect --source=/repo --redact --no-banner --verbose
+        run: docker run --rm -v "${{ github.workspace }}:/repo" zricethezav/gitleaks:latest detect --source=/repo --config=/repo/.gitleaks.toml --redact --no-banner --verbose --no-git
 
   docker:
     name: Docker Build

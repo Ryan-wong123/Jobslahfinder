@@ -1,0 +1,20 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Ignore generated dependency and build directories"
+paths = [
+  '''(^|/)backend/\.venv/''',
+  '''(^|/)frontend/node_modules/''',
+  '''(^|/)frontend/\.next/''',
+]
+
+[[allowlists]]
+description = "Allow non-secret password fixtures in backend tests"
+condition = "AND"
+paths = [
+  '''backend/app/tests/test_.*\.py''',
+]
+regexes = [
+  '''(USER_PASSWORD|ADMIN_PASSWORD|STRONG_PASSWORD|NEW_PASSWORD)\s*=\s*["'][A-Za-z0-9!@#$%^&*()_+\-=]{8,}["']''',
+]
