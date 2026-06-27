@@ -49,8 +49,13 @@ export function ResumeDetailPanel({ resumeId }: { resumeId: number }) {
         }
       })
       .catch((caught) => {
+        const nextMessage = caught instanceof Error ? caught.message : "Unable to load resume.";
+        if (nextMessage === "Authentication required.") {
+          router.push("/login");
+          return;
+        }
         if (active) {
-          setError(caught instanceof Error ? caught.message : "Unable to load resume.");
+          setError(nextMessage);
         }
       })
       .finally(() => {
@@ -61,7 +66,7 @@ export function ResumeDetailPanel({ resumeId }: { resumeId: number }) {
     return () => {
       active = false;
     };
-  }, [resumeId]);
+  }, [resumeId, router]);
 
   async function onDelete() {
     setDeleting(true);
@@ -73,7 +78,12 @@ export function ResumeDetailPanel({ resumeId }: { resumeId: number }) {
       router.push("/resumes");
       router.refresh();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Unable to delete resume.");
+      const nextMessage = caught instanceof Error ? caught.message : "Unable to delete resume.";
+      if (nextMessage === "Authentication required.") {
+        router.push("/login");
+        return;
+      }
+      setError(nextMessage);
       setDeleting(false);
     }
   }

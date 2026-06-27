@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   apiFetch,
@@ -52,6 +53,7 @@ function ResumeRow({ resume }: { resume: Resume }) {
 }
 
 export function ResumeWorkspace() {
+  const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [resumes, setResumes] = useState<ResumeListResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -70,9 +72,14 @@ export function ResumeWorkspace() {
         }
       })
       .catch((caught) => {
+        const nextMessage = caught instanceof Error ? caught.message : "Unable to load resumes.";
+        if (nextMessage === "Authentication required.") {
+          router.push("/login");
+          return;
+        }
         if (active) {
           setResumes(null);
-          setError(caught instanceof Error ? caught.message : "Unable to load resumes.");
+          setError(nextMessage);
         }
       })
       .finally(() => {
@@ -83,7 +90,7 @@ export function ResumeWorkspace() {
     return () => {
       active = false;
     };
-  }, [refreshIndex]);
+  }, [refreshIndex, router]);
 
   async function onUpload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -110,7 +117,12 @@ export function ResumeWorkspace() {
       setLoading(true);
       setRefreshIndex((current) => current + 1);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Unable to upload resume.");
+      const nextMessage = caught instanceof Error ? caught.message : "Unable to upload resume.";
+      if (nextMessage === "Authentication required.") {
+        router.push("/login");
+        return;
+      }
+      setError(nextMessage);
     } finally {
       setUploading(false);
     }
