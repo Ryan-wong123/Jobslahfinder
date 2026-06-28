@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { apiFetch, formatDate, type JobListResponse, type JobSummary } from "@/lib/api";
+import { apiFetch, formatDate, type JobListResponse, type JobSummary, type SavedJob } from "@/lib/api";
 
 const pageSize = 10;
 
@@ -32,7 +33,14 @@ function JobStatus({ job }: { job: JobSummary }) {
   return <span className="rounded border border-teal-200 bg-teal-50 px-2 py-1 text-xs text-teal-900">Active</span>;
 }
 
-function JobRow({ job }: { job: JobSummary }) {
+type JobRowProps = {
+  job: JobSummary;
+  isSaving: boolean;
+  isSaved: boolean;
+  onSave: (jobId: number) => void;
+};
+
+function JobRow({ job, isSaving, isSaved, onSave }: JobRowProps) {
   return (
     <article className="rounded border border-zinc-200 bg-white p-5 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -42,7 +50,17 @@ function JobRow({ job }: { job: JobSummary }) {
           </Link>
           <p className="mt-1 text-sm text-zinc-700">{job.company}</p>
         </div>
-        <JobStatus job={job} />
+        <div className="flex flex-wrap items-center gap-2">
+          <JobStatus job={job} />
+          <button
+            className="rounded bg-zinc-950 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-zinc-400"
+            disabled={isSaving || isSaved}
+            onClick={() => onSave(job.id)}
+            type="button"
+          >
+            {isSaving ? "Saving..." : isSaved ? "Saved" : "Save"}
+          </button>
+        </div>
       </div>
       <dl className="mt-4 grid gap-3 text-sm text-zinc-600 sm:grid-cols-4">
         <div>
@@ -67,11 +85,15 @@ function JobRow({ job }: { job: JobSummary }) {
 }
 
 export function JobBrowser() {
+  const router = useRouter();
   const [filters, setFilters] = useState<Filters>(emptyFilters);
   const [appliedFilters, setAppliedFilters] = useState<Filters>(emptyFilters);
   const [page, setPage] = useState(1);
   const [jobs, setJobs] = useState<JobListResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [pendingJobId, setPendingJobId] = useState<number | null>(null);
+  const [savedJobIds, setSavedJobIds] = useState<Set<number>>(() => new Set());
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshIndex, setRefreshIndex] = useState(0);
 
@@ -122,6 +144,30 @@ export function JobBrowser() {
 
   function updateFilter(name: keyof Filters, value: string) {
     setFilters((current) => ({ ...current, [name]: value }));
+  }
+
+  async function onSave(jobId: number) {
+    setPendingJobId(jobId);
+    setSaveMessage(null);
+    setError(null);
+    try {
+      await apiFetch<SavedJob>(`/jobs/${jobId}/save`, { method: "POST" });
+      setSavedJobIds((current) => {
+        const next = new Set(current);
+        next.add(jobId);
+        return next;
+      });
+      setSaveMessage("Job saved.");
+    } catch (caught) {
+      const nextMessage = caught instanceof Error ? caught.message : "Unable to save job.";
+      if (nextMessage === "Authentication required.") {
+        router.push("/login");
+        return;
+      }
+      setError(nextMessage);
+    } finally {
+      setPendingJobId(null);
+    }
   }
 
   const totalPages = jobs ? Math.max(1, Math.ceil(jobs.total / jobs.page_size)) : 1;
@@ -195,13 +241,26 @@ export function JobBrowser() {
           </Link>
         </div>
         {loading ? <p className="rounded border border-zinc-200 bg-white p-5 text-sm text-zinc-600">Loading jobs...</p> : null}
+        {saveMessage ? (
+          <p className="mb-4 rounded border border-teal-200 bg-teal-50 p-4 text-sm text-teal-900">{saveMessage}</p>
+        ) : null}
         {error ? <p className="rounded border border-red-200 bg-red-50 p-5 text-sm text-red-900">{error}</p> : null}
         {!loading && !error && jobs?.items.length === 0 ? (
           <p className="rounded border border-zinc-200 bg-white p-5 text-sm text-zinc-600">
             No active jobs match these filters.
           </p>
         ) : null}
-        <div className="space-y-4">{jobs?.items.map((job) => <JobRow key={job.id} job={job} />)}</div>
+        <div className="space-y-4">
+          {jobs?.items.map((job) => (
+            <JobRow
+              key={job.id}
+              job={job}
+              isSaved={savedJobIds.has(job.id)}
+              isSaving={pendingJobId === job.id}
+              onSave={onSave}
+            />
+          ))}
+        </div>
         {jobs && jobs.total > jobs.page_size ? (
           <div className="mt-5 flex items-center justify-between gap-3">
             <button
