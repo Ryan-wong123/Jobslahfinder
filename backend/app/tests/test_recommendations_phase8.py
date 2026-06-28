@@ -3,7 +3,7 @@ from collections.abc import Generator
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -195,6 +195,85 @@ def test_authenticated_recommendation_refresh_scores_and_stores_ranked_results(
         select(Recommendation).where(Recommendation.user_id == user.id).order_by(Recommendation.rank)
     ).all()
     assert [item.rank for item in stored] == [1, 2]
+
+
+def test_recommendation_refresh_after_extraction_update_replaces_results(
+    client: TestClient, db_session: Session
+) -> None:
+    source = create_source(db_session)
+    user = create_user(db_session, email="profile-refresh@example.com")
+    extraction = create_completed_extraction(
+        db_session,
+        user,
+        skills=["Python", "FastAPI"],
+        experience_title="Backend Developer",
+        years_experience=5.0,
+    )
+    python_job = create_job(
+        db_session,
+        source,
+        title="Senior Python FastAPI Developer",
+        description="Build secure APIs with Python, FastAPI, PostgreSQL, and Docker.",
+    )
+    react_job = create_job(
+        db_session,
+        source,
+        title="Junior React TypeScript Engineer",
+        description="Build user interfaces with React, TypeScript, accessibility, and frontend testing.",
+        category="Frontend Engineering",
+    )
+    login(client, email=user.email)
+
+    first_refresh = client.post("/recommendations/refresh")
+
+    assert first_refresh.status_code == 200
+    first_body = first_refresh.json()
+    assert first_body["total"] == 1
+    assert first_body["items"][0]["job"]["id"] == python_job.id
+    assert first_body["items"][0]["rank"] == 1
+    assert first_body["items"][0]["match_score"] > 0
+    assert "python" in first_body["items"][0]["rationale"].casefold()
+    first_stored_count = db_session.scalar(
+        select(func.count()).select_from(Recommendation).where(Recommendation.user_id == user.id)
+    )
+    assert first_stored_count == first_body["total"]
+
+    update_response = client.patch(
+        f"/resumes/{extraction.resume_id}/extraction",
+        json={
+            "skills": ["React", "TypeScript", "Accessibility"],
+            "experience": [
+                {
+                    "title": "Frontend Engineer",
+                    "company": "Interface Studio",
+                    "description": "Built accessible React and TypeScript interfaces.",
+                    "years": 1.5,
+                }
+            ],
+            "education": [{"credential": "Diploma", "field": "Interaction Design"}],
+            "years_experience": 1.5,
+        },
+    )
+    assert update_response.status_code == 200
+
+    second_refresh = client.post("/recommendations/refresh")
+
+    assert second_refresh.status_code == 200
+    second_body = second_refresh.json()
+    assert second_body["total"] == 2
+    assert second_body["items"][0]["job"]["id"] == react_job.id
+    assert [item["rank"] for item in second_body["items"]] == [1, 2]
+    assert second_body["items"][0]["match_score"] > second_body["items"][1]["match_score"]
+    assert second_body["items"][0]["match_score"] > first_body["items"][0]["match_score"] / 2
+    assert "react" in second_body["items"][0]["rationale"].casefold()
+
+    stored = db_session.scalars(
+        select(Recommendation).where(Recommendation.user_id == user.id).order_by(Recommendation.rank)
+    ).all()
+    assert len(stored) == second_body["total"]
+    assert [item.rank for item in stored] == [1, 2]
+    assert stored[0].job_id == react_job.id
+    assert len({item.job_id for item in stored}) == second_body["total"]
 
 
 def test_recommendation_endpoints_require_authentication(client: TestClient) -> None:

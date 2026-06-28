@@ -455,7 +455,7 @@ A task is only done when:
 - [x] Implement recommendation refresh endpoint.
 - [x] Implement list recommendations endpoint.
 - [x] Rate limit recommendation refresh.
-- [ ] Enqueue long-running recommendation generation if needed.
+- [x] Reviewed worker need: current deterministic refresh is bounded and safe to keep synchronous for Phase 8; queue only `user_id` in a future worker path if scoring becomes long-running or AI-backed.
 - [x] Add audit logging for recommendation generation.
 
 ### Frontend
@@ -467,7 +467,7 @@ A task is only done when:
 ### Tests
 - [x] Add tests for recommendation generation.
 - [x] Add tests for recommendation ownership.
-- [ ] Add tests for refresh after profile update.
+- [x] Add tests for refresh after profile update.
 - [x] Add tests for rate-limited refresh if feasible.
 
 ---

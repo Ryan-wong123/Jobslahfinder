@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { apiFetch, formatDate, formatDateTime, type RecommendationListResponse } from "@/lib/api";
 
 const pageSize = 10;
+const missingExtractionMessage = "No completed resume extraction is available.";
 
 export function RecommendationsPanel() {
   const router = useRouter();
@@ -62,6 +63,7 @@ export function RecommendationsPanel() {
   }
 
   const totalPages = recommendations ? Math.max(1, Math.ceil(recommendations.total / recommendations.page_size)) : 1;
+  const showMissingExtractionState = error === missingExtractionMessage;
 
   return (
     <section>
@@ -81,7 +83,17 @@ export function RecommendationsPanel() {
       </div>
 
       {loading ? <p className="rounded border border-zinc-200 bg-white p-5 text-sm text-zinc-600">Loading recommendations...</p> : null}
-      {error ? <p className="rounded border border-red-200 bg-red-50 p-5 text-sm text-red-900">{error}</p> : null}
+      {showMissingExtractionState ? (
+        <div className="rounded border border-amber-200 bg-amber-50 p-5 text-sm text-amber-950">
+          <p>{missingExtractionMessage}</p>
+          <Link className="mt-3 inline-block font-medium text-teal-800" href="/resumes">
+            Upload or review a resume
+          </Link>
+        </div>
+      ) : null}
+      {error && !showMissingExtractionState ? (
+        <p className="rounded border border-red-200 bg-red-50 p-5 text-sm text-red-900">{error}</p>
+      ) : null}
       {!loading && !error && recommendations?.items.length === 0 ? (
         <div className="rounded border border-zinc-200 bg-white p-5 text-sm text-zinc-600">
           <p>No recommendations yet.</p>
