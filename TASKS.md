@@ -138,9 +138,9 @@ A task is only done when:
 
 ### Seed Data
 - [x] Add seed data for approved job sources.
-- [ ] Add safe initial admin creation flow.
-- [ ] Ensure initial admin password is not hardcoded.
-- [ ] Document how to create the first admin securely.
+- [x] Add safe initial admin creation flow.
+- [x] Ensure initial admin password is not hardcoded.
+- [x] Document how to create the first admin securely.
 
 ---
 

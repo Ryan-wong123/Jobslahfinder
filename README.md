@@ -1,28 +1,6 @@
 # Secure AI-Assisted Job Aggregation and Application Support Platform
 
-ICT2216 Secure Software Development project repository.
-
 This project is a secure job aggregation and application support platform. It uses a Next.js frontend, FastAPI backend, PostgreSQL database, Redis queue/cache, worker processes, and Nginx reverse proxy.
-
-Security is a baseline requirement. Do not commit real secrets, `.env` files, uploaded resumes, logs, backups, or generated credentials.
-
-## Current Phase
-
-This repository currently contains the Phase 0 through Phase 3 backend foundations:
-
-- Docker Compose service definitions.
-- FastAPI backend skeleton.
-- SQLAlchemy model metadata for required tables.
-- Alembic migration structure.
-- Next.js TypeScript Tailwind frontend skeleton.
-- Nginx reverse proxy configuration.
-- Import-safe scraper modules.
-- Secure backend registration, login, logout, password change, password reset token storage, profile update, and soft account deletion.
-- Server-side session storage with hashed session tokens and HttpOnly cookies.
-- RBAC foundations with admin route protection and ownership-check helpers.
-- Audit logging for authentication, profile updates, account deletion, and denied authorization events.
-
-Frontend profile update/delete UI, full scraping workers, recommendations, cover letters, and full admin dashboard features are intentionally left for later phases.
 
 ## Prerequisites
 
@@ -84,6 +62,16 @@ After the containers are running, apply database migrations:
 ```powershell
 docker compose run --rm backend alembic upgrade head
 ```
+
+## Initial Admin Account
+
+Create the first administrator only after migrations have been applied:
+
+```powershell
+docker compose run --rm backend python -m app.cli create-initial-admin --email admin@example.com
+```
+
+The command prompts for the password twice. Do not pass the admin password on the command line, commit it to `.env`, or store it in documentation. The backend validates the password strength, stores only an Argon2id password hash, creates an audit log entry, and refuses to create another initial admin after an admin already exists.
 
 ## Check Running Services
 
