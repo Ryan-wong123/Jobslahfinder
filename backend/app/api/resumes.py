@@ -8,7 +8,12 @@ from app.core.database import get_db
 from app.core.rate_limit import rate_limit_auth
 from app.models.account import User
 from app.schemas.auth import MessageResponse
-from app.schemas.resumes import ResumeExtractionResponse, ResumeListResponse, ResumeResponse
+from app.schemas.resumes import (
+    ResumeExtractionResponse,
+    ResumeExtractionUpdateRequest,
+    ResumeListResponse,
+    ResumeResponse,
+)
 from app.security.auth import require_authenticated_user
 from app.services.resumes import (
     GENERIC_UPLOAD_ERROR,
@@ -19,6 +24,7 @@ from app.services.resumes import (
     get_resume_detail,
     get_resume_extraction,
     list_resumes_for_user,
+    update_resume_extraction,
 )
 
 
@@ -86,5 +92,19 @@ def resume_extraction(
 ) -> ResumeExtractionResponse:
     try:
         return get_resume_extraction(db, request, user=current_user, resume_id=resume_id)
+    except ResumeNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resource not found.") from exc
+
+
+@router.patch("/resumes/{resume_id}/extraction", response_model=ResumeExtractionResponse)
+def edit_resume_extraction(
+    resume_id: ResumeId,
+    payload: ResumeExtractionUpdateRequest,
+    request: Request,
+    current_user: User = Depends(require_authenticated_user),
+    db: Session = Depends(get_db),
+) -> ResumeExtractionResponse:
+    try:
+        return update_resume_extraction(db, request, user=current_user, resume_id=resume_id, payload=payload)
     except ResumeNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resource not found.") from exc

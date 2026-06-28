@@ -16,6 +16,7 @@ from app.main import app
 from app.models.account import PasswordResetToken, Session as UserSession, User, UserProfile
 from app.models.audit import AuditLog
 from app.models.resume import Resume, ResumeExtraction
+from app.services.resumes import run_resume_extraction
 from app.security.passwords import hash_password
 
 
@@ -95,11 +96,17 @@ def login(client: TestClient, *, email: str) -> None:
     assert response.status_code == 200
 
 
-def docx_content() -> bytes:
+def docx_content(text: str = "") -> bytes:
     buffer = BytesIO()
     with ZipFile(buffer, "w") as archive:
         archive.writestr("[Content_Types].xml", "<Types></Types>")
-        archive.writestr("word/document.xml", "<w:document></w:document>")
+        archive.writestr(
+            "word/document.xml",
+            (
+                '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                f"<w:body><w:p><w:r><w:t>{text}</w:t></w:r></w:p></w:body></w:document>"
+            ),
+        )
     return buffer.getvalue()
 
 
@@ -274,3 +281,156 @@ def test_upload_audit_logging_omits_file_contents(
     assert "secret-resume-content" not in details
     assert "resume.pdf" not in details
     assert "file_hash" in audit.details_json
+
+
+def test_extraction_worker_stores_structured_data_and_safe_audit(
+    client: TestClient, db_session: Session
+) -> None:
+    content = docx_content(
+        "Python developer with 6 years experience. Bachelor of Computing at Singapore University."
+    )
+    create_user(db_session, email="user@example.com")
+    login(client, email="user@example.com")
+    created = upload(
+        client,
+        filename="resume.docx",
+        content=content,
+        mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+    resume_id = created.json()["id"]
+
+    result = run_resume_extraction(db_session, resume_id=resume_id)
+
+    assert result == {"status": "completed", "resume_id": resume_id}
+    extraction = db_session.scalar(select(ResumeExtraction).where(ResumeExtraction.resume_id == resume_id))
+    assert extraction is not None
+    assert extraction.processing_status == "COMPLETED"
+    assert "python" in extraction.skills_json["items"]
+    assert extraction.education_json["items"]
+    assert extraction.experience_json["items"]
+    assert float(extraction.years_experience) == 6.0
+    assert extraction.extracted_text is None
+    audit = db_session.scalar(
+        select(AuditLog)
+        .where(AuditLog.event_type == "resume.extraction", AuditLog.outcome == "SUCCESS")
+        .order_by(AuditLog.id.desc())
+    )
+    assert audit is not None
+    details = str(audit.details_json)
+    assert "Singapore University" not in details
+    assert audit.details_json["skills_count"] >= 1
+
+
+def test_extraction_failure_handling_is_safe_and_audited(
+    client: TestClient, db_session: Session
+) -> None:
+    create_user(db_session, email="user@example.com")
+    login(client, email="user@example.com")
+    created = upload(client)
+    resume_id = created.json()["id"]
+    resume = db_session.get(Resume, resume_id)
+    assert resume is not None
+    Path(resume.file_path).write_bytes(b"not a valid pdf containing secret-resume-content")
+
+    result = run_resume_extraction(db_session, resume_id=resume_id)
+
+    assert result == {"status": "failed", "resume_id": resume_id}
+    extraction = db_session.scalar(select(ResumeExtraction).where(ResumeExtraction.resume_id == resume_id))
+    assert extraction is not None
+    assert extraction.processing_status == "FAILED"
+    audit = db_session.scalar(
+        select(AuditLog)
+        .where(AuditLog.event_type == "resume.extraction", AuditLog.outcome == "FAILURE")
+        .order_by(AuditLog.id.desc())
+    )
+    assert audit is not None
+    assert audit.details_json == {"reason": "parser_failed"}
+    assert "secret-resume-content" not in str(audit.details_json)
+
+
+def test_view_and_edit_extracted_profile_with_audit(
+    client: TestClient, db_session: Session
+) -> None:
+    create_user(db_session, email="user@example.com")
+    login(client, email="user@example.com")
+    created = upload(client)
+    resume_id = created.json()["id"]
+
+    view_response = client.get(f"/resumes/{resume_id}/extraction")
+    assert view_response.status_code == 200
+    assert view_response.json()["skills"] == []
+
+    edit_response = client.patch(
+        f"/resumes/{resume_id}/extraction",
+        json={
+            "skills": ["Python", "python", "FastAPI"],
+            "experience": [{"title": "Developer", "company": "Acme", "years": 3}],
+            "education": [{"institution": "NUS", "credential": "Degree", "year": 2022}],
+            "years_experience": 3,
+        },
+    )
+
+    assert edit_response.status_code == 200
+    body = edit_response.json()
+    assert body["skills"] == ["Python", "FastAPI"]
+    assert body["experience"][0]["title"] == "Developer"
+    assert body["education"][0]["institution"] == "NUS"
+    assert body["years_experience"] == 3.0
+    audit = db_session.scalar(select(AuditLog).where(AuditLog.event_type == "resume.extraction.update"))
+    assert audit is not None
+    assert audit.outcome == "SUCCESS"
+    assert audit.details_json["skills_count"] == 2
+    assert "Developer" not in str(audit.details_json)
+
+
+def test_extracted_profile_edit_requires_ownership(
+    client: TestClient, db_session: Session
+) -> None:
+    create_user(db_session, email="owner@example.com")
+    create_user(db_session, email="other@example.com")
+    login(client, email="owner@example.com")
+    created = upload(client)
+    resume_id = created.json()["id"]
+    client.post("/auth/logout")
+    login(client, email="other@example.com")
+
+    response = client.patch(
+        f"/resumes/{resume_id}/extraction",
+        json={"skills": ["Python"], "experience": [], "education": [], "years_experience": 1},
+    )
+
+    assert response.status_code == 404
+    audit = db_session.scalar(
+        select(AuditLog)
+        .where(AuditLog.event_type == "authorization.denied")
+        .order_by(AuditLog.id.desc())
+    )
+    assert audit is not None
+    assert audit.details_json == {"reason": "resume_owner_required"}
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"skills": ["x" * 81], "experience": [], "education": [], "years_experience": 1},
+        {"skills": [], "experience": [{"title": "x" * 121}], "education": [], "years_experience": 1},
+        {"skills": [], "experience": [], "education": [{"year": 1800}], "years_experience": 1},
+        {"skills": [], "experience": [], "education": [], "years_experience": 100},
+        {
+            "skills": [],
+            "experience": [],
+            "education": [],
+            "years_experience": 1,
+            "unexpected": "blocked",
+        },
+    ],
+)
+def test_extracted_profile_edit_validation(client: TestClient, db_session: Session, payload: dict) -> None:
+    create_user(db_session, email="user@example.com")
+    login(client, email="user@example.com")
+    created = upload(client)
+    resume_id = created.json()["id"]
+
+    response = client.patch(f"/resumes/{resume_id}/extraction", json=payload)
+
+    assert response.status_code == 422

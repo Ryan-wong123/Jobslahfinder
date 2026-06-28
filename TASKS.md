@@ -407,26 +407,26 @@ A task is only done when:
 
 ### Extraction Worker
 - [x] Enqueue extraction task after upload.
-- [~] Implement worker task for resume parsing.
-- [ ] Add parser timeout.
-- [ ] Add memory/resource safeguards where practical.
+- [x] Implement worker task for resume parsing.
+- [x] Add parser timeout.
+- [x] Add memory/resource safeguards where practical.
 - [x] Handle parser failure safely.
-- [~] Store extracted skills, education, experience, and years of experience.
+- [x] Store extracted skills, education, experience, and years of experience.
 - [x] Store processing status.
 - [x] Add audit logging for extraction success/failure.
 - [x] Ensure full resume content is not written to ordinary logs.
 
 ### Profile Review
-- [ ] Allow user to view extracted profile.
-- [ ] Allow user to edit extracted profile.
-- [ ] Validate edited profile fields.
-- [ ] Add audit logging for profile edits.
+- [x] Allow user to view extracted profile.
+- [x] Allow user to edit extracted profile.
+- [x] Validate edited profile fields.
+- [x] Add audit logging for profile edits.
 
 ### Frontend
 - [x] Build frontend resume upload page.
 - [x] Build frontend upload status page or component.
-- [ ] Build frontend extracted profile review page.
-- [ ] Build frontend extracted profile edit page.
+- [x] Build frontend extracted profile review page.
+- [x] Build frontend extracted profile edit page.
 
 ### Tests
 - [x] Add tests for valid PDF upload.
@@ -436,7 +436,7 @@ A task is only done when:
 - [x] Add tests for oversized file rejection.
 - [x] Add tests for path traversal filename rejection.
 - [x] Add tests for unauthorized resume access.
-- [ ] Add tests for extraction failure handling.
+- [x] Add tests for extraction failure handling.
 
 ---
 

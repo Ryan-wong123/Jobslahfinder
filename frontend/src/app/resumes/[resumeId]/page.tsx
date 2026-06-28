@@ -1,13 +1,9 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
 import { ResumeDetailPanel } from "@/components/ResumeDetailPanel";
 
-export default function ResumeDetailPage({ params }: { params: { resumeId: string } }) {
-  const resumeId = Number(params.resumeId);
-  if (!Number.isInteger(resumeId) || resumeId <= 0) {
-    notFound();
-  }
-
+export default async function ResumeDetailPage({ params }: { params: Promise<{ resumeId: string }> }) {
+  const { resumeId: resumeIdParam } = await params;
+  const resumeId = Number(resumeIdParam);
   return (
     <section className="mx-auto min-h-screen max-w-6xl px-6 py-8">
       <header className="mb-8 flex flex-wrap items-center justify-between gap-4 border-b border-zinc-200 pb-5">

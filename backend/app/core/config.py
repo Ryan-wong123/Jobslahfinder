@@ -25,6 +25,12 @@ class Settings(BaseSettings):
 
     upload_dir: Path = Field(validation_alias="UPLOAD_DIR")
     max_upload_bytes: int = Field(default=5 * 1024 * 1024, validation_alias="MAX_UPLOAD_BYTES")
+    resume_parser_timeout_seconds: int = Field(
+        default=10, validation_alias="RESUME_PARSER_TIMEOUT_SECONDS"
+    )
+    resume_parser_max_text_chars: int = Field(
+        default=20000, validation_alias="RESUME_PARSER_MAX_TEXT_CHARS"
+    )
     allowed_job_source_domains: str = Field(
         default="", validation_alias="ALLOWED_JOB_SOURCE_DOMAINS"
     )
@@ -51,6 +57,10 @@ class Settings(BaseSettings):
             raise ValueError("SCRAPING_REQUEST_TIMEOUT_SECONDS must be between 1 and 120.")
         if self.scraping_max_retries < 0 or self.scraping_max_retries > 5:
             raise ValueError("SCRAPING_MAX_RETRIES must be between 0 and 5.")
+        if self.resume_parser_timeout_seconds < 1 or self.resume_parser_timeout_seconds > 60:
+            raise ValueError("RESUME_PARSER_TIMEOUT_SECONDS must be between 1 and 60.")
+        if self.resume_parser_max_text_chars < 1000 or self.resume_parser_max_text_chars > 100000:
+            raise ValueError("RESUME_PARSER_MAX_TEXT_CHARS must be between 1000 and 100000.")
         if self.app_env.lower() == "production":
             if self.debug:
                 raise ValueError("DEBUG must be false in production.")

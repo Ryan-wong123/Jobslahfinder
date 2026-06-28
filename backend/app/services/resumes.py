@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from io import BytesIO
 import hashlib
 from pathlib import Path
@@ -9,15 +10,21 @@ import re
 import uuid
 from zipfile import BadZipFile, ZipFile
 
+from defusedxml.ElementTree import fromstring as safe_xml_fromstring
 from fastapi import Request, UploadFile
 from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
-from app.core.config import Settings
+from app.core.config import Settings, get_settings
 from app.models.account import User
 from app.models.enums import AuditOutcome, ProcessingStatus, UploadStatus
 from app.models.resume import Resume, ResumeExtraction
-from app.schemas.resumes import ResumeExtractionResponse, ResumeListResponse, ResumeResponse
+from app.schemas.resumes import (
+    ResumeExtractionResponse,
+    ResumeExtractionUpdateRequest,
+    ResumeListResponse,
+    ResumeResponse,
+)
 from app.security.auth import log_authorization_denied
 from app.services.audit import create_audit_log
 
@@ -29,6 +36,42 @@ ALLOWED_MIME_TYPES = {
 }
 SAFE_FILENAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._() \-]{0,254}$")
 GENERIC_UPLOAD_ERROR = "Unable to upload resume. Please provide a valid PDF or DOCX file."
+DOCX_DOCUMENT_XML_MAX_BYTES = 2 * 1024 * 1024
+PDF_TEXT_TOKEN_PATTERN = re.compile(rb"[\x09\x0a\x0d\x20-\x7e]{3,}")
+YEAR_EXPERIENCE_PATTERN = re.compile(r"(\d{1,2}(?:\.\d)?)\+?\s+years?", re.IGNORECASE)
+COMMON_SKILLS = {
+    "python",
+    "java",
+    "javascript",
+    "typescript",
+    "react",
+    "next.js",
+    "fastapi",
+    "sql",
+    "postgresql",
+    "redis",
+    "docker",
+    "kubernetes",
+    "aws",
+    "linux",
+    "cybersecurity",
+    "security",
+    "machine learning",
+    "data analysis",
+    "project management",
+}
+EDUCATION_KEYWORDS = (
+    "university",
+    "polytechnic",
+    "college",
+    "school",
+    "bachelor",
+    "master",
+    "diploma",
+    "degree",
+    "phd",
+)
+EXPERIENCE_KEYWORDS = ("engineer", "developer", "analyst", "manager", "consultant", "intern")
 
 
 class ResumeValidationError(ValueError):
@@ -166,8 +209,27 @@ def resume_to_response(resume: Resume) -> ResumeResponse:
     return ResumeResponse.model_validate(resume)
 
 
+def json_items(value: dict | None) -> list:
+    if not isinstance(value, dict):
+        return []
+    items = value.get("items")
+    return items if isinstance(items, list) else []
+
+
 def extraction_to_response(extraction: ResumeExtraction) -> ResumeExtractionResponse:
-    return ResumeExtractionResponse.model_validate(extraction)
+    return ResumeExtractionResponse(
+        id=extraction.id,
+        resume_id=extraction.resume_id,
+        processing_status=extraction.processing_status,
+        skills_json=extraction.skills_json,
+        experience_json=extraction.experience_json,
+        education_json=extraction.education_json,
+        skills=[item for item in json_items(extraction.skills_json) if isinstance(item, str)],
+        experience=[item for item in json_items(extraction.experience_json) if isinstance(item, dict)],
+        education=[item for item in json_items(extraction.education_json) if isinstance(item, dict)],
+        years_experience=float(extraction.years_experience) if extraction.years_experience is not None else None,
+        processed_at=extraction.processed_at,
+    )
 
 
 def safe_upload_audit_details(
@@ -347,6 +409,49 @@ def get_resume_extraction(
     return extraction_to_response(extraction)
 
 
+def update_resume_extraction(
+    db: Session,
+    request: Request,
+    *,
+    user: User,
+    resume_id: int,
+    payload: ResumeExtractionUpdateRequest,
+) -> ResumeExtractionResponse:
+    resume = get_resume_for_user_or_404(db, request, user=user, resume_id=resume_id)
+    extraction = db.scalar(
+        select(ResumeExtraction)
+        .where(ResumeExtraction.resume_id == resume.id)
+        .order_by(desc(ResumeExtraction.id))
+    )
+    if extraction is None:
+        raise ResumeNotFoundError("Resource not found.")
+
+    extraction.skills_json = {"items": payload.skills}
+    extraction.experience_json = {"items": [item.model_dump(exclude_none=True) for item in payload.experience]}
+    extraction.education_json = {"items": [item.model_dump(exclude_none=True) for item in payload.education]}
+    extraction.years_experience = payload.years_experience
+    extraction.processing_status = ProcessingStatus.COMPLETED.value
+    extraction.processed_at = utc_now()
+    create_audit_log(
+        db,
+        event_type="resume.extraction.update",
+        outcome=AuditOutcome.SUCCESS,
+        request=request,
+        user_id=user.id,
+        target_type="resume",
+        target_id=resume.id,
+        details={
+            "skills_count": len(payload.skills),
+            "experience_count": len(payload.experience),
+            "education_count": len(payload.education),
+            "years_experience_set": payload.years_experience is not None,
+        },
+    )
+    db.commit()
+    db.refresh(extraction)
+    return extraction_to_response(extraction)
+
+
 def delete_resume_for_user(db: Session, request: Request, *, user: User, resume_id: int) -> None:
     resume = get_resume_for_user_or_404(db, request, user=user, resume_id=resume_id)
     file_path = Path(resume.file_path)
@@ -371,7 +476,96 @@ def delete_resume_for_user(db: Session, request: Request, *, user: User, resume_
     db.commit()
 
 
-def run_resume_extraction(db: Session, *, resume_id: int) -> dict[str, str | int]:
+def normalize_text(value: str, *, max_chars: int) -> str:
+    collapsed = re.sub(r"\s+", " ", value).strip()
+    return collapsed[:max_chars]
+
+
+def extract_pdf_text(content: bytes, *, max_chars: int) -> str:
+    tokens = []
+    total = 0
+    for match in PDF_TEXT_TOKEN_PATTERN.finditer(content):
+        token = match.group(0).decode("utf-8", errors="ignore").strip()
+        if not token:
+            continue
+        tokens.append(token)
+        total += len(token) + 1
+        if total >= max_chars:
+            break
+    return normalize_text(" ".join(tokens), max_chars=max_chars)
+
+
+def extract_docx_text(content: bytes, *, max_chars: int) -> str:
+    with ZipFile(BytesIO(content)) as archive:
+        document_info = archive.getinfo("word/document.xml")
+        if document_info.file_size > DOCX_DOCUMENT_XML_MAX_BYTES:
+            raise ResumeValidationError("document_too_large")
+        with archive.open(document_info) as document:
+            document_xml = document.read(DOCX_DOCUMENT_XML_MAX_BYTES + 1)
+    if len(document_xml) > DOCX_DOCUMENT_XML_MAX_BYTES:
+        raise ResumeValidationError("document_too_large")
+    root = safe_xml_fromstring(document_xml)
+    parts: list[str] = []
+    for element in root.iter():
+        if element.tag.endswith("}t") and element.text:
+            parts.append(element.text)
+            if sum(len(part) for part in parts) >= max_chars:
+                break
+    return normalize_text(" ".join(parts), max_chars=max_chars)
+
+
+def parse_resume_content(content: bytes, extension: str, *, max_text_chars: int) -> dict[str, object]:
+    validate_file_signature(content, extension)
+    if extension == ".pdf":
+        text = extract_pdf_text(content, max_chars=max_text_chars)
+    elif extension == ".docx":
+        text = extract_docx_text(content, max_chars=max_text_chars)
+    else:
+        raise ResumeValidationError("unsupported_extension")
+
+    folded = text.casefold()
+    skills = sorted(skill for skill in COMMON_SKILLS if skill in folded)
+    years = [float(match.group(1)) for match in YEAR_EXPERIENCE_PATTERN.finditer(text)]
+    lines = [line.strip(" -:\t") for line in re.split(r"[\r\n.]", text) if line.strip()]
+    education = [
+        {"description": line[:300]}
+        for line in lines
+        if any(keyword in line.casefold() for keyword in EDUCATION_KEYWORDS)
+    ][:20]
+    experience = [
+        {"description": line[:300]}
+        for line in lines
+        if any(keyword in line.casefold() for keyword in EXPERIENCE_KEYWORDS)
+    ][:20]
+    return {
+        "skills": skills[:100],
+        "education": education,
+        "experience": experience,
+        "years_experience": max(years) if years else None,
+    }
+
+
+def parse_resume_with_timeout(content: bytes, extension: str, settings: Settings) -> dict[str, object]:
+    executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="resume-parser")
+    future = executor.submit(
+        parse_resume_content,
+        content,
+        extension,
+        max_text_chars=settings.resume_parser_max_text_chars,
+    )
+    try:
+        return future.result(timeout=settings.resume_parser_timeout_seconds)
+    except FutureTimeoutError as exc:
+        future.cancel()
+        raise TimeoutError("resume_parser_timeout") from exc
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
+
+
+def run_resume_extraction(
+    db: Session, *, resume_id: int, settings: Settings | None = None
+) -> dict[str, str | int]:
+    settings = settings or get_settings()
     resume = db.get(Resume, resume_id)
     if resume is None or resume.upload_status != UploadStatus.STORED.value:
         return {"status": "not_found", "resume_id": resume_id}
@@ -389,12 +583,19 @@ def run_resume_extraction(db: Session, *, resume_id: int) -> dict[str, str | int
     db.commit()
 
     try:
-        content = Path(resume.file_path).read_bytes()
-        validate_file_signature(content, Path(resume.stored_filename).suffix.lower())
-        extraction.skills_json = {"items": []}
-        extraction.experience_json = {"items": []}
-        extraction.education_json = {"items": []}
-        extraction.years_experience = None
+        file_path = Path(resume.file_path)
+        if file_path.stat().st_size > settings.max_upload_bytes:
+            raise ResumeValidationError("file_too_large")
+        content = file_path.read_bytes()
+        parsed = parse_resume_with_timeout(
+            content,
+            Path(resume.stored_filename).suffix.lower(),
+            settings,
+        )
+        extraction.skills_json = {"items": parsed["skills"]}
+        extraction.experience_json = {"items": parsed["experience"]}
+        extraction.education_json = {"items": parsed["education"]}
+        extraction.years_experience = parsed["years_experience"]
         extraction.extracted_text = None
         extraction.processing_status = ProcessingStatus.COMPLETED.value
         extraction.processed_at = utc_now()
@@ -405,10 +606,30 @@ def run_resume_extraction(db: Session, *, resume_id: int) -> dict[str, str | int
             user_id=resume.user_id,
             target_type="resume",
             target_id=resume.id,
-            details={"status": "completed"},
+            details={
+                "status": "completed",
+                "skills_count": len(parsed["skills"]),
+                "experience_count": len(parsed["experience"]),
+                "education_count": len(parsed["education"]),
+                "years_experience_set": parsed["years_experience"] is not None,
+            },
         )
         db.commit()
         return {"status": "completed", "resume_id": resume.id}
+    except TimeoutError:
+        extraction.processing_status = ProcessingStatus.FAILED.value
+        extraction.processed_at = utc_now()
+        create_audit_log(
+            db,
+            event_type="resume.extraction",
+            outcome=AuditOutcome.FAILURE,
+            user_id=resume.user_id,
+            target_type="resume",
+            target_id=resume.id,
+            details={"reason": "parser_timeout"},
+        )
+        db.commit()
+        return {"status": "failed", "resume_id": resume.id}
     except Exception:
         extraction.processing_status = ProcessingStatus.FAILED.value
         extraction.processed_at = utc_now()

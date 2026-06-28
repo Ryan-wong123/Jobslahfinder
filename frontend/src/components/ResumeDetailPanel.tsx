@@ -154,6 +154,12 @@ export function ResumeDetailPanel({ resumeId }: { resumeId: number }) {
           <Link className="rounded border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900" href="/resumes">
             Back
           </Link>
+          <Link
+            className="rounded bg-zinc-950 px-3 py-2 text-sm font-medium text-white"
+            href={`/resumes/${resumeId}/profile`}
+          >
+            Review profile
+          </Link>
           <button
             className="rounded border border-red-300 bg-white px-3 py-2 text-sm font-medium text-red-800 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:text-red-300"
             disabled={deleting}

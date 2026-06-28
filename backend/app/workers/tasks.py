@@ -1,6 +1,7 @@
 from sqlalchemy import select
 
 from app.workers.celery_app import celery_app
+from app.core.config import get_settings
 from app.core.database import SessionLocal
 from app.models.job import JobSource
 from app.services.resumes import run_resume_extraction
@@ -48,7 +49,11 @@ def run_weekly_scraping() -> dict[str, int | list[dict[str, int | str]]]:
     return {"sources_checked": len(results), "results": results}
 
 
-@celery_app.task(name="app.workers.tasks.extract_resume")
+@celery_app.task(
+    name="app.workers.tasks.extract_resume",
+    soft_time_limit=get_settings().resume_parser_timeout_seconds + 5,
+    time_limit=get_settings().resume_parser_timeout_seconds + 15,
+)
 def extract_resume(resume_id: int) -> dict[str, int | str]:
     with SessionLocal() as db:
-        return run_resume_extraction(db, resume_id=resume_id)
+        return run_resume_extraction(db, resume_id=resume_id, settings=get_settings())

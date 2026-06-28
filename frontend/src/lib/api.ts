@@ -108,8 +108,18 @@ export type ResumeExtraction = {
   skills_json: Record<string, unknown> | null;
   experience_json: Record<string, unknown> | null;
   education_json: Record<string, unknown> | null;
+  skills: string[];
+  experience: Array<Record<string, unknown>>;
+  education: Array<Record<string, unknown>>;
   years_experience: number | null;
   processed_at: string | null;
+};
+
+export type ResumeExtractionUpdate = {
+  skills: string[];
+  experience: Array<{ description?: string }>;
+  education: Array<{ description?: string }>;
+  years_experience: number | null;
 };
 
 export async function apiFetch<TResponse>(

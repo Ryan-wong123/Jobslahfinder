@@ -32,7 +32,21 @@ function ResumeRow({ resume }: { resume: Resume }) {
           </Link>
           <p className="mt-1 text-sm text-zinc-600">{resume.mime_type}</p>
         </div>
-        <StatusBadge status={resume.upload_status} />
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            className="rounded border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
+            href={`/resumes/${resume.id}`}
+          >
+            View resume
+          </Link>
+          <Link
+            className="rounded bg-zinc-950 px-3 py-2 text-sm font-medium text-white"
+            href={`/resumes/${resume.id}/profile`}
+          >
+            Review profile
+          </Link>
+          <StatusBadge status={resume.upload_status} />
+        </div>
       </div>
       <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
         <div>

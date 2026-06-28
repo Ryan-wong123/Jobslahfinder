@@ -4,8 +4,15 @@ import argparse
 import getpass
 import sys
 
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.core.database import SessionLocal
 from app.services.admin_bootstrap import InitialAdminCreationError, create_initial_admin
+
+MIGRATION_HELP = (
+    "Database is not ready. Apply migrations first with: "
+    "docker compose run --rm backend alembic upgrade head"
+)
 
 
 def prompt_password() -> str:
@@ -45,6 +52,9 @@ def main(argv: list[str] | None = None) -> int:
         return args.func(args)
     except (InitialAdminCreationError, ValueError) as exc:
         print(f"Unable to create initial admin: {exc}", file=sys.stderr)
+        return 1
+    except SQLAlchemyError:
+        print(f"Unable to create initial admin: {MIGRATION_HELP}", file=sys.stderr)
         return 1
 
 
