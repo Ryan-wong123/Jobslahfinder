@@ -31,6 +31,16 @@ class Settings(BaseSettings):
     resume_parser_max_text_chars: int = Field(
         default=20000, validation_alias="RESUME_PARSER_MAX_TEXT_CHARS"
     )
+    resume_extraction_provider: str = Field(
+        default="gemini", validation_alias="RESUME_EXTRACTION_PROVIDER"
+    )
+    gemini_api_key: SecretStr | None = Field(default=None, validation_alias="GEMINI_API_KEY")
+    gemini_resume_model: str = Field(
+        default="gemini-2.5-flash-lite", validation_alias="GEMINI_RESUME_MODEL"
+    )
+    gemini_resume_max_output_tokens: int = Field(
+        default=2048, validation_alias="GEMINI_RESUME_MAX_OUTPUT_TOKENS"
+    )
     allowed_job_source_domains: str = Field(
         default="", validation_alias="ALLOWED_JOB_SOURCE_DOMAINS"
     )
@@ -61,6 +71,12 @@ class Settings(BaseSettings):
             raise ValueError("RESUME_PARSER_TIMEOUT_SECONDS must be between 1 and 60.")
         if self.resume_parser_max_text_chars < 1000 or self.resume_parser_max_text_chars > 100000:
             raise ValueError("RESUME_PARSER_MAX_TEXT_CHARS must be between 1000 and 100000.")
+        if self.resume_extraction_provider not in {"gemini", "local"}:
+            raise ValueError("RESUME_EXTRACTION_PROVIDER must be either 'gemini' or 'local'.")
+        if not self.gemini_resume_model.strip():
+            raise ValueError("GEMINI_RESUME_MODEL must not be empty.")
+        if self.gemini_resume_max_output_tokens < 256 or self.gemini_resume_max_output_tokens > 8192:
+            raise ValueError("GEMINI_RESUME_MAX_OUTPUT_TOKENS must be between 256 and 8192.")
         if self.app_env.lower() == "production":
             if self.debug:
                 raise ValueError("DEBUG must be false in production.")
@@ -68,6 +84,8 @@ class Settings(BaseSettings):
                 raise ValueError("SESSION_SECRET must be at least 32 characters.")
             if len(self.password_reset_secret.get_secret_value()) < 32:
                 raise ValueError("PASSWORD_RESET_SECRET must be at least 32 characters.")
+            if self.resume_extraction_provider == "gemini" and self.gemini_api_key is None:
+                raise ValueError("GEMINI_API_KEY is required when Gemini resume extraction is enabled.")
         return self
 
     @property

@@ -5,6 +5,7 @@ from zipfile import ZipFile
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -16,6 +17,8 @@ from app.main import app
 from app.models.account import PasswordResetToken, Session as UserSession, User, UserProfile
 from app.models.audit import AuditLog
 from app.models.resume import Resume, ResumeExtraction
+from app.services import resumes as resume_service
+from app.services.resumes import GEMINI_RESUME_SCHEMA
 from app.services.resumes import run_resume_extraction
 from app.security.passwords import hash_password
 
@@ -62,6 +65,8 @@ def client(
             existing_file.unlink(missing_ok=True)
     monkeypatch.setattr(get_settings(), "upload_dir", upload_dir)
     monkeypatch.setattr(get_settings(), "max_upload_bytes", 1024 * 1024)
+    monkeypatch.setattr(get_settings(), "app_env", "test")
+    monkeypatch.setattr(get_settings(), "resume_extraction_provider", "local")
 
     def override_get_db() -> Generator[Session, None, None]:
         yield db_session
@@ -319,6 +324,62 @@ def test_extraction_worker_stores_structured_data_and_safe_audit(
     details = str(audit.details_json)
     assert "Singapore University" not in details
     assert audit.details_json["skills_count"] >= 1
+
+
+def test_extraction_worker_uses_gemini_flash_lite_when_configured(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    content = docx_content("Python developer with 6 years experience.")
+    create_user(db_session, email="user@example.com")
+    login(client, email="user@example.com")
+    created = upload(
+        client,
+        filename="resume.docx",
+        content=content,
+        mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+    resume_id = created.json()["id"]
+    settings = get_settings()
+    monkeypatch.setattr(settings, "app_env", "development")
+    monkeypatch.setattr(settings, "resume_extraction_provider", "gemini")
+    monkeypatch.setattr(settings, "gemini_api_key", SecretStr("test-gemini-key"))
+    monkeypatch.setattr(settings, "gemini_resume_model", "gemini-2.5-flash-lite")
+    called: dict[str, object] = {}
+
+    def fake_gemini_parser(content: bytes, extension: str, settings_arg):
+        called["extension"] = extension
+        called["model"] = settings_arg.gemini_resume_model
+        assert b"test-gemini-key" not in content
+        return {
+            "skills": ["Python"],
+            "experience": [{"title": "Developer", "years": 6}],
+            "education": [],
+            "years_experience": 6,
+        }
+
+    monkeypatch.setattr(resume_service, "parse_resume_with_gemini_timeout", fake_gemini_parser)
+
+    result = run_resume_extraction(db_session, resume_id=resume_id, settings=settings)
+
+    assert result == {"status": "completed", "resume_id": resume_id}
+    assert called == {"extension": ".docx", "model": "gemini-2.5-flash-lite"}
+    extraction = db_session.scalar(select(ResumeExtraction).where(ResumeExtraction.resume_id == resume_id))
+    assert extraction is not None
+    assert extraction.skills_json == {"items": ["Python"]}
+
+
+def test_gemini_resume_schema_leaves_limits_to_backend_validation() -> None:
+    schema_text = str(GEMINI_RESUME_SCHEMA)
+
+    assert "maxItems" not in schema_text
+    assert GEMINI_RESUME_SCHEMA["required"] == [
+        "skills",
+        "experience",
+        "education",
+        "years_experience",
+    ]
 
 
 def test_extraction_failure_handling_is_safe_and_audited(

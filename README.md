@@ -55,6 +55,18 @@ Admin RBAC check:
 http://localhost:8080/api/admin/health
 ```
 
+## Resume Extraction
+
+Resume skill, education, and experience extraction uses Gemini by default. Configure these backend and worker environment variables in `.env`:
+
+```text
+RESUME_EXTRACTION_PROVIDER=gemini
+GEMINI_RESUME_MODEL=gemini-2.5-flash-lite
+GEMINI_API_KEY=replace-with-your-google-ai-api-key
+```
+
+For offline development or tests, set `RESUME_EXTRACTION_PROVIDER=local` to use the built-in deterministic parser. The worker sends only bounded extracted resume text to Gemini and stores the validated structured fields, not the full prompt or raw resume text.
+
 ## Database Setup
 
 After the containers are running, apply database migrations:
