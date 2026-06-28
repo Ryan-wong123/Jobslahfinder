@@ -94,6 +94,7 @@ export function ResumeWorkspace() {
 
   async function onUpload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const form = event.currentTarget;
     setUploading(true);
     setError(null);
     setMessage(null);
@@ -113,7 +114,7 @@ export function ResumeWorkspace() {
         body: formData
       });
       setMessage("Resume uploaded. Extraction is queued for processing.");
-      event.currentTarget.reset();
+      form.reset();
       setLoading(true);
       setRefreshIndex((current) => current + 1);
     } catch (caught) {

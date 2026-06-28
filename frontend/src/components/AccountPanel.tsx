@@ -113,11 +113,12 @@ export function AccountPanel() {
 
   async function onPasswordChange(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const form = event.currentTarget;
     setPendingPassword(true);
     setPasswordMessage(null);
     setPasswordError(null);
 
-    const formData = new FormData(event.currentTarget);
+    const formData = new FormData(form);
     try {
       const response = await apiFetch<{ message: string }>("/auth/password-change", {
         method: "POST",
@@ -127,7 +128,7 @@ export function AccountPanel() {
         })
       });
       setPasswordMessage(response.message);
-      event.currentTarget.reset();
+      form.reset();
     } catch (caught) {
       setPasswordError(caught instanceof Error ? caught.message : "Unable to change password.");
     } finally {

@@ -11,11 +11,12 @@ export function PasswordResetConfirmForm() {
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const form = event.currentTarget;
     setPending(true);
     setMessage(null);
     setError(null);
 
-    const formData = new FormData(event.currentTarget);
+    const formData = new FormData(form);
     try {
       const response = await apiFetch<{ message: string }>("/auth/password-reset/confirm", {
         method: "POST",
@@ -25,7 +26,7 @@ export function PasswordResetConfirmForm() {
         })
       });
       setMessage(response.message);
-      event.currentTarget.reset();
+      form.reset();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to reset password.");
     } finally {
