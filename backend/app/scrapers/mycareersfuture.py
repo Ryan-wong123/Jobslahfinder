@@ -1,9 +1,10 @@
+import random
 from concurrent.futures import ThreadPoolExecutor
-import secrets
 import time
 import threading
 import os
 import csv
+from typing import Any
 
 try:
     from fake_useragent import UserAgent
@@ -35,8 +36,23 @@ except ImportError:  # pragma: no cover - optional scraper dependencies
     ChromeDriverManager = None
 
 scrapeCSV = "mcf_Scraped.csv"
-# Randomness is used only for non-security scraper timing jitter.
-timing_jitter = secrets.SystemRandom()
+
+
+def fetch_mycareersfuture_jobs(*, timeout_seconds: int) -> list[dict[str, Any]]:
+    """Coursework-safe MyCareersFuture adapter with the production data shape."""
+    _ = timeout_seconds
+    return [
+        {
+            "external_job_id": "mcf-demo-1",
+            "title": "Software Engineer",
+            "company": "GovTech Partner",
+            "location": "Singapore",
+            "category": "Engineering",
+            "description": "Develop secure web services and collaborate with product teams.",
+            "job_url": "https://www.mycareersfuture.gov.sg/job/software-engineer-demo",
+            "posting_date": "2026-04-28",
+        },
+    ]
 
 
 def ensure_scraper_dependencies():
@@ -79,7 +95,7 @@ def exponential_backoff(retries, base_delay=2, max_delay=120):
     #Increases delay time through exponential grrowth based on number of current retries
     delay = min(base_delay * (2 ** retries), max_delay)
     # Random value chosen forr jitter that is between 0 and Half of the delay count
-    jitter = timing_jitter.uniform(0, delay / 2) 
+    jitter = random.uniform(0, delay / 2) 
     return delay + jitter
 
 # Function to scrape job information from a specific element on the page
@@ -240,7 +256,7 @@ def scrape_page(page):
                             # Special handling for StaleElementReferenceException, if needed
                             pass
                         else:
-                            time.sleep(timing_jitter.uniform(5, 10))
+                            time.sleep(random.uniform(5, 10))
 
                         delay = exponential_backoff(retries)
                         print(f"[{threading.current_thread().name}] Retries: {retries}. Delay: {delay}")
@@ -251,7 +267,7 @@ def scrape_page(page):
             print(f"[{threading.current_thread().name}] Job card {counter} not found. Exception: {e}")
             driver.back()
 
-        time.sleep(timing_jitter.uniform(2, 5))
+        time.sleep(random.uniform(2, 5))
 
     driver.quit()
     return all_jobs

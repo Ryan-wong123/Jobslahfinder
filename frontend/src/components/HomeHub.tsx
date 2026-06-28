@@ -110,6 +110,15 @@ export function HomeHub() {
               <p className="mt-2 text-2xl font-semibold text-zinc-950">{item.value}</p>
             </a>
           ))}
+          {user?.role === "ADMIN" ? (
+            <a
+              className="min-h-28 rounded border border-zinc-200 bg-white p-5 shadow-sm transition hover:border-teal-700"
+              href="/admin"
+            >
+              <p className="text-sm text-zinc-500">Admin</p>
+              <p className="mt-2 text-2xl font-semibold text-zinc-950">Scrape</p>
+            </a>
+          ) : null}
         </div>
       </div>
     </section>

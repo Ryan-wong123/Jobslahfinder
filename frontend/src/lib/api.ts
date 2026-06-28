@@ -31,6 +31,22 @@ export type JobSource = {
   source_name: "JobStreet" | "MyCareersFuture" | string;
 };
 
+export type AdminJobSource = JobSource & {
+  base_url: string;
+  is_enabled: boolean;
+  created_at: string;
+};
+
+export type ScrapingRun = {
+  id: number;
+  source_id: number;
+  started_at: string;
+  completed_at: string | null;
+  status: "PENDING" | "RUNNING" | "SUCCESS" | "FAILED" | string;
+  jobs_retrieved: number;
+  error_message: string | null;
+};
+
 export type JobSummary = {
   id: number;
   title: string;

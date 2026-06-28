@@ -225,9 +225,9 @@ export function AccountPanel() {
           {user.role === "ADMIN" ? (
             <a
               className="rounded bg-zinc-950 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800"
-              href="/api/admin/health"
+              href="/admin"
             >
-              Admin health
+              Admin tools
             </a>
           ) : null}
         </div>

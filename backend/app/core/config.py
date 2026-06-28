@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     app_name: str = "Secure Job Platform API"
     app_env: str = Field(default="development", validation_alias="APP_ENV")
     debug: bool = Field(default=False, validation_alias="DEBUG")
-    api_host: str = Field(default="127.0.0.1", validation_alias="API_HOST")
+    api_host: str = Field(default="0.0.0.0", validation_alias="API_HOST")
     api_port: int = Field(default=8000, validation_alias="API_PORT")
 
     database_url: str = Field(validation_alias="DATABASE_URL")
@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     allowed_job_source_domains: str = Field(
         default="", validation_alias="ALLOWED_JOB_SOURCE_DOMAINS"
     )
+    scraping_request_timeout_seconds: int = Field(
+        default=15, validation_alias="SCRAPING_REQUEST_TIMEOUT_SECONDS"
+    )
+    scraping_max_retries: int = Field(default=2, validation_alias="SCRAPING_MAX_RETRIES")
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -43,6 +47,10 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_secure_production_settings(self) -> "Settings":
+        if self.scraping_request_timeout_seconds < 1 or self.scraping_request_timeout_seconds > 120:
+            raise ValueError("SCRAPING_REQUEST_TIMEOUT_SECONDS must be between 1 and 120.")
+        if self.scraping_max_retries < 0 or self.scraping_max_retries > 5:
+            raise ValueError("SCRAPING_MAX_RETRIES must be between 0 and 5.")
         if self.app_env.lower() == "production":
             if self.debug:
                 raise ValueError("DEBUG must be false in production.")

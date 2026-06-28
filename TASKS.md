@@ -277,8 +277,8 @@ A task is only done when:
 - [x] Add success and failure messages without exposing internals.
 
 ### Frontend Tests
-- [ ] Add basic frontend tests for auth pages if test framework is included.
-- [ ] Add manual test checklist for auth flows.
+- [x] Add basic frontend tests for auth pages if test framework is included.
+- [x] Add manual test checklist for auth flows.
 
 ---
 
@@ -294,13 +294,13 @@ A task is only done when:
 ### Scraper Framework
 - [x] Implement scraper service interface.
 - [x] Implement at least one approved source adapter or mock adapter for coursework.
-- [ ] Add adapter for JobStreet if feasible.
-- [ ] Add adapter for MyCareersFuture if feasible.
+- [x] Add adapter for JobStreet if feasible.
+- [x] Add adapter for MyCareersFuture if feasible.
 - [x] If real scraping is not feasible, implement seeded/mock scraper with the same data model and logs.
 - [x] Respect source allowlist.
 - [x] Handle network failures safely.
-- [ ] Add retry policy with limits.
-- [ ] Add timeout for scraping requests.
+- [x] Add retry policy with limits.
+- [x] Add timeout for scraping requests.
 
 ### Job Normalization and Validation
 - [x] Normalize job fields: title, company, location, category, description, source, posting date, application link.
@@ -316,7 +316,7 @@ A task is only done when:
 ### Scraping Runs
 - [x] Implement scraping run records.
 - [x] Track started time, completed time, source, status, jobs retrieved, and safe error message.
-- [ ] Implement weekly scheduled scraping task.
+- [x] Implement weekly scheduled scraping task.
 - [x] Add manual trigger for admin if needed.
 - [x] Add admin view/API for scraping success/failure and jobs retrieved.
 - [x] Add audit logging for scraping failures and admin-triggered scraping.

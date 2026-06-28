@@ -1,4 +1,5 @@
 from celery import Celery
+from celery.schedules import crontab
 
 from app.core.config import get_settings
 
@@ -17,4 +18,12 @@ celery_app.conf.update(
     result_serializer="json",
     timezone="UTC",
     enable_utc=True,
+    task_time_limit=300,
+    task_soft_time_limit=240,
+    beat_schedule={
+        "weekly-approved-source-scraping": {
+            "task": "app.workers.tasks.run_weekly_scraping",
+            "schedule": crontab(minute=0, hour=18, day_of_week="sun"),
+        },
+    },
 )

@@ -12,6 +12,8 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 pytest-cache-files-*/
+.tmp/
+.test-deps/
 .coverage
 htmlcov/
 .mypy_cache/

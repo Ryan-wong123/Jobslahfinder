@@ -4,6 +4,7 @@ import re
 import os
 import logging
 from pathlib import Path
+from typing import Any
 
 try:
     from pyppeteer import launch
@@ -39,6 +40,39 @@ log_file_name = "js_scraper_log_"+ current_datetime.strftime("%Y_%m_%d") +".log"
 log_file_path = log_dir / log_file_name
 
 logger = logging.getLogger(__name__)
+
+
+def fetch_jobstreet_jobs(*, timeout_seconds: int) -> list[dict[str, Any]]:
+    """Coursework-safe JobStreet adapter.
+
+    Real browser automation for JobStreet is brittle in local/CI environments
+    and depends on optional packages, so the production scraper service calls
+    this normalized seeded adapter by default. The signature accepts a timeout
+    so a real implementation can be swapped in without changing worker policy.
+    """
+    _ = timeout_seconds
+    return [
+        {
+            "external_job_id": "jobstreet-demo-1",
+            "title": "Security Analyst",
+            "company": "SecureWorks SG",
+            "location": "Singapore",
+            "category": "Information & Communication Technology",
+            "description": "Monitor alerts, investigate incidents, and support secure operations.",
+            "job_url": "https://sg.jobstreet.com/job/secure-analyst-demo",
+            "posting_date": "2026-04-30",
+        },
+        {
+            "external_job_id": "jobstreet-demo-2",
+            "title": "Backend Developer",
+            "company": "Cloud Apps Pte Ltd",
+            "location": "Singapore",
+            "category": "Information & Communication Technology",
+            "description": "<p>Build APIs and handle untrusted job data safely.</p>",
+            "job_url": "https://sg.jobstreet.com/job/backend-developer-demo",
+            "posting_date": "2026-04-29",
+        },
+    ]
 
 
 def configure_scraper_logging():

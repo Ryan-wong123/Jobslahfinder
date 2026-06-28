@@ -1,4 +1,6 @@
 from collections.abc import Generator
+from types import SimpleNamespace
+import time
 
 import pytest
 from fastapi.testclient import TestClient
@@ -25,6 +27,9 @@ from app.services.jobs import (
     validate_source_base_url,
 )
 from app.services.scraping import GENERIC_SCRAPING_ERROR, run_scraper_for_source
+from app.services.scraping import SCRAPER_ADAPTERS
+from app.workers import tasks as worker_tasks
+from app.workers.celery_app import celery_app
 
 
 USER_PASSWORD = "StrongPass123"
@@ -235,6 +240,121 @@ def test_scraping_failure_handling_records_safe_run_and_audit(db_session: Sessio
     assert audit is not None
     assert audit.outcome == "FAILURE"
     assert audit.details_json == {"source_id": source.id, "reason": "scraper_error"}
+
+
+def test_approved_source_adapters_are_registered_and_store_jobs(db_session: Session) -> None:
+    sources = seed_approved_job_sources(db_session, get_settings())
+    assert {"JobStreet", "MyCareersFuture"}.issubset(SCRAPER_ADAPTERS.keys())
+
+    mcf_source = next(source for source in sources if source.source_name == "MyCareersFuture")
+    run = run_scraper_for_source(db_session, source=mcf_source)
+
+    assert run.status == ScrapingRunStatus.SUCCESS.value
+    assert run.jobs_retrieved == 1
+    posting = db_session.scalar(
+        select(JobPosting).where(JobPosting.source_id == mcf_source.id)
+    )
+    assert posting is not None
+    assert posting.job_url.startswith("https://www.mycareersfuture.gov.sg/")
+
+
+def test_scraper_retry_policy_retries_up_to_success(db_session: Session) -> None:
+    source = jobstreet_source(db_session)
+    attempts = 0
+
+    def flaky_fetcher(_source: JobSource) -> list[dict[str, str]]:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("temporary upstream failure")
+        return [
+            {
+                "external_job_id": "retry-job-1",
+                "title": "Security Engineer",
+                "company": "Example Company",
+                "job_url": "https://sg.jobstreet.com/job/retry-job-1",
+            }
+        ]
+
+    run = run_scraper_for_source(
+        db_session,
+        source=source,
+        fetcher=flaky_fetcher,
+        max_retries=1,
+        timeout_seconds=1,
+    )
+
+    assert run.status == ScrapingRunStatus.SUCCESS.value
+    assert run.jobs_retrieved == 1
+    assert attempts == 2
+    retry_audit = db_session.scalar(
+        select(AuditLog).where(AuditLog.event_type == "scraping_run.retry_policy")
+    )
+    assert retry_audit is not None
+    assert retry_audit.details_json["attempts"] == 2
+    assert retry_audit.details_json["max_retries"] == 1
+
+
+def test_scraper_timeout_records_safe_failure(db_session: Session) -> None:
+    source = jobstreet_source(db_session)
+
+    def slow_fetcher(_source: JobSource) -> list[dict[str, str]]:
+        time.sleep(0.2)
+        return []
+
+    run = run_scraper_for_source(
+        db_session,
+        source=source,
+        fetcher=slow_fetcher,
+        max_retries=0,
+        timeout_seconds=0.01,
+    )
+
+    assert run.status == ScrapingRunStatus.FAILED.value
+    assert run.error_message == GENERIC_SCRAPING_ERROR
+    audit = db_session.scalar(select(AuditLog).where(AuditLog.event_type == "scraping_run.failed"))
+    assert audit is not None
+    assert audit.details_json == {"source_id": source.id, "reason": "scraper_error"}
+
+
+def test_weekly_scraping_schedule_is_registered() -> None:
+    schedule = celery_app.conf.beat_schedule["weekly-approved-source-scraping"]
+    assert schedule["task"] == "app.workers.tasks.run_weekly_scraping"
+
+
+def test_weekly_scraping_task_runs_enabled_sources_only(
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sources = seed_approved_job_sources(db_session, get_settings())
+    disabled_source = next(source for source in sources if source.source_name == "JobStreet")
+    disabled_source.is_enabled = False
+    db_session.commit()
+    called_source_ids: list[int] = []
+
+    class SessionContext:
+        def __enter__(self) -> Session:
+            return db_session
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+    def fake_session_local() -> SessionContext:
+        return SessionContext()
+
+    def fake_run_scraper(_db: Session, *, source: JobSource) -> SimpleNamespace:
+        called_source_ids.append(source.id)
+        return SimpleNamespace(id=99, status=ScrapingRunStatus.SUCCESS.value)
+
+    monkeypatch.setattr(worker_tasks, "SessionLocal", fake_session_local)
+    monkeypatch.setattr(worker_tasks, "run_scraper_for_source", fake_run_scraper)
+
+    result = worker_tasks.run_weekly_scraping.run()
+
+    enabled_source = next(source for source in sources if source.source_name == "MyCareersFuture")
+    assert called_source_ids == [enabled_source.id]
+    assert result["sources_checked"] == 1
+    assert result["results"][0]["status"] == ScrapingRunStatus.SUCCESS.value
 
 
 def test_admin_can_seed_sources_and_trigger_mock_scraping(
