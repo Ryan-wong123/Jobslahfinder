@@ -29,7 +29,9 @@ def recommendation_to_response(recommendation: Recommendation) -> Recommendation
         job=job_to_summary_response(recommendation.job),
         resume_id=recommendation.resume_id,
         match_score=float(recommendation.match_score),
+        rank=recommendation.rank,
         rationale=recommendation.rationale,
+        metadata=recommendation.metadata_json,
         generated_at=recommendation.generated_at,
     )
 
@@ -69,7 +71,7 @@ def list_recommendations_for_user(
     recommendations = list(
         db.scalars(
             base_stmt.options(selectinload(Recommendation.job).selectinload(JobPosting.source))
-            .order_by(Recommendation.generated_at.desc(), Recommendation.id.desc())
+            .order_by(Recommendation.rank.asc().nullslast(), Recommendation.generated_at.desc(), Recommendation.id.desc())
             .offset((page - 1) * page_size)
             .limit(page_size)
         ).all()

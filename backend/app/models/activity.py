@@ -1,7 +1,8 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, Numeric, String, Text, func
+from sqlalchemy import JSON, BigInteger, DateTime, ForeignKey, Integer, Numeric, String, Text, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -45,7 +46,9 @@ class Recommendation(Base):
         BigInteger, ForeignKey("resumes.id", ondelete="SET NULL"), index=True
     )
     match_score: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False)
+    rank: Mapped[int | None] = mapped_column(Integer, index=True)
     rationale: Mapped[str | None] = mapped_column(Text)
+    metadata_json: Mapped[dict | None] = mapped_column(JSONB().with_variant(JSON(), "sqlite"))
     generated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

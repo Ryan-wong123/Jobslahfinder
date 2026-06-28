@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.rate_limit import rate_limit_auth
 from app.models.account import User
 from app.schemas.activity import (
     ApplicationHistoryListResponse,
@@ -22,6 +23,10 @@ from app.services.activity import (
     update_cover_letter_for_user,
 )
 from app.services.jobs import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
+from app.services.recommendations import (
+    RecommendationInputMissingError,
+    refresh_recommendations_for_user,
+)
 
 
 router = APIRouter(tags=["activity"])
@@ -43,6 +48,25 @@ def recommendations(
         user_id=current_user.id,
         page=page,
         page_size=page_size,
+    )
+
+
+@router.post("/recommendations/refresh", response_model=RecommendationListResponse)
+def refresh_recommendations(
+    request: Request,
+    current_user: User = Depends(require_authenticated_user),
+    db: Session = Depends(get_db),
+) -> RecommendationListResponse:
+    rate_limit_auth(request, "recommendation-refresh", limit=5, window_seconds=300)
+    try:
+        refresh_recommendations_for_user(db, request, current_user=current_user)
+    except RecommendationInputMissingError as exc:
+        raise HTTPException(status_code=400, detail="No completed resume extraction is available.") from exc
+    return list_recommendations_for_user(
+        db,
+        user_id=current_user.id,
+        page=1,
+        page_size=DEFAULT_PAGE_SIZE,
     )
 
 

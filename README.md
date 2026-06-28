@@ -124,18 +124,140 @@ docker compose down -v
 
 Only use `docker compose down -v` when you are okay deleting the local database data.
 
-## Rebuild After Code Changes
+## Commands By Change Scenario
 
-If dependencies or Dockerfiles changed:
+Use this section when deciding what to run after changing code. Run commands from the repository root unless a section says otherwise:
 
 ```powershell
-docker compose up --build
+cd C:\Users\ryan\Downloads\SSD-project
 ```
 
-If only backend/frontend source changed, this also works:
+### First Setup Or Fresh Database
+
+Use this after cloning the project, after `docker compose down -v`, or whenever the database volume has been deleted.
 
 ```powershell
 docker compose up -d --build
+docker compose run --rm backend alembic upgrade head
+docker compose ps
+```
+
+Create the first admin after migrations:
+
+```powershell
+docker compose run --rm backend python -m app.cli create-initial-admin --email admin@example.com
+```
+
+### Backend Python Code Only
+
+Use this for changes under `backend/app/` that do not add dependencies or migrations.
+
+```powershell
+docker compose build backend worker beat
+docker compose up -d backend worker beat nginx
+docker compose logs --tail=80 backend
+```
+
+Run backend tests:
+
+```powershell
+$env:PYTHONPATH='C:\Users\ryan\Downloads\SSD-project\backend\.test-deps;C:\Users\ryan\Downloads\SSD-project\backend'
+& 'C:\Users\ryan\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' -m pytest
+```
+
+### Backend API Or Model Change With Migration
+
+Use this when SQLAlchemy models or Alembic migrations changed.
+
+```powershell
+docker compose build backend worker beat
+docker compose run --rm backend alembic upgrade head
+docker compose up -d backend worker beat nginx
+docker compose run --rm backend alembic current
+```
+
+### Worker Or Scheduled Task Change
+
+Use this for resume extraction, scraping, Celery task, or beat schedule changes.
+
+```powershell
+docker compose build worker beat
+docker compose up -d worker beat nginx
+docker compose logs --tail=120 worker
+docker compose logs --tail=120 beat
+```
+
+### Frontend Code Only
+
+Use this for changes under `frontend/src/`.
+
+```powershell
+cd frontend
+npm run lint
+npm run build
+cd ..
+docker compose build frontend nginx
+docker compose up -d frontend nginx
+```
+
+### Frontend Dependency Or Dockerfile Change
+
+Use this when `frontend/package.json`, `package-lock.json`, or `frontend/Dockerfile` changed.
+
+```powershell
+docker compose build frontend nginx
+docker compose up -d frontend nginx
+```
+
+### Backend Dependency Or Dockerfile Change
+
+Use this when `backend/pyproject.toml` or `backend/Dockerfile` changed.
+
+```powershell
+docker compose build backend worker beat
+docker compose up -d backend worker beat nginx
+```
+
+### Nginx Or Docker Compose Change
+
+Use this when `docker-compose.yml` or files under `infra/nginx/` changed.
+
+```powershell
+docker compose up -d --build nginx frontend backend worker beat
+docker compose ps
+```
+
+### Full Rebuild Without Deleting Data
+
+Use this when several services changed but you want to keep local PostgreSQL data and uploaded files.
+
+```powershell
+docker compose up -d --build
+docker compose ps
+```
+
+### Full Reset And Rebuild
+
+This deletes local PostgreSQL, Redis, and uploaded resume volumes. Use only when you are okay losing local data.
+
+```powershell
+docker compose down -v
+docker compose up -d --build
+docker compose run --rm backend alembic upgrade head
+```
+
+### Verify Running App
+
+```powershell
+docker compose ps
+docker compose logs --tail=80 backend
+docker compose run --rm backend alembic current
+```
+
+Open:
+
+```text
+http://localhost:8080
 ```
 
 ## Backend Development

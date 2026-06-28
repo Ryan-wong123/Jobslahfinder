@@ -86,6 +86,24 @@ export type SavedJobListResponse = {
   total: number;
 };
 
+export type Recommendation = {
+  id: number;
+  job: JobSummary;
+  resume_id: number | null;
+  match_score: number;
+  rank: number | null;
+  rationale: string | null;
+  metadata: Record<string, unknown> | null;
+  generated_at: string;
+};
+
+export type RecommendationListResponse = {
+  items: Recommendation[];
+  page: number;
+  page_size: number;
+  total: number;
+};
+
 export type Resume = {
   id: number;
   original_filename: string;

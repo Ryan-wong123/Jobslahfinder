@@ -14,7 +14,9 @@ class RecommendationResponse(BaseModel):
     job: JobSummaryResponse
     resume_id: int | None
     match_score: float
+    rank: int | None
     rationale: str | None
+    metadata: dict | None
     generated_at: datetime
 
     model_config = ConfigDict(extra="forbid")

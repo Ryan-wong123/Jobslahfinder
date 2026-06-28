@@ -443,32 +443,32 @@ A task is only done when:
 ## Phase 8: Recommendations
 
 ### Recommendation Engine
-- [ ] Implement recommendation scoring service.
-- [ ] Use extracted skills, experience, education, and job fields.
-- [ ] Add simple baseline matching first, then improve if time permits.
-- [ ] Store match score.
-- [ ] Store recommendation rationale.
-- [ ] Ensure recommendation belongs to the requesting user.
-- [ ] Avoid leaking other users' profile data.
+- [x] Implement recommendation scoring service.
+- [x] Use extracted skills, experience, education, and job fields.
+- [x] Add simple baseline matching first, then improve if time permits.
+- [x] Store match score.
+- [x] Store recommendation rationale.
+- [x] Ensure recommendation belongs to the requesting user.
+- [x] Avoid leaking other users' profile data.
 
 ### Recommendation API
-- [ ] Implement recommendation refresh endpoint.
-- [ ] Implement list recommendations endpoint.
-- [ ] Rate limit recommendation refresh.
+- [x] Implement recommendation refresh endpoint.
+- [x] Implement list recommendations endpoint.
+- [x] Rate limit recommendation refresh.
 - [ ] Enqueue long-running recommendation generation if needed.
-- [ ] Add audit logging for recommendation generation.
+- [x] Add audit logging for recommendation generation.
 
 ### Frontend
-- [ ] Build frontend recommendations page.
-- [ ] Add refresh recommendation action.
-- [ ] Show match score and rationale safely.
-- [ ] Add empty state if no resume/profile exists.
+- [x] Build frontend recommendations page.
+- [x] Add refresh recommendation action.
+- [x] Show match score and rationale safely.
+- [x] Add empty state if no resume/profile exists.
 
 ### Tests
-- [ ] Add tests for recommendation generation.
-- [ ] Add tests for recommendation ownership.
+- [x] Add tests for recommendation generation.
+- [x] Add tests for recommendation ownership.
 - [ ] Add tests for refresh after profile update.
-- [ ] Add tests for rate-limited refresh if feasible.
+- [x] Add tests for rate-limited refresh if feasible.
 
 ---
 
@@ -654,7 +654,7 @@ A task is only done when:
 - [x] Add backend unit tests for file validation.
 - [x] Add backend unit tests for job normalization.
 - [x] Add backend unit tests for duplicate detection.
-- [ ] Add backend unit tests for recommendation scoring.
+- [x] Add backend unit tests for recommendation scoring.
 - [ ] Add backend unit tests for AI prompt builder.
 - [~] Add backend unit tests for audit logging helper.
 
@@ -664,7 +664,7 @@ A task is only done when:
 - [x] Add integration tests for password reset.
 - [~] Add integration tests for resume upload and extraction task.
 - [x] Add integration tests for job search and saved jobs.
-- [ ] Add integration tests for recommendation generation.
+- [x] Add integration tests for recommendation generation.
 - [ ] Add integration tests for cover letter generation flow.
 - [ ] Add integration tests for application history.
 - [~] Add integration tests for admin controls.
