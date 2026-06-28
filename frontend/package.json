@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint . --max-warnings=0",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:auth-pages": "node scripts/auth-pages.test.mjs"
   },
   "dependencies": {
     "next": "^16.2.4",
