@@ -1,4 +1,4 @@
-import random
+import secrets
 from concurrent.futures import ThreadPoolExecutor
 import time
 import threading
@@ -36,6 +36,7 @@ except ImportError:  # pragma: no cover - optional scraper dependencies
     ChromeDriverManager = None
 
 scrapeCSV = "mcf_Scraped.csv"
+_jitter_random = secrets.SystemRandom()
 
 
 def fetch_mycareersfuture_jobs(*, timeout_seconds: int) -> list[dict[str, Any]]:
@@ -95,7 +96,7 @@ def exponential_backoff(retries, base_delay=2, max_delay=120):
     #Increases delay time through exponential grrowth based on number of current retries
     delay = min(base_delay * (2 ** retries), max_delay)
     # Random value chosen forr jitter that is between 0 and Half of the delay count
-    jitter = random.uniform(0, delay / 2) 
+    jitter = _jitter_random.uniform(0, delay / 2)
     return delay + jitter
 
 # Function to scrape job information from a specific element on the page
@@ -256,7 +257,7 @@ def scrape_page(page):
                             # Special handling for StaleElementReferenceException, if needed
                             pass
                         else:
-                            time.sleep(random.uniform(5, 10))
+                            time.sleep(_jitter_random.uniform(5, 10))
 
                         delay = exponential_backoff(retries)
                         print(f"[{threading.current_thread().name}] Retries: {retries}. Delay: {delay}")
@@ -267,7 +268,7 @@ def scrape_page(page):
             print(f"[{threading.current_thread().name}] Job card {counter} not found. Exception: {e}")
             driver.back()
 
-        time.sleep(random.uniform(2, 5))
+        time.sleep(_jitter_random.uniform(2, 5))
 
     driver.quit()
     return all_jobs
