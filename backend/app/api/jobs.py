@@ -6,8 +6,15 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.models.account import User
 from app.schemas.auth import MessageResponse
+from app.schemas.activity import CoverLetterResponse
 from app.schemas.jobs import JobDetailResponse, JobListResponse, SavedJobListResponse, SavedJobResponse
 from app.security.auth import require_authenticated_user
+from app.core.rate_limit import rate_limit_auth
+from app.services.activity import (
+    CoverLetterGenerationInputMissingError,
+    CoverLetterGenerationJobUnavailableError,
+    create_cover_letter_for_job,
+)
 from app.services.jobs import (
     APPROVED_JOB_SOURCES,
     DEFAULT_PAGE_SIZE,
@@ -71,6 +78,22 @@ def job_detail(job_id: JobId, db: Session = Depends(get_db)) -> JobDetailRespons
     try:
         return get_visible_job_detail(db, job_id=job_id)
     except JobNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resource not found.") from exc
+
+
+@router.post("/jobs/{job_id}/cover-letter", response_model=CoverLetterResponse, status_code=status.HTTP_201_CREATED)
+def generate_cover_letter(
+    job_id: JobId,
+    request: Request,
+    current_user: User = Depends(require_authenticated_user),
+    db: Session = Depends(get_db),
+) -> CoverLetterResponse:
+    rate_limit_auth(request, "cover-letter-generate", limit=5, window_seconds=300)
+    try:
+        return create_cover_letter_for_job(db, request, current_user=current_user, job_id=job_id)
+    except CoverLetterGenerationInputMissingError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No completed resume extraction is available.") from exc
+    except CoverLetterGenerationJobUnavailableError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resource not found.") from exc
 
 

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { apiFetch, formatDate, formatDateTime, type RecommendationListResponse } from "@/lib/api";
+import { apiFetch, formatDate, formatDateTime, type CoverLetter, type RecommendationListResponse } from "@/lib/api";
 
 const pageSize = 10;
 const missingExtractionMessage = "No completed resume extraction is available.";
@@ -14,6 +14,7 @@ export function RecommendationsPanel() {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [generatingJobId, setGeneratingJobId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -59,6 +60,19 @@ export function RecommendationsPanel() {
     } finally {
       setRefreshing(false);
       setLoading(false);
+    }
+  }
+
+  async function onGenerate(jobId: number) {
+    setGeneratingJobId(jobId);
+    setError(null);
+    try {
+      const draft = await apiFetch<CoverLetter>(`/jobs/${jobId}/cover-letter`, { method: "POST" });
+      router.push(`/cover-letters/${draft.id}`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to generate cover letter draft.");
+    } finally {
+      setGeneratingJobId(null);
     }
   }
 
@@ -116,9 +130,19 @@ export function RecommendationsPanel() {
                 </Link>
                 <p className="mt-1 text-sm text-zinc-700">{item.job.company}</p>
               </div>
-              <Link className="rounded border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900" href={`/jobs/${item.job.id}`}>
-                View job
-              </Link>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  className="rounded bg-teal-700 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-zinc-400"
+                  disabled={generatingJobId === item.job.id}
+                  onClick={() => onGenerate(item.job.id)}
+                  type="button"
+                >
+                  {generatingJobId === item.job.id ? "Generating..." : "Draft letter"}
+                </button>
+                <Link className="rounded border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900" href={`/jobs/${item.job.id}`}>
+                  View job
+                </Link>
+              </div>
             </div>
 
             <p className="mt-4 text-sm leading-6 text-zinc-700">{item.rationale ?? "No rationale available."}</p>

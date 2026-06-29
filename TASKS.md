@@ -475,37 +475,37 @@ A task is only done when:
 ## Phase 9: Cover Letter Drafts
 
 ### AI Prompt Safety
-- [ ] Implement AI prompt builder with separated trusted instructions and untrusted content.
-- [ ] Add delimiters around resume/profile/job content.
-- [ ] Minimize personal data sent to AI service.
-- [ ] Add prompt length limits.
-- [ ] Treat AI output as untrusted until displayed safely.
-- [ ] Do not log full prompts containing personal data.
+- [x] Implement deterministic Phase 9 draft generator instead of external AI prompt builder.
+- [x] Use only bounded structured resume/profile fields and bounded job fields.
+- [x] Minimize personal data sent to generation logic; no full raw resume contents are used.
+- [x] Add generation text/input length limits.
+- [x] Treat generated output as untrusted draft text and display/edit as plain text.
+- [x] Do not log full prompts, resume text, job descriptions, or generated cover letters.
 
 ### Cover Letter API
-- [ ] Implement cover letter generation endpoint.
-- [ ] Rate limit cover letter generation.
-- [ ] Store generated draft.
-- [ ] Allow user to view own drafts.
-- [ ] Allow user to edit cover letter draft.
-- [ ] Save edited version or edited text.
-- [ ] Never auto-submit cover letters to external platforms.
-- [ ] Add application history record when draft is generated or edited.
-- [ ] Add audit logging for generation/editing.
+- [x] Implement cover letter generation endpoint.
+- [x] Rate limit cover letter generation.
+- [x] Store generated draft.
+- [x] Allow user to view own drafts.
+- [x] Allow user to edit cover letter draft.
+- [x] Save edited version or edited text.
+- [x] Never auto-submit cover letters to external platforms.
+- [x] Add application history record when draft is generated or edited.
+- [x] Add audit logging for generation/editing.
 
 ### Frontend
-- [ ] Build frontend cover letter draft page.
-- [ ] Add generate draft button on job detail/recommendation page.
-- [ ] Add cover letter editor.
-- [ ] Add clear label that AI output is a draft and must be reviewed.
-- [ ] Add save edited draft action.
+- [x] Build frontend cover letter draft page.
+- [x] Add generate draft button on job detail/recommendation page.
+- [x] Add cover letter editor.
+- [x] Add clear label that generated output is a draft and must be reviewed.
+- [x] Add save edited draft action.
 
 ### Tests
-- [ ] Add tests for cover letter generation ownership.
-- [ ] Add tests for cover letter editing ownership.
-- [ ] Add tests for another user being blocked from reading a draft.
-- [ ] Add tests for application history creation.
-- [ ] Add tests for rate limiting if feasible.
+- [x] Add tests for cover letter generation ownership.
+- [x] Add tests for cover letter editing ownership.
+- [x] Add tests for another user being blocked from reading a draft.
+- [x] Add tests for application history creation.
+- [x] Add tests for rate limiting if feasible.
 
 ---
 

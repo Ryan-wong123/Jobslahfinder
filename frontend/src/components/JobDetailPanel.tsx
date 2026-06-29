@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { apiFetch, formatDate, type JobDetail, type SavedJob } from "@/lib/api";
+import { apiFetch, formatDate, type CoverLetter, type JobDetail, type SavedJob } from "@/lib/api";
 
 export function JobDetailPanel() {
   const params = useParams<{ jobId: string }>();
@@ -11,6 +11,7 @@ export function JobDetailPanel() {
   const [job, setJob] = useState<JobDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const [warningVisible, setWarningVisible] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -55,6 +56,25 @@ export function JobDetailPanel() {
       setError(nextMessage);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function onGenerateCoverLetter() {
+    setGenerating(true);
+    setMessage(null);
+    setError(null);
+    try {
+      const draft = await apiFetch<CoverLetter>(`/jobs/${params.jobId}/cover-letter`, { method: "POST" });
+      router.push(`/cover-letters/${draft.id}`);
+    } catch (caught) {
+      const nextMessage = caught instanceof Error ? caught.message : "Unable to generate draft.";
+      if (nextMessage === "Authentication required.") {
+        router.push("/login");
+        return;
+      }
+      setError(nextMessage);
+    } finally {
+      setGenerating(false);
     }
   }
 
@@ -129,6 +149,14 @@ export function JobDetailPanel() {
             type="button"
           >
             {saving ? "Saving..." : "Save job"}
+          </button>
+          <button
+            className="w-full rounded border border-teal-700 bg-teal-700 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:border-zinc-300 disabled:bg-zinc-400"
+            disabled={generating}
+            onClick={onGenerateCoverLetter}
+            type="button"
+          >
+            {generating ? "Generating..." : "Generate cover letter draft"}
           </button>
           <button
             className="w-full rounded border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-900"

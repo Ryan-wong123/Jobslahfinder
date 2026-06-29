@@ -104,6 +104,24 @@ export type RecommendationListResponse = {
   total: number;
 };
 
+export type CoverLetter = {
+  id: number;
+  job: JobSummary;
+  resume_id: number | null;
+  generated_text: string;
+  edited_text: string | null;
+  version_no: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CoverLetterListResponse = {
+  items: CoverLetter[];
+  page: number;
+  page_size: number;
+  total: number;
+};
+
 export type Resume = {
   id: number;
   original_filename: string;
