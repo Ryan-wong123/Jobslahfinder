@@ -9,10 +9,10 @@ import json
 from pathlib import Path
 import re
 import time
+import xml.etree.ElementTree as ET
 import uuid
 from zipfile import BadZipFile, ZipFile
 
-from defusedxml.ElementTree import fromstring as safe_xml_fromstring
 from fastapi import Request, UploadFile
 from pydantic import ValidationError
 from sqlalchemy import desc, select
@@ -546,7 +546,7 @@ def extract_docx_text(content: bytes, *, max_chars: int) -> str:
             document_xml = document.read(DOCX_DOCUMENT_XML_MAX_BYTES + 1)
     if len(document_xml) > DOCX_DOCUMENT_XML_MAX_BYTES:
         raise ResumeValidationError("document_too_large")
-    root = safe_xml_fromstring(document_xml)
+    root = ET.fromstring(document_xml)
     parts: list[str] = []
     for element in root.iter():
         if element.tag.endswith("}t") and element.text:

@@ -3,11 +3,13 @@ from collections.abc import Generator
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.core.database import Base, get_db
+from app.core.config import get_settings
 from app.core.rate_limit import AUTH_RATE_LIMITER
 from app.main import app
 from app.models.account import User, UserProfile
@@ -17,6 +19,7 @@ from app.models.enums import ProcessingStatus, UploadStatus, UserRole
 from app.models.job import JobPosting, JobSource
 from app.models.resume import Resume, ResumeExtraction
 from app.security.passwords import hash_password
+from app.services import activity as activity_service
 
 
 USER_PASSWORD = "StrongPass123"
@@ -197,6 +200,83 @@ def test_successful_cover_letter_generation_stores_draft_history_and_metadata_on
     assert body["generated_text"] not in details
     assert audit.details_json["job_id"] == job.id
     assert audit.details_json["resume_id"] == extraction.resume_id
+
+
+def test_gemini_cover_letter_generation_uses_bounded_context_and_not_raw_resume_text(
+    client: TestClient, db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = create_source(db_session)
+    user = create_user(db_session, email="gemini-cover@example.com")
+    extraction = create_completed_extraction(db_session, user, extracted_text="raw-resume-secret")
+    job = create_job(db_session, source, description="Build secure products with Python.")
+    settings = get_settings()
+    monkeypatch.setattr(settings, "app_env", "development")
+    monkeypatch.setattr(settings, "cover_letter_generation_provider", "gemini")
+    monkeypatch.setattr(settings, "gemini_api_key", SecretStr("test-gemini-key"))
+
+    called: dict[str, object] = {}
+
+    def fake_gemini(*, extraction: ResumeExtraction, job: JobPosting, settings) -> str:
+        context = activity_service.cover_letter_prompt_context(extraction=extraction, job=job)
+        called["used"] = True
+        called["model"] = settings.gemini_cover_letter_model
+        assert "raw-resume-secret" not in context
+        assert "Python" in context
+        assert "<untrusted_profile_data>" in context
+        assert "<untrusted_job_data>" in context
+        return "Gemini generated plain text draft for review."
+
+    monkeypatch.setattr(activity_service, "generate_cover_letter_with_gemini", fake_gemini)
+    login(client, email=user.email)
+
+    response = client.post(f"/jobs/{job.id}/cover-letter")
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["generated_text"] == "Gemini generated plain text draft for review."
+    assert called == {"used": True, "model": settings.gemini_cover_letter_model}
+    audit = db_session.scalar(
+        select(AuditLog)
+        .where(AuditLog.event_type == "cover_letter.generate", AuditLog.user_id == user.id)
+        .order_by(AuditLog.id.desc())
+    )
+    assert audit is not None
+    assert audit.details_json["generator_version"] == "gemini-cover-letter-v1"
+    assert "Gemini generated plain text draft" not in str(audit.details_json)
+
+
+def test_gemini_failure_falls_back_without_logging_sensitive_content(
+    client: TestClient, db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = create_source(db_session)
+    user = create_user(db_session, email="gemini-fallback@example.com")
+    create_completed_extraction(db_session, user, extracted_text="private-resume-content")
+    job = create_job(db_session, source, description="sensitive job detail")
+    settings = get_settings()
+    monkeypatch.setattr(settings, "app_env", "development")
+    monkeypatch.setattr(settings, "cover_letter_generation_provider", "gemini")
+    monkeypatch.setattr(settings, "gemini_api_key", SecretStr("test-gemini-key"))
+
+    def failing_gemini(*, extraction: ResumeExtraction, job: JobPosting, settings) -> str:
+        raise RuntimeError("503 unavailable")
+
+    monkeypatch.setattr(activity_service, "generate_cover_letter_with_gemini", failing_gemini)
+    login(client, email=user.email)
+
+    response = client.post(f"/jobs/{job.id}/cover-letter")
+
+    assert response.status_code == 201
+    audit = db_session.scalar(
+        select(AuditLog)
+        .where(AuditLog.event_type == "cover_letter.generate", AuditLog.user_id == user.id)
+        .order_by(AuditLog.id.desc())
+    )
+    assert audit is not None
+    details = str(audit.details_json)
+    assert audit.details_json["generator_version"] == "deterministic-cover-letter-v1"
+    assert audit.details_json["fallback_reason"] == "ai_provider_unavailable"
+    assert "private-resume-content" not in details
+    assert "sensitive job detail" not in details
 
 
 def test_generation_without_completed_extraction_fails_safely_and_audits(

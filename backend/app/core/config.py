@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     app_name: str = "Secure Job Platform API"
     app_env: str = Field(default="development", validation_alias="APP_ENV")
     debug: bool = Field(default=False, validation_alias="DEBUG")
-    api_host: str = Field(default="127.0.0.1", validation_alias="API_HOST")
+    api_host: str = Field(default="0.0.0.0", validation_alias="API_HOST")
     api_port: int = Field(default=8000, validation_alias="API_PORT")
 
     database_url: str = Field(validation_alias="DATABASE_URL")
@@ -40,6 +40,15 @@ class Settings(BaseSettings):
     )
     gemini_resume_max_output_tokens: int = Field(
         default=2048, validation_alias="GEMINI_RESUME_MAX_OUTPUT_TOKENS"
+    )
+    cover_letter_generation_provider: str = Field(
+        default="gemini", validation_alias="COVER_LETTER_GENERATION_PROVIDER"
+    )
+    gemini_cover_letter_model: str = Field(
+        default="gemini-2.5-flash-lite", validation_alias="GEMINI_COVER_LETTER_MODEL"
+    )
+    gemini_cover_letter_max_output_tokens: int = Field(
+        default=2048, validation_alias="GEMINI_COVER_LETTER_MAX_OUTPUT_TOKENS"
     )
     allowed_job_source_domains: str = Field(
         default="", validation_alias="ALLOWED_JOB_SOURCE_DOMAINS"
@@ -73,10 +82,16 @@ class Settings(BaseSettings):
             raise ValueError("RESUME_PARSER_MAX_TEXT_CHARS must be between 1000 and 100000.")
         if self.resume_extraction_provider not in {"gemini", "local"}:
             raise ValueError("RESUME_EXTRACTION_PROVIDER must be either 'gemini' or 'local'.")
+        if self.cover_letter_generation_provider not in {"gemini", "local"}:
+            raise ValueError("COVER_LETTER_GENERATION_PROVIDER must be either 'gemini' or 'local'.")
         if not self.gemini_resume_model.strip():
             raise ValueError("GEMINI_RESUME_MODEL must not be empty.")
+        if not self.gemini_cover_letter_model.strip():
+            raise ValueError("GEMINI_COVER_LETTER_MODEL must not be empty.")
         if self.gemini_resume_max_output_tokens < 256 or self.gemini_resume_max_output_tokens > 8192:
             raise ValueError("GEMINI_RESUME_MAX_OUTPUT_TOKENS must be between 256 and 8192.")
+        if self.gemini_cover_letter_max_output_tokens < 256 or self.gemini_cover_letter_max_output_tokens > 8192:
+            raise ValueError("GEMINI_COVER_LETTER_MAX_OUTPUT_TOKENS must be between 256 and 8192.")
         if self.app_env.lower() == "production":
             if self.debug:
                 raise ValueError("DEBUG must be false in production.")
@@ -86,6 +101,8 @@ class Settings(BaseSettings):
                 raise ValueError("PASSWORD_RESET_SECRET must be at least 32 characters.")
             if self.resume_extraction_provider == "gemini" and self.gemini_api_key is None:
                 raise ValueError("GEMINI_API_KEY is required when Gemini resume extraction is enabled.")
+            if self.cover_letter_generation_provider == "gemini" and self.gemini_api_key is None:
+                raise ValueError("GEMINI_API_KEY is required when Gemini cover letter generation is enabled.")
         return self
 
     @property

@@ -67,6 +67,18 @@ GEMINI_API_KEY=replace-with-your-google-ai-api-key
 
 For offline development or tests, set `RESUME_EXTRACTION_PROVIDER=local` to use the built-in deterministic parser. The worker sends only bounded extracted resume text to Gemini and stores the validated structured fields, not the full prompt or raw resume text.
 
+## Cover Letter Generation
+
+Cover letter drafts use Gemini by default when `GEMINI_API_KEY` is configured:
+
+```text
+COVER_LETTER_GENERATION_PROVIDER=gemini
+GEMINI_COVER_LETTER_MODEL=gemini-2.5-flash-lite
+GEMINI_COVER_LETTER_MAX_OUTPUT_TOKENS=2048
+```
+
+The backend sends only bounded structured extraction fields and bounded job fields to Gemini. It does not send full raw resume text, log prompts, log generated drafts, or submit anything externally. If Gemini is unavailable, the backend safely falls back to the deterministic draft generator.
+
 ## Database Setup
 
 After the containers are running, apply database migrations:

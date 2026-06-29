@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.models.account import User
+from app.core.config import Settings, get_settings
 from app.schemas.auth import MessageResponse
 from app.schemas.activity import CoverLetterResponse
 from app.schemas.jobs import JobDetailResponse, JobListResponse, SavedJobListResponse, SavedJobResponse
@@ -87,10 +88,17 @@ def generate_cover_letter(
     request: Request,
     current_user: User = Depends(require_authenticated_user),
     db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
 ) -> CoverLetterResponse:
     rate_limit_auth(request, "cover-letter-generate", limit=5, window_seconds=300)
     try:
-        return create_cover_letter_for_job(db, request, current_user=current_user, job_id=job_id)
+        return create_cover_letter_for_job(
+            db,
+            request,
+            current_user=current_user,
+            job_id=job_id,
+            settings=settings,
+        )
     except CoverLetterGenerationInputMissingError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No completed resume extraction is available.") from exc
     except CoverLetterGenerationJobUnavailableError as exc:

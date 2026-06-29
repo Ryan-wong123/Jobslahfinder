@@ -475,9 +475,9 @@ A task is only done when:
 ## Phase 9: Cover Letter Drafts
 
 ### AI Prompt Safety
-- [x] Implement deterministic Phase 9 draft generator instead of external AI prompt builder.
-- [x] Use only bounded structured resume/profile fields and bounded job fields.
-- [x] Minimize personal data sent to generation logic; no full raw resume contents are used.
+- [x] Implement Gemini-backed prompt builder with deterministic fallback.
+- [x] Add delimiters around bounded resume/profile/job content.
+- [x] Minimize personal data sent to Gemini; no full raw resume contents are used.
 - [x] Add generation text/input length limits.
 - [x] Treat generated output as untrusted draft text and display/edit as plain text.
 - [x] Do not log full prompts, resume text, job descriptions, or generated cover letters.
