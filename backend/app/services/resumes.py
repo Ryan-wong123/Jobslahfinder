@@ -9,10 +9,10 @@ import json
 from pathlib import Path
 import re
 import time
-import xml.etree.ElementTree as ET
 import uuid
 from zipfile import BadZipFile, ZipFile
 
+import defusedxml.ElementTree as ET
 from fastapi import Request, UploadFile
 from pydantic import ValidationError
 from sqlalchemy import desc, select
