@@ -122,6 +122,29 @@ export type CoverLetterListResponse = {
   total: number;
 };
 
+export type ApplicationHistoryAction =
+  | "cover_letter_generated"
+  | "cover_letter_edited"
+  | "job_saved"
+  | "job_unsaved"
+  | "recommendations_refreshed"
+  | string;
+
+export type ApplicationHistoryItem = {
+  id: number;
+  job: JobSummary | null;
+  cover_letter_id: number | null;
+  action_type: ApplicationHistoryAction;
+  action_time: string;
+};
+
+export type ApplicationHistoryListResponse = {
+  items: ApplicationHistoryItem[];
+  page: number;
+  page_size: number;
+  total: number;
+};
+
 export type Resume = {
   id: number;
   original_filename: string;

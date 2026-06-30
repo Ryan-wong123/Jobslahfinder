@@ -512,25 +512,25 @@ A task is only done when:
 ## Phase 10: Application History
 
 ### Backend
-- [ ] Implement application history model usage.
-- [ ] Track cover letter generation.
-- [ ] Track cover letter edits if required.
-- [ ] Track saved/prepared job actions if required.
-- [ ] Implement `GET /application-history`.
-- [ ] Ensure users can only see own history.
-- [ ] Add pagination.
-- [ ] Add safe filters if needed.
+- [x] Implement application history model usage.
+- [x] Track cover letter generation.
+- [x] Track cover letter edits if required.
+- [x] Track saved/prepared job actions if required.
+- [x] Implement `GET /application-history`.
+- [x] Ensure users can only see own history.
+- [x] Add pagination.
+- [x] Add safe filters if needed.
 
 ### Frontend
-- [ ] Build frontend application history page.
-- [ ] Show job title, company, action type, and action time.
-- [ ] Link to related cover letter draft where authorized.
-- [ ] Add empty state.
+- [x] Build frontend application history page.
+- [x] Show job title, company, action type, and action time.
+- [x] Link to related cover letter draft where authorized.
+- [x] Add empty state.
 
 ### Tests
-- [ ] Add tests for application history access control.
-- [ ] Add tests for generated cover letter appearing in history.
-- [ ] Add tests for pagination.
+- [x] Add tests for application history access control.
+- [x] Add tests for generated cover letter appearing in history.
+- [x] Add tests for pagination.
 
 ---
 

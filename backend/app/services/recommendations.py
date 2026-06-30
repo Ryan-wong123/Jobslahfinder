@@ -12,6 +12,7 @@ from app.models.activity import Recommendation
 from app.models.enums import AuditOutcome, ProcessingStatus, UploadStatus
 from app.models.job import JobPosting
 from app.models.resume import Resume, ResumeExtraction
+from app.services.application_history import add_application_history
 from app.services.audit import create_audit_log
 
 
@@ -248,6 +249,11 @@ def refresh_recommendations_for_user(
         db.add(recommendation)
         recommendations.append(recommendation)
 
+    add_application_history(
+        db,
+        user_id=current_user.id,
+        action_type="recommendations_refreshed",
+    )
     create_audit_log(
         db,
         event_type="recommendation.refresh",

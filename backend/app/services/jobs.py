@@ -25,6 +25,7 @@ from app.schemas.jobs import (
     SavedJobListResponse,
     SavedJobResponse,
 )
+from app.services.application_history import add_application_history
 from app.services.audit import create_audit_log
 
 
@@ -496,6 +497,7 @@ def save_job_for_user(
         try:
             db.flush()
             audit_details = {"action": "saved"}
+            add_application_history(db, user_id=user_id, job_id=job.id, action_type="job_saved")
         except IntegrityError:
             db.rollback()
             saved_job = db.scalar(
@@ -535,6 +537,7 @@ def unsave_job_for_user(
         raise JobNotFoundError("Resource not found.")
 
     db.delete(saved_job)
+    add_application_history(db, user_id=user_id, job_id=job_id, action_type="job_unsaved")
     create_audit_log(
         db,
         event_type="saved_job.unsave",

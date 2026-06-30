@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 from sqlalchemy.orm import Session
@@ -22,6 +22,7 @@ from app.services.activity import (
     list_recommendations_for_user,
     update_cover_letter_for_user,
 )
+from app.services.application_history import APPLICATION_HISTORY_ACTION_TYPES
 from app.services.jobs import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 from app.services.recommendations import (
     RecommendationInputMissingError,
@@ -34,6 +35,14 @@ router = APIRouter(tags=["activity"])
 Page = Annotated[int, Query(ge=1, le=1000)]
 PageSize = Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)]
 CoverLetterId = Annotated[int, Path(gt=0)]
+ApplicationHistoryActionType = Literal[
+    "cover_letter_generated",
+    "cover_letter_edited",
+    "job_saved",
+    "job_unsaved",
+    "recommendations_refreshed",
+]
+JobIdFilter = Annotated[int | None, Query(gt=0)]
 
 
 @router.get("/recommendations", response_model=RecommendationListResponse)
@@ -127,12 +136,18 @@ def update_cover_letter(
 def application_history(
     page: Page = 1,
     page_size: PageSize = DEFAULT_PAGE_SIZE,
+    action_type: Annotated[ApplicationHistoryActionType | None, Query()] = None,
+    job_id: JobIdFilter = None,
     current_user: User = Depends(require_authenticated_user),
     db: Session = Depends(get_db),
 ) -> ApplicationHistoryListResponse:
+    if action_type is not None and action_type not in APPLICATION_HISTORY_ACTION_TYPES:
+        raise HTTPException(status_code=422, detail="Invalid request.")
     return list_application_history_for_user(
         db,
         user_id=current_user.id,
         page=page,
         page_size=page_size,
+        action_type=action_type,
+        job_id=job_id,
     )

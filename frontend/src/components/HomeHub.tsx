@@ -9,7 +9,8 @@ const workspaces = [
   { label: "Saved jobs", value: "Review", href: "/saved-jobs" },
   { label: "Resume", value: "Upload", href: "/resumes" },
   { label: "Recommendations", value: "Match", href: "/recommendations" },
-  { label: "Cover letters", value: "Draft", href: "/cover-letters" }
+  { label: "Cover letters", value: "Draft", href: "/cover-letters" },
+  { label: "History", value: "Track", href: "/application-history" }
 ];
 
 export function HomeHub() {

@@ -1,4 +1,3 @@
-from datetime import datetime, timezone
 import re
 
 from sqlalchemy import desc, func, select
@@ -21,6 +20,7 @@ from app.schemas.activity import (
 )
 from app.schemas.auth import validate_optional_text
 from app.security.auth import assert_owner_or_admin
+from app.services.application_history import APPLICATION_HISTORY_ACTION_TYPES, add_application_history
 from app.services.audit import create_audit_log
 from app.services.jobs import DEFAULT_PAGE_SIZE, JobNotFoundError, clean_text, get_saveable_job, job_to_summary_response
 
@@ -45,10 +45,6 @@ COVER_LETTER_GEMINI_VERSION = "gemini-cover-letter-v1"
 TRANSIENT_AI_ERROR_PATTERN = re.compile(
     r"(429|503|too many requests|resource_exhausted|unavailable|high demand)", re.IGNORECASE
 )
-
-
-def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
 
 
 def json_items(value: dict | None) -> list:
@@ -325,14 +321,12 @@ def create_cover_letter_for_job(
     )
     db.add(cover_letter)
     db.flush()
-    db.add(
-        ApplicationHistory(
-            user_id=current_user.id,
-            job_id=job.id,
-            cover_letter_id=cover_letter.id,
-            action_type="cover_letter_generated",
-            action_time=utc_now(),
-        )
+    add_application_history(
+        db,
+        user_id=current_user.id,
+        job_id=job.id,
+        cover_letter_id=cover_letter.id,
+        action_type="cover_letter_generated",
     )
     create_audit_log(
         db,
@@ -505,14 +499,12 @@ def update_cover_letter_for_user(
     )
     cover_letter.edited_text = payload.edited_text
     cover_letter.version_no += 1
-    db.add(
-        ApplicationHistory(
-            user_id=current_user.id,
-            job_id=cover_letter.job_id,
-            cover_letter_id=cover_letter.id,
-            action_type="cover_letter_edited",
-            action_time=utc_now(),
-        )
+    add_application_history(
+        db,
+        user_id=current_user.id,
+        job_id=cover_letter.job_id,
+        cover_letter_id=cover_letter.id,
+        action_type="cover_letter_edited",
     )
     create_audit_log(
         db,
@@ -541,8 +533,18 @@ def list_application_history_for_user(
     user_id: int,
     page: int = 1,
     page_size: int = DEFAULT_PAGE_SIZE,
+    action_type: str | None = None,
+    job_id: int | None = None,
 ) -> ApplicationHistoryListResponse:
-    base_stmt = select(ApplicationHistory).where(ApplicationHistory.user_id == user_id)
+    filters = [ApplicationHistory.user_id == user_id]
+    if action_type is not None:
+        if action_type not in APPLICATION_HISTORY_ACTION_TYPES:
+            raise ValueError("unsupported_application_history_action")
+        filters.append(ApplicationHistory.action_type == action_type)
+    if job_id is not None:
+        filters.append(ApplicationHistory.job_id == job_id)
+
+    base_stmt = select(ApplicationHistory).where(*filters)
     total = db.scalar(select(func.count()).select_from(base_stmt.subquery())) or 0
     history_items = list(
         db.scalars(
