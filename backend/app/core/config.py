@@ -1,8 +1,35 @@
 from functools import lru_cache
+import re
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+COOKIE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$")
+HOSTNAME_PATTERN = re.compile(
+    r"^(?=.{1,253}$)(?!-)(?:[A-Za-z0-9-]{1,63}\.)*[A-Za-z0-9-]{1,63}(?<!-)$"
+)
+
+
+def validate_url(value: str, *, field_name: str, allowed_schemes: set[str]) -> str:
+    cleaned = value.strip()
+    try:
+        parsed = urlsplit(cleaned)
+        _ = parsed.port
+    except ValueError as exc:
+        raise ValueError(f"{field_name} must be a valid URL.") from exc
+    if parsed.scheme not in allowed_schemes or not parsed.hostname:
+        raise ValueError(f"{field_name} must use one of: {', '.join(sorted(allowed_schemes))}.")
+    return cleaned
+
+
+def validate_hostname(value: str, *, field_name: str) -> str:
+    cleaned = value.strip().lower().rstrip(".")
+    if not cleaned or "/" in cleaned or ":" in cleaned or not HOSTNAME_PATTERN.fullmatch(cleaned):
+        raise ValueError(f"{field_name} must be a valid hostname.")
+    return cleaned
 
 
 class Settings(BaseSettings):
@@ -71,10 +98,45 @@ class Settings(BaseSettings):
     @field_validator("allowed_job_source_domains")
     @classmethod
     def normalize_allowed_domains(cls, value: str) -> str:
-        return ",".join(item.strip().lower() for item in value.split(",") if item.strip())
+        domains = [
+            validate_hostname(item, field_name="ALLOWED_JOB_SOURCE_DOMAINS")
+            for item in value.split(",")
+            if item.strip()
+        ]
+        return ",".join(dict.fromkeys(domains))
+
+    @field_validator("database_url")
+    @classmethod
+    def database_url_is_valid(cls, value: str) -> str:
+        return validate_url(
+            value,
+            field_name="DATABASE_URL",
+            allowed_schemes={"postgresql", "postgresql+psycopg"},
+        )
+
+    @field_validator("redis_url")
+    @classmethod
+    def redis_url_is_valid(cls, value: str) -> str:
+        return validate_url(value, field_name="REDIS_URL", allowed_schemes={"redis", "rediss"})
+
+    @field_validator("session_cookie_name")
+    @classmethod
+    def session_cookie_name_is_valid(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not COOKIE_NAME_PATTERN.fullmatch(cleaned):
+            raise ValueError("SESSION_COOKIE_NAME contains invalid characters.")
+        return cleaned
 
     @model_validator(mode="after")
     def validate_secure_production_settings(self) -> "Settings":
+        if self.api_port < 1 or self.api_port > 65535:
+            raise ValueError("API_PORT must be between 1 and 65535.")
+        if self.session_expire_minutes < 15 or self.session_expire_minutes > 24 * 60:
+            raise ValueError("SESSION_EXPIRE_MINUTES must be between 15 and 1440.")
+        if self.password_reset_expire_minutes < 5 or self.password_reset_expire_minutes > 24 * 60:
+            raise ValueError("PASSWORD_RESET_EXPIRE_MINUTES must be between 5 and 1440.")
+        if self.max_upload_bytes < 1 or self.max_upload_bytes > 25 * 1024 * 1024:
+            raise ValueError("MAX_UPLOAD_BYTES must be between 1 byte and 25 MiB.")
         if self.scraping_request_timeout_seconds < 1 or self.scraping_request_timeout_seconds > 120:
             raise ValueError("SCRAPING_REQUEST_TIMEOUT_SECONDS must be between 1 and 120.")
         if self.admin_session_max_age_minutes < 5 or self.admin_session_max_age_minutes > 24 * 60:
