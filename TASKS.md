@@ -538,49 +538,49 @@ A task is only done when:
 
 ### Admin Access
 - [x] Require admin role for all admin endpoints.
-- [ ] Add stronger admin authentication policy if feasible.
-- [~] Add audit logging for every admin action.
+- [x] Add stronger admin authentication policy if feasible.
+- [x] Add audit logging for every admin action.
 - [x] Add tests proving normal users cannot access admin routes.
 
 ### User Management
-- [ ] Implement admin user list.
-- [ ] Implement user detail view.
-- [ ] Implement user activation/deactivation if needed.
-- [ ] Prevent unsafe admin password reset to known value.
-- [ ] Log admin user management actions.
+- [x] Implement admin user list.
+- [x] Implement user detail view.
+- [x] Implement user activation/deactivation if needed.
+- [x] Prevent unsafe admin password reset to known value.
+- [x] Log admin user management actions.
 
 ### Job Moderation
-- [ ] Implement admin job review list.
-- [ ] Implement suspicious job review.
-- [ ] Implement admin job disable/enable.
-- [ ] Log job moderation actions.
+- [x] Implement admin job review list.
+- [x] Implement suspicious job review.
+- [x] Implement admin job disable/enable.
+- [x] Log job moderation actions.
 
 ### Scraping Monitoring
 - [x] Implement scraping run list.
-- [ ] Implement scraping run detail.
+- [x] Implement scraping run detail.
 - [x] Show successful runs, failed runs, and jobs retrieved.
 - [x] Show safe error messages only.
 
 ### Audit Logs and Health
-- [ ] Implement audit log viewer.
-- [ ] Add filtering by event type, user, date, and outcome if feasible.
+- [x] Implement audit log viewer.
+- [x] Add filtering by event type, user, date, and outcome if feasible.
 - [x] Implement service health/monitoring endpoint.
-- [ ] Include background worker status if feasible.
-- [ ] Include database/Redis connectivity status if feasible.
+- [x] Include background worker status if feasible.
+- [x] Include database/Redis connectivity status if feasible.
 
 ### Frontend
-- [ ] Build frontend admin dashboard.
-- [ ] Build admin users page.
-- [ ] Build admin jobs page.
-- [ ] Build admin scraping runs page.
-- [ ] Build admin audit logs page.
-- [ ] Build admin health page.
+- [x] Build frontend admin dashboard.
+- [x] Build admin users section on `/admin`.
+- [x] Build admin jobs section on `/admin`.
+- [x] Build admin scraping runs section on `/admin`.
+- [x] Build admin audit logs section on `/admin`.
+- [x] Build admin health section on `/admin`.
 
 ### Tests
-- [~] Add tests for admin-only endpoints.
-- [ ] Add tests for admin job disable/enable.
-- [ ] Add tests for admin audit log access.
-- [~] Add tests that admin actions create audit logs.
+- [x] Add tests for admin-only endpoints.
+- [x] Add tests for admin job disable/enable.
+- [x] Add tests for admin audit log access.
+- [x] Add tests that admin actions create audit logs.
 
 ---
 

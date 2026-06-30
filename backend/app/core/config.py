@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     app_name: str = "Secure Job Platform API"
     app_env: str = Field(default="development", validation_alias="APP_ENV")
     debug: bool = Field(default=False, validation_alias="DEBUG")
-    api_host: str = Field(default="127.0.0.1", validation_alias="API_HOST")
+    api_host: str = Field(default="0.0.0.0", validation_alias="API_HOST")
     api_port: int = Field(default=8000, validation_alias="API_PORT")
 
     database_url: str = Field(validation_alias="DATABASE_URL")
@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     password_reset_secret: SecretStr = Field(validation_alias="PASSWORD_RESET_SECRET")
     session_cookie_name: str = Field(default="job_platform_session", validation_alias="SESSION_COOKIE_NAME")
     session_expire_minutes: int = Field(default=60 * 8, validation_alias="SESSION_EXPIRE_MINUTES")
+    admin_session_max_age_minutes: int = Field(
+        default=120, validation_alias="ADMIN_SESSION_MAX_AGE_MINUTES"
+    )
     password_reset_expire_minutes: int = Field(
         default=30, validation_alias="PASSWORD_RESET_EXPIRE_MINUTES"
     )
@@ -74,6 +77,8 @@ class Settings(BaseSettings):
     def validate_secure_production_settings(self) -> "Settings":
         if self.scraping_request_timeout_seconds < 1 or self.scraping_request_timeout_seconds > 120:
             raise ValueError("SCRAPING_REQUEST_TIMEOUT_SECONDS must be between 1 and 120.")
+        if self.admin_session_max_age_minutes < 5 or self.admin_session_max_age_minutes > 24 * 60:
+            raise ValueError("ADMIN_SESSION_MAX_AGE_MINUTES must be between 5 and 1440.")
         if self.scraping_max_retries < 0 or self.scraping_max_retries > 5:
             raise ValueError("SCRAPING_MAX_RETRIES must be between 0 and 5.")
         if self.resume_parser_timeout_seconds < 1 or self.resume_parser_timeout_seconds > 60:

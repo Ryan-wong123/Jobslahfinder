@@ -31,6 +31,32 @@ export type JobSource = {
   source_name: "JobStreet" | "MyCareersFuture" | string;
 };
 
+export type AdminUserListResponse = {
+  items: User[];
+  page: number;
+  page_size: number;
+  total: number;
+};
+
+export type AdminUserDetail = User & {
+  updated_at: string;
+  resume_count: number;
+  saved_job_count: number;
+  recommendation_count: number;
+  cover_letter_count: number;
+  application_history_count: number;
+};
+
+export type AdminHealth = {
+  status: string;
+  service: string;
+  access: string;
+  timestamp: string | null;
+  database: { status: string } | null;
+  redis: { status: string } | null;
+  worker: { status: string } | null;
+};
+
 export type AdminJobSource = JobSource & {
   base_url: string;
   is_enabled: boolean;
@@ -45,6 +71,24 @@ export type ScrapingRun = {
   status: "PENDING" | "RUNNING" | "SUCCESS" | "FAILED" | string;
   jobs_retrieved: number;
   error_message: string | null;
+};
+
+export type AdminAuditLog = {
+  id: number;
+  user_id: number | null;
+  event_type: string;
+  target_type: string | null;
+  target_id: number | null;
+  outcome: "SUCCESS" | "FAILURE" | "DENIED" | string;
+  details_json: Record<string, unknown> | null;
+  created_at: string;
+};
+
+export type AdminAuditLogListResponse = {
+  items: AdminAuditLog[];
+  page: number;
+  page_size: number;
+  total: number;
 };
 
 export type JobSummary = {

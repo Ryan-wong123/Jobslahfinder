@@ -2,6 +2,82 @@
 
 This project is a secure job aggregation and application support platform. It uses a Next.js frontend, FastAPI backend, PostgreSQL database, Redis queue/cache, worker processes, and Nginx reverse proxy.
 
+## What The Website Can Do
+
+The website supports two main roles: job seekers and administrators. The backend enforces authentication, ownership checks, admin RBAC, validation, safe errors, and audit logging for protected workflows.
+
+### Job Seeker Features
+
+Authenticated users can:
+
+- Register, log in, log out, reset passwords, change passwords, and manage their own account.
+- View and update their own profile.
+- Delete their own account after re-authentication.
+- Browse job postings from approved Singapore job sources.
+- Search and filter jobs by keyword, company, location, category, and source.
+- View job details with sanitized descriptions and an external-link warning.
+- Save and unsave jobs for later review.
+- Upload PDF or DOCX resumes with file type, MIME, size, and path traversal validation.
+- View uploaded resume metadata and extraction status.
+- Review and edit structured extracted profile data such as skills, education, experience, and years of experience.
+- Generate ranked job recommendations from their own extracted profile and active job postings.
+- Generate editable cover letter drafts for selected jobs.
+- Edit saved cover letter drafts.
+- View application preparation history for saved jobs, recommendation refreshes, and cover letter activity.
+
+Normal users cannot:
+
+- Access another user's profile, resumes, saved jobs, recommendations, cover letters, or application history.
+- Access admin pages or admin APIs.
+- Submit generated cover letters automatically to external job platforms.
+- See password hashes, session tokens, reset tokens, raw resume storage paths, or internal errors.
+
+### Administrator Features
+
+Administrators can use `/admin` to:
+
+- View safe platform health status for the backend, database, Redis, and worker.
+- View users with safe fields only: ID, email, role, active status, created date, and last login.
+- Open a user detail page with safe activity counts only, not resume contents or cover letter text.
+- Activate or deactivate users, with safeguards against deactivating their own account or locking out the last active admin.
+- Review job summaries, including active/disabled and suspicious/reviewed status.
+- Enable or disable job postings.
+- Mark or clear suspicious job flags.
+- Prepare approved job sources.
+- Trigger scraping runs for approved sources.
+- View scraping run lists and scraping run detail pages with safe status/count/error fields.
+- View audit log metadata.
+- Filter audit logs by event type, outcome, user ID, and date range.
+
+Administrators cannot:
+
+- Impersonate users.
+- Reset user passwords to a known value.
+- View password hashes, session token hashes, reset token hashes, full resume contents, raw extracted resume text, full cover letter text, full AI prompts, API keys, secrets, or stack traces through admin APIs.
+- Bypass audit logging for admin modifications.
+
+### Main Pages
+
+- `/` - home hub
+- `/register` - create account
+- `/login` - sign in
+- `/forgot-password` and `/reset-password` - password reset flow
+- `/account` - account and profile management
+- `/jobs` - job search and browsing
+- `/jobs/[jobId]` - job detail and cover letter generation entry point
+- `/saved-jobs` - saved jobs
+- `/resumes` - resume upload and resume list
+- `/resumes/[resumeId]` - resume metadata and extraction status
+- `/resumes/[resumeId]/profile` - extracted profile review
+- `/resumes/[resumeId]/profile/edit` - extracted profile editing
+- `/recommendations` - ranked job recommendations
+- `/cover-letters` - cover letter drafts
+- `/cover-letters/[coverLetterId]` - cover letter editor
+- `/application-history` - application preparation history
+- `/admin` - admin dashboard
+- `/admin/users/[userId]` - safe admin user detail
+- `/admin/scraping-runs/[runId]` - safe scraping run detail
+
 ## Prerequisites
 
 Install Docker Desktop before running the project:
