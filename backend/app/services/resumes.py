@@ -37,9 +37,23 @@ ALLOWED_MIME_TYPES = {
     ".pdf": {"application/pdf"},
     ".docx": {"application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
 }
+CONTENT_DERIVED_MIME_TYPES = {
+    ".pdf": "application/pdf",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+}
+EXTENSION_BY_MIME_TYPE = {
+    mime_type: extension
+    for extension, mime_types in ALLOWED_MIME_TYPES.items()
+    for mime_type in mime_types
+}
 SAFE_FILENAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._() \-]{0,254}$")
 GENERIC_UPLOAD_ERROR = "Unable to upload resume. Please provide a valid PDF or DOCX file."
 DOCX_DOCUMENT_XML_MAX_BYTES = 2 * 1024 * 1024
+DOCX_MAX_ARCHIVE_ENTRIES = 1000
+DOCX_MAX_TOTAL_UNCOMPRESSED_BYTES = 20 * 1024 * 1024
+DOCX_MAX_ENTRY_UNCOMPRESSED_BYTES = 10 * 1024 * 1024
+DOCX_MAX_COMPRESSION_RATIO = 100
+DOCX_REQUIRED_FILES = {"[Content_Types].xml", "word/document.xml"}
 PDF_TEXT_TOKEN_PATTERN = re.compile(rb"[\x09\x0a\x0d\x20-\x7e]{3,}")
 YEAR_EXPERIENCE_PATTERN = re.compile(r"(\d{1,2}(?:\.\d)?)\+?\s+years?", re.IGNORECASE)
 COMMON_SKILLS = {
@@ -157,10 +171,14 @@ def validate_original_filename(filename: str | None) -> tuple[str, str]:
     return cleaned, extension
 
 
-def validate_mime_type(extension: str, mime_type: str | None) -> str:
-    normalized = (mime_type or "").strip().lower()
+def validate_mime_type(extension: str, declared_mime_type: str | None, content_mime_type: str) -> str:
+    normalized = (declared_mime_type or "").strip().lower()
     if normalized not in ALLOWED_MIME_TYPES[extension]:
         raise ResumeValidationError("unsupported_mime_type")
+    if content_mime_type not in ALLOWED_MIME_TYPES[extension]:
+        raise ResumeValidationError("mime_content_mismatch")
+    if normalized != content_mime_type:
+        raise ResumeValidationError("mime_content_mismatch")
     return normalized
 
 
@@ -169,12 +187,33 @@ def validate_pdf_signature(content: bytes) -> None:
         raise ResumeValidationError("invalid_file_signature")
 
 
+def validate_docx_archive_members(archive: ZipFile) -> None:
+    members = archive.infolist()
+    if len(members) > DOCX_MAX_ARCHIVE_ENTRIES:
+        raise ResumeValidationError("docx_archive_too_many_entries")
+
+    total_uncompressed_bytes = 0
+    names: set[str] = set()
+    for member in members:
+        names.add(member.filename)
+        total_uncompressed_bytes += member.file_size
+        if member.file_size > DOCX_MAX_ENTRY_UNCOMPRESSED_BYTES:
+            raise ResumeValidationError("docx_archive_entry_too_large")
+        if total_uncompressed_bytes > DOCX_MAX_TOTAL_UNCOMPRESSED_BYTES:
+            raise ResumeValidationError("docx_archive_too_large")
+        if member.file_size > 0:
+            compressed_size = max(member.compress_size, 1)
+            if member.file_size / compressed_size > DOCX_MAX_COMPRESSION_RATIO:
+                raise ResumeValidationError("docx_archive_compression_ratio")
+
+    if not DOCX_REQUIRED_FILES.issubset(names):
+        raise ResumeValidationError("invalid_file_signature")
+
+
 def validate_docx_structure(content: bytes) -> None:
     try:
         with ZipFile(BytesIO(content)) as archive:
-            names = set(archive.namelist())
-            if "[Content_Types].xml" not in names or "word/document.xml" not in names:
-                raise ResumeValidationError("invalid_file_signature")
+            validate_docx_archive_members(archive)
     except (BadZipFile, OSError) as exc:
         raise ResumeValidationError("invalid_file_signature") from exc
 
@@ -189,9 +228,23 @@ def validate_file_signature(content: bytes, extension: str) -> None:
     raise ResumeValidationError("unsupported_extension")
 
 
+def derive_content_mime_type(content: bytes) -> str:
+    if content.startswith(b"%PDF-"):
+        return CONTENT_DERIVED_MIME_TYPES[".pdf"]
+
+    try:
+        validate_docx_structure(content)
+    except ResumeValidationError as exc:
+        if exc.reason != "invalid_file_signature":
+            raise
+    else:
+        return CONTENT_DERIVED_MIME_TYPES[".docx"]
+
+    raise ResumeValidationError("invalid_file_signature")
+
+
 async def validate_upload_file(file: UploadFile, settings: Settings) -> ValidatedResumeFile:
     original_filename, extension = validate_original_filename(file.filename)
-    mime_type = validate_mime_type(extension, file.content_type)
 
     content = await file.read(settings.max_upload_bytes + 1)
     if not content:
@@ -199,6 +252,11 @@ async def validate_upload_file(file: UploadFile, settings: Settings) -> Validate
     if len(content) > settings.max_upload_bytes:
         raise ResumeValidationError("file_too_large")
 
+    content_mime_type = derive_content_mime_type(content)
+    content_extension = EXTENSION_BY_MIME_TYPE.get(content_mime_type)
+    if content_extension != extension:
+        raise ResumeValidationError("extension_content_mismatch")
+    mime_type = validate_mime_type(extension, file.content_type, content_mime_type)
     validate_file_signature(content, extension)
     return ValidatedResumeFile(
         original_filename=original_filename,
@@ -539,6 +597,7 @@ def extract_pdf_text(content: bytes, *, max_chars: int) -> str:
 
 def extract_docx_text(content: bytes, *, max_chars: int) -> str:
     with ZipFile(BytesIO(content)) as archive:
+        validate_docx_archive_members(archive)
         document_info = archive.getinfo("word/document.xml")
         if document_info.file_size > DOCX_DOCUMENT_XML_MAX_BYTES:
             raise ResumeValidationError("document_too_large")

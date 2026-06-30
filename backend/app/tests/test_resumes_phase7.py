@@ -1,7 +1,7 @@
 from collections.abc import Generator
 from io import BytesIO
 from pathlib import Path
-from zipfile import ZipFile
+from zipfile import ZipFile, ZIP_DEFLATED
 
 import pytest
 from fastapi.testclient import TestClient
@@ -115,6 +115,19 @@ def docx_content(text: str = "") -> bytes:
     return buffer.getvalue()
 
 
+def docx_with_extra_entries(extra_entries: int) -> bytes:
+    buffer = BytesIO()
+    with ZipFile(buffer, "w", compression=ZIP_DEFLATED) as archive:
+        archive.writestr("[Content_Types].xml", "<Types></Types>")
+        archive.writestr(
+            "word/document.xml",
+            '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" />',
+        )
+        for index in range(extra_entries):
+            archive.writestr(f"word/extra-{index}.xml", "<x />")
+    return buffer.getvalue()
+
+
 def upload(
     client: TestClient,
     *,
@@ -175,6 +188,12 @@ def test_valid_docx_upload_is_accepted(client: TestClient, db_session: Session) 
         ("resume.txt", PDF_CONTENT, "application/pdf"),
         ("resume.pdf", PDF_CONTENT, "text/plain"),
         ("resume.pdf", b"not a pdf", "application/pdf"),
+        ("resume.pdf", docx_content(), "application/pdf"),
+        (
+            "resume.docx",
+            PDF_CONTENT,
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ),
         ("resume.pdf", b"", "application/pdf"),
         ("../resume.pdf", PDF_CONTENT, "application/pdf"),
     ],
@@ -190,6 +209,29 @@ def test_invalid_uploads_are_rejected_with_safe_error(
     login(client, email="user@example.com")
 
     response = upload(client, filename=filename, content=content, mime_type=mime_type)
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": "Unable to upload resume. Please provide a valid PDF or DOCX file."
+    }
+    assert db_session.scalar(select(Resume)) is None
+
+
+def test_docx_archive_with_too_many_entries_is_rejected(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(resume_service, "DOCX_MAX_ARCHIVE_ENTRIES", 3)
+    create_user(db_session, email="user@example.com")
+    login(client, email="user@example.com")
+
+    response = upload(
+        client,
+        filename="resume.docx",
+        content=docx_with_extra_entries(extra_entries=3),
+        mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
 
     assert response.status_code == 400
     assert response.json() == {
