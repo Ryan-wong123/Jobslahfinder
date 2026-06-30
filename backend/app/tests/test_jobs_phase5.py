@@ -244,18 +244,22 @@ def test_scraping_failure_handling_records_safe_run_and_audit(db_session: Sessio
 
 def test_approved_source_adapters_are_registered_and_store_jobs(db_session: Session) -> None:
     sources = seed_approved_job_sources(db_session, get_settings())
-    assert {"JobStreet", "MyCareersFuture"}.issubset(SCRAPER_ADAPTERS.keys())
+    expected_sources = {"JobStreet", "MyCareersFuture", "JobsLah", "FastJobs"}
+    assert expected_sources.issubset(SCRAPER_ADAPTERS.keys())
+    assert expected_sources.issubset({source.source_name for source in sources})
 
-    mcf_source = next(source for source in sources if source.source_name == "MyCareersFuture")
-    run = run_scraper_for_source(db_session, source=mcf_source)
+    for source in sources:
+        run = run_scraper_for_source(db_session, source=source)
+        assert run.status == ScrapingRunStatus.SUCCESS.value
+        assert run.jobs_retrieved >= 1
 
-    assert run.status == ScrapingRunStatus.SUCCESS.value
-    assert run.jobs_retrieved == 1
-    posting = db_session.scalar(
-        select(JobPosting).where(JobPosting.source_id == mcf_source.id)
-    )
-    assert posting is not None
-    assert posting.job_url.startswith("https://www.mycareersfuture.gov.sg/")
+    stored_sources = {
+        source.source_name
+        for source in db_session.scalars(
+            select(JobSource).join(JobPosting, JobPosting.source_id == JobSource.id)
+        ).all()
+    }
+    assert expected_sources.issubset(stored_sources)
 
 
 def test_scraper_retry_policy_retries_up_to_success(db_session: Session) -> None:
@@ -351,10 +355,10 @@ def test_weekly_scraping_task_runs_enabled_sources_only(
 
     result = worker_tasks.run_weekly_scraping.run()
 
-    enabled_source = next(source for source in sources if source.source_name == "MyCareersFuture")
-    assert called_source_ids == [enabled_source.id]
-    assert result["sources_checked"] == 1
-    assert result["results"][0]["status"] == ScrapingRunStatus.SUCCESS.value
+    enabled_source_ids = [source.id for source in sources if source.source_name != "JobStreet"]
+    assert called_source_ids == enabled_source_ids
+    assert result["sources_checked"] == len(enabled_source_ids)
+    assert all(item["status"] == ScrapingRunStatus.SUCCESS.value for item in result["results"])
 
 
 def test_admin_can_seed_sources_and_trigger_mock_scraping(
@@ -370,6 +374,8 @@ def test_admin_can_seed_sources_and_trigger_mock_scraping(
     assert {source["source_name"] for source in seed_response.json()} == {
         "JobStreet",
         "MyCareersFuture",
+        "JobsLah",
+        "FastJobs",
     }
     source = db_session.scalar(select(JobSource).where(JobSource.source_name == "JobStreet"))
     assert source is not None

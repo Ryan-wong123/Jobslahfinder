@@ -12,6 +12,8 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings, get_settings
 from app.models.enums import AuditOutcome, ScrapingRunStatus
 from app.models.job import JobSource, ScrapingRun
+from app.scrapers.fastjobs import fetch_fastjobs_jobs
+from app.scrapers.jobslah import fetch_jobslah_jobs
 from app.scrapers.jobstreet import fetch_jobstreet_jobs
 from app.scrapers.mycareersfuture import fetch_mycareersfuture_jobs
 from app.services.audit import create_audit_log
@@ -30,6 +32,8 @@ ScraperFetcher = Callable[..., list[dict[str, Any]]]
 SCRAPER_ADAPTERS: dict[str, ScraperFetcher] = {
     "JobStreet": fetch_jobstreet_jobs,
     "MyCareersFuture": fetch_mycareersfuture_jobs,
+    "JobsLah": fetch_jobslah_jobs,
+    "FastJobs": fetch_fastjobs_jobs,
 }
 
 

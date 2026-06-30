@@ -45,6 +45,14 @@ APPROVED_JOB_SOURCES = {
         "base_url": "https://www.mycareersfuture.gov.sg",
         "domains": ("www.mycareersfuture.gov.sg",),
     },
+    "JobsLah": {
+        "base_url": "https://www.jobslah.com",
+        "domains": ("www.jobslah.com",),
+    },
+    "FastJobs": {
+        "base_url": "https://www.fastjobs.sg",
+        "domains": ("www.fastjobs.sg",),
+    },
 }
 
 TAG_PATTERN = re.compile(r"<[^>]+>")

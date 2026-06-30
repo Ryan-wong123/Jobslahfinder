@@ -69,7 +69,7 @@ jobs:
           SESSION_SECRET: test_session_secret_value_at_least_32_chars
           PASSWORD_RESET_SECRET: test_reset_secret_value_at_least_32_chars
           UPLOAD_DIR: /tmp/jobapp-test-uploads
-          ALLOWED_JOB_SOURCE_DOMAINS: sg.jobstreet.com,www.mycareersfuture.gov.sg
+          ALLOWED_JOB_SOURCE_DOMAINS: sg.jobstreet.com,www.mycareersfuture.gov.sg,www.jobslah.com,www.fastjobs.sg
           RESUME_EXTRACTION_PROVIDER: local
           COVER_LETTER_GENERATION_PROVIDER: local
         run: python -m pytest
@@ -117,7 +117,7 @@ jobs:
           SESSION_SECRET: test_session_secret_value_at_least_32_chars
           PASSWORD_RESET_SECRET: test_reset_secret_value_at_least_32_chars
           UPLOAD_DIR: /tmp/jobapp-migration-check-uploads
-          ALLOWED_JOB_SOURCE_DOMAINS: sg.jobstreet.com,www.mycareersfuture.gov.sg
+          ALLOWED_JOB_SOURCE_DOMAINS: sg.jobstreet.com,www.mycareersfuture.gov.sg,www.jobslah.com,www.fastjobs.sg
           RESUME_EXTRACTION_PROVIDER: local
           COVER_LETTER_GENERATION_PROVIDER: local
         run: alembic heads
@@ -131,7 +131,7 @@ jobs:
           SESSION_SECRET: test_session_secret_value_at_least_32_chars
           PASSWORD_RESET_SECRET: test_reset_secret_value_at_least_32_chars
           UPLOAD_DIR: /tmp/jobapp-migration-check-uploads
-          ALLOWED_JOB_SOURCE_DOMAINS: sg.jobstreet.com,www.mycareersfuture.gov.sg
+          ALLOWED_JOB_SOURCE_DOMAINS: sg.jobstreet.com,www.mycareersfuture.gov.sg,www.jobslah.com,www.fastjobs.sg
           RESUME_EXTRACTION_PROVIDER: local
           COVER_LETTER_GENERATION_PROVIDER: local
         run: alembic upgrade head
@@ -145,7 +145,7 @@ jobs:
           SESSION_SECRET: test_session_secret_value_at_least_32_chars
           PASSWORD_RESET_SECRET: test_reset_secret_value_at_least_32_chars
           UPLOAD_DIR: /tmp/jobapp-migration-check-uploads
-          ALLOWED_JOB_SOURCE_DOMAINS: sg.jobstreet.com,www.mycareersfuture.gov.sg
+          ALLOWED_JOB_SOURCE_DOMAINS: sg.jobstreet.com,www.mycareersfuture.gov.sg,www.jobslah.com,www.fastjobs.sg
           RESUME_EXTRACTION_PROVIDER: local
           COVER_LETTER_GENERATION_PROVIDER: local
         run: alembic current
@@ -222,7 +222,7 @@ jobs:
           SESSION_SECRET: compose_config_session_secret_at_least_32_chars
           PASSWORD_RESET_SECRET: compose_config_reset_secret_at_least_32_chars
           UPLOAD_DIR: /var/lib/jobapp/uploads
-          ALLOWED_JOB_SOURCE_DOMAINS: sg.jobstreet.com,www.mycareersfuture.gov.sg
+          ALLOWED_JOB_SOURCE_DOMAINS: sg.jobstreet.com,www.mycareersfuture.gov.sg,www.jobslah.com,www.fastjobs.sg
 
       - name: Build application images
         run: docker compose build backend frontend worker beat
@@ -235,7 +235,7 @@ jobs:
           SESSION_SECRET: compose_build_session_secret_at_least_32_chars
           PASSWORD_RESET_SECRET: compose_build_reset_secret_at_least_32_chars
           UPLOAD_DIR: /var/lib/jobapp/uploads
-          ALLOWED_JOB_SOURCE_DOMAINS: sg.jobstreet.com,www.mycareersfuture.gov.sg
+          ALLOWED_JOB_SOURCE_DOMAINS: sg.jobstreet.com,www.mycareersfuture.gov.sg,www.jobslah.com,www.fastjobs.sg
 
   deploy:
     name: Deploy To EC2
