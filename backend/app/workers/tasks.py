@@ -31,7 +31,7 @@ def run_weekly_scraping() -> dict[str, int | list[dict[str, int | str]]]:
             db.scalars(
                 select(JobSource)
                 .where(JobSource.is_enabled.is_(True))
-                .order_by(JobSource.source_name)
+                .order_by(JobSource.id)
             ).all()
         )
         for source in sources:
