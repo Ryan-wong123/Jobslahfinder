@@ -11,6 +11,7 @@ from app.models.enums import UserRole
 if TYPE_CHECKING:
     from app.models.activity import ApplicationHistory, CoverLetter, Recommendation, SavedJob
     from app.models.audit import AuditLog
+    from app.models.roadmap import JobRoleRoadmap
     from app.models.resume import Resume
 
 
@@ -60,6 +61,9 @@ class User(Base):
         back_populates="user", cascade="all, delete-orphan"
     )
     application_history: Mapped[list["ApplicationHistory"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    job_role_roadmaps: Mapped[list["JobRoleRoadmap"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
     audit_logs: Mapped[list["AuditLog"]] = relationship(back_populates="user")
