@@ -126,6 +126,8 @@ def test_job_normalization_strips_html_and_validates_source_domain(db_session: S
             "description": "<script>alert(1)</script><p>Build secure services.</p>",
             "job_url": "https://sg.jobstreet.com/job/security-engineer",
             "posting_date": "2026-04-30",
+            "salary": "SGD 4,000 - 6,000 per month",
+            "minimum_experience": "2 years",
         },
         source,
     )
@@ -134,6 +136,11 @@ def test_job_normalization_strips_html_and_validates_source_domain(db_session: S
     assert normalized.company == "Example Company"
     assert "<script>" not in (normalized.description or "")
     assert "Build secure services." in (normalized.description or "")
+    assert normalized.salary_min == 4000
+    assert normalized.salary_max == 6000
+    assert normalized.salary_currency == "SGD"
+    assert normalized.salary_period == "month"
+    assert normalized.minimum_experience == "2 years"
     assert normalized.is_suspicious is True
     assert "html_stripped" in normalized.suspicious_reasons
     assert len(normalized.content_hash) == 64
@@ -192,6 +199,36 @@ def test_duplicate_detection_uses_external_job_id_and_content_hash(db_session: S
     assert existing is not None
     assert existing.id == first_posting.id
     assert reason == "content_hash"
+
+
+def test_store_normalized_job_persists_salary_and_experience(db_session: Session) -> None:
+    source = jobstreet_source(db_session)
+    normalized = normalize_job(
+        {
+            "external_job_id": "salary-job-1",
+            "title": "Security Engineer",
+            "company": "Example Company",
+            "description": "Build secure services.",
+            "job_url": "https://sg.jobstreet.com/job/security-salary",
+            "Job Salary Range": "$5,500 to $7,500 Monthly",
+            "Job Minimum Experience": "3 years exp",
+        },
+        source,
+    )
+
+    posting, created, _duplicate_reason = store_normalized_job(
+        db_session,
+        source=source,
+        normalized_job=normalized,
+    )
+    db_session.commit()
+
+    assert created is True
+    assert float(posting.salary_min) == 5500
+    assert float(posting.salary_max) == 7500
+    assert posting.salary_currency == "SGD"
+    assert posting.salary_period == "month"
+    assert posting.minimum_experience == "3 years exp"
 
 
 def test_suspicious_job_flagging_is_stored_and_audited(db_session: Session) -> None:

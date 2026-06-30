@@ -56,6 +56,7 @@ APPROVED_JOB_SOURCES = {
 }
 
 TAG_PATTERN = re.compile(r"<[^>]+>")
+SALARY_NUMBER_PATTERN = re.compile(r"(?i)(\d+(?:,\d{3})*(?:\.\d+)?|\d+(?:\.\d+)?)\s*(k)?")
 
 
 class JobSourceValidationError(ValueError):
@@ -80,6 +81,11 @@ class NormalizedJob:
     description: str | None
     job_url: str
     posting_date: date | None
+    salary_min: float | None
+    salary_max: float | None
+    salary_currency: str | None
+    salary_period: str | None
+    minimum_experience: str | None
     content_hash: str
     is_suspicious: bool
     suspicious_reasons: tuple[str, ...]
@@ -195,6 +201,42 @@ def parse_posting_date(value: Any) -> date | None:
         return None
 
 
+def parse_salary_range(value: Any) -> tuple[float | None, float | None, str | None, str | None]:
+    if value in (None, ""):
+        return None, None, None, None
+    text = clean_text(value, max_length=200).lower()
+    if not text or any(marker in text for marker in ("not specified", "undisclosed", "negotiable")):
+        return None, None, None, None
+
+    currency = "SGD" if "$" in text or "sgd" in text or "s$" in text else None
+    if "hour" in text or "/hr" in text:
+        period = "hour"
+    elif "year" in text or "annum" in text or "p.a" in text or "/yr" in text:
+        period = "year"
+    else:
+        period = "month" if any(marker in text for marker in ("month", "p.m", "/mo", "$")) else None
+
+    values: list[float] = []
+    for match in SALARY_NUMBER_PATTERN.finditer(text):
+        raw, thousands_marker = match.groups()
+        try:
+            amount = float(raw.replace(",", ""))
+        except ValueError:
+            continue
+        if thousands_marker:
+            amount *= 1000
+        if 1 <= amount <= 1_000_000:
+            values.append(amount)
+
+    if not values:
+        return None, None, currency, period
+    salary_min = min(values)
+    salary_max = max(values)
+    if salary_max < 1000 and "k" not in text and period in {"month", "year"}:
+        return None, None, currency, period
+    return salary_min, salary_max, currency, period
+
+
 def compute_content_hash(*parts: str | None) -> str:
     normalized = "\n".join((part or "").strip().lower() for part in parts)
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
@@ -217,6 +259,13 @@ def normalize_job(raw_job: dict[str, Any], source: JobSource) -> NormalizedJob:
     description = clean_text(raw_description, max_length=MAX_TEXT_LENGTH) or None
     job_url = clean_text(raw_value(raw_job, "job_url", "Job URL", "application_link"), max_length=2048)
     posting_date = parse_posting_date(raw_value(raw_job, "posting_date", "Job Posting Date"))
+    salary_min, salary_max, salary_currency, salary_period = parse_salary_range(
+        raw_value(raw_job, "salary", "Job Salary Range", "salary_range")
+    )
+    minimum_experience = clean_text(
+        raw_value(raw_job, "minimum_experience", "Job Minimum Experience", "job_minimum_experience"),
+        max_length=100,
+    ) or None
 
     if not title:
         title = "Untitled job"
@@ -250,6 +299,11 @@ def normalize_job(raw_job: dict[str, Any], source: JobSource) -> NormalizedJob:
         description=description,
         job_url=validated_job_url,
         posting_date=posting_date,
+        salary_min=salary_min,
+        salary_max=salary_max,
+        salary_currency=salary_currency,
+        salary_period=salary_period,
+        minimum_experience=minimum_experience,
         content_hash=content_hash,
         is_suspicious=bool(suspicious_reasons),
         suspicious_reasons=tuple(dict.fromkeys(suspicious_reasons)),
@@ -345,6 +399,11 @@ def apply_normalized_job(posting: JobPosting, normalized_job: NormalizedJob) -> 
     posting.description = normalized_job.description
     posting.job_url = normalized_job.job_url
     posting.posting_date = normalized_job.posting_date
+    posting.salary_min = normalized_job.salary_min
+    posting.salary_max = normalized_job.salary_max
+    posting.salary_currency = normalized_job.salary_currency
+    posting.salary_period = normalized_job.salary_period
+    posting.minimum_experience = normalized_job.minimum_experience
     posting.content_hash = normalized_job.content_hash
     posting.is_suspicious = normalized_job.is_suspicious
 
@@ -384,6 +443,11 @@ def job_to_summary_response(job: JobPosting) -> JobSummaryResponse:
         company=safe_response_text(job.company) or "Unknown company",
         location=safe_response_text(job.location),
         category=safe_response_text(job.category, max_length=100),
+        salary_min=float(job.salary_min) if job.salary_min is not None else None,
+        salary_max=float(job.salary_max) if job.salary_max is not None else None,
+        salary_currency=safe_response_text(job.salary_currency, max_length=10),
+        salary_period=safe_response_text(job.salary_period, max_length=20),
+        minimum_experience=safe_response_text(job.minimum_experience, max_length=100),
         source=JobSourcePublicResponse(id=job.source.id, source_name=job.source.source_name),
         posting_date=job.posting_date,
         scraped_at=job.scraped_at,
