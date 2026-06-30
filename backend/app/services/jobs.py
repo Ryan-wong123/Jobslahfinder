@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime
 import hashlib
-import html
 import re
 from typing import Any
 from urllib.parse import urlsplit
@@ -25,6 +24,7 @@ from app.schemas.jobs import (
     SavedJobListResponse,
     SavedJobResponse,
 )
+from app.security.text import sanitize_text
 from app.services.application_history import add_application_history
 from app.services.audit import create_audit_log
 
@@ -48,7 +48,6 @@ APPROVED_JOB_SOURCES = {
 }
 
 TAG_PATTERN = re.compile(r"<[^>]+>")
-WHITESPACE_PATTERN = re.compile(r"\s+")
 
 
 class JobSourceValidationError(ValueError):
@@ -147,10 +146,19 @@ def is_job_url_valid_for_source(job: JobPosting) -> bool:
 def clean_text(value: Any, *, max_length: int) -> str:
     if value is None:
         return ""
-    text = html.unescape(str(value))
-    text = TAG_PATTERN.sub(" ", text)
-    text = WHITESPACE_PATTERN.sub(" ", text).strip()
-    return text[:max_length]
+    return (
+        sanitize_text(
+            value,
+            field_name="job text",
+            max_length=max_length,
+            html_policy="strip",
+            overflow="truncate",
+            control_policy="strip",
+            collapse_whitespace=True,
+            empty_to_none=True,
+        )
+        or ""
+    )
 
 
 def safe_response_text(value: Any, *, max_length: int = MAX_JOB_FIELD_RESPONSE_LENGTH) -> str | None:
