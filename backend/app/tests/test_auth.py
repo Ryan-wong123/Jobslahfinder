@@ -343,6 +343,37 @@ def test_password_reset_request_is_generic_for_existing_and_missing_accounts(
     assert len(reset_token.token_hash) == 64
 
 
+def test_password_reset_request_sends_email_without_logging_token(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sent: list[tuple[str, str]] = []
+
+    def fake_send_password_reset_email(settings, *, to_email: str, token: str) -> None:
+        sent.append((to_email, token))
+
+    monkeypatch.setattr("app.services.auth.send_password_reset_email", fake_send_password_reset_email)
+    assert register(client).status_code == 201
+
+    response = client.post("/auth/password-reset/request", json={"email": "user@example.com"})
+
+    assert response.status_code == 200
+    assert len(sent) == 1
+    reset_token = db_session.scalar(select(PasswordResetToken))
+    audit = db_session.scalar(
+        select(AuditLog)
+        .where(AuditLog.event_type == "auth.password_reset_request", AuditLog.user_id.is_not(None))
+        .order_by(AuditLog.id.desc())
+    )
+    assert reset_token is not None
+    assert audit is not None
+    assert audit.details_json["delivery"] == "email"
+    assert sent[0][0] == "user@example.com"
+    assert sent[0][1] not in str(audit.details_json)
+    assert sent[0][1] != reset_token.token_hash
+
+
 def test_password_reset_confirm_rejects_invalid_expired_and_reused_tokens(
     client: TestClient, db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:

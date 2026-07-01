@@ -13,6 +13,7 @@ from app.models.enums import AuditOutcome, UserRole
 from app.security.passwords import hash_password, needs_rehash, verify_password
 from app.security.tokens import generate_token, hash_token
 from app.services.audit import create_audit_log
+from app.services.email import send_password_reset_email
 
 
 GENERIC_LOGIN_ERROR = "Invalid email or password."
@@ -240,7 +241,7 @@ def request_password_reset(db: Session, request: Request, settings: Settings, *,
             outcome=AuditOutcome.SUCCESS,
             request=request,
             target_type="user",
-            details={"account_matched": False},
+            details={"account_matched": False, "delivery": "skipped"},
         )
         db.commit()
         return
@@ -252,6 +253,14 @@ def request_password_reset(db: Session, request: Request, settings: Settings, *,
         expires_at=utc_now() + timedelta(minutes=settings.password_reset_expire_minutes),
     )
     db.add(reset_token)
+    delivery = "email"
+    try:
+        send_password_reset_email(settings, to_email=user.email, token=token)
+    except RuntimeError:
+        delivery = "not_configured"
+    except Exception:
+        delivery = "failed"
+
     create_audit_log(
         db,
         event_type="auth.password_reset_request",
@@ -260,7 +269,7 @@ def request_password_reset(db: Session, request: Request, settings: Settings, *,
         user_id=user.id,
         target_type="user",
         target_id=user.id,
-        details={"account_matched": True, "delivery": "not_configured"},
+        details={"account_matched": True, "delivery": delivery},
     )
     db.commit()
 

@@ -11,6 +11,7 @@ COOKIE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$")
 HOSTNAME_PATTERN = re.compile(
     r"^(?=.{1,253}$)(?!-)(?:[A-Za-z0-9-]{1,63}\.)*[A-Za-z0-9-]{1,63}(?<!-)$"
 )
+EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 def validate_url(value: str, *, field_name: str, allowed_schemes: set[str]) -> str:
@@ -52,6 +53,13 @@ class Settings(BaseSettings):
     password_reset_expire_minutes: int = Field(
         default=30, validation_alias="PASSWORD_RESET_EXPIRE_MINUTES"
     )
+    frontend_base_url: str = Field(default="http://localhost:3000", validation_alias="FRONTEND_BASE_URL")
+    smtp_host: str | None = Field(default=None, validation_alias="SMTP_HOST")
+    smtp_port: int = Field(default=587, validation_alias="SMTP_PORT")
+    smtp_username: str | None = Field(default=None, validation_alias="SMTP_USERNAME")
+    smtp_password: SecretStr | None = Field(default=None, validation_alias="SMTP_PASSWORD")
+    smtp_from_email: str | None = Field(default=None, validation_alias="SMTP_FROM_EMAIL")
+    smtp_use_tls: bool = Field(default=True, validation_alias="SMTP_USE_TLS")
 
     upload_dir: Path = Field(validation_alias="UPLOAD_DIR")
     max_upload_bytes: int = Field(default=5 * 1024 * 1024, validation_alias="MAX_UPLOAD_BYTES")
@@ -119,12 +127,44 @@ class Settings(BaseSettings):
     def redis_url_is_valid(cls, value: str) -> str:
         return validate_url(value, field_name="REDIS_URL", allowed_schemes={"redis", "rediss"})
 
+    @field_validator("frontend_base_url")
+    @classmethod
+    def frontend_base_url_is_valid(cls, value: str) -> str:
+        return validate_url(value, field_name="FRONTEND_BASE_URL", allowed_schemes={"http", "https"}).rstrip("/")
+
     @field_validator("session_cookie_name")
     @classmethod
     def session_cookie_name_is_valid(cls, value: str) -> str:
         cleaned = value.strip()
         if not COOKIE_NAME_PATTERN.fullmatch(cleaned):
             raise ValueError("SESSION_COOKIE_NAME contains invalid characters.")
+        return cleaned
+
+    @field_validator("smtp_host")
+    @classmethod
+    def smtp_host_is_valid(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        return validate_hostname(value, field_name="SMTP_HOST")
+
+    @field_validator("smtp_from_email")
+    @classmethod
+    def smtp_from_email_is_valid(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        cleaned = value.strip().lower()
+        if len(cleaned) > 255 or not EMAIL_PATTERN.fullmatch(cleaned):
+            raise ValueError("SMTP_FROM_EMAIL must be a valid email address.")
+        return cleaned
+
+    @field_validator("smtp_username")
+    @classmethod
+    def smtp_username_is_valid(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        cleaned = value.strip()
+        if len(cleaned) > 255 or any(character.isspace() or ord(character) < 32 for character in cleaned):
+            raise ValueError("SMTP_USERNAME contains invalid characters.")
         return cleaned
 
     @model_validator(mode="after")
@@ -135,6 +175,10 @@ class Settings(BaseSettings):
             raise ValueError("SESSION_EXPIRE_MINUTES must be between 15 and 1440.")
         if self.password_reset_expire_minutes < 5 or self.password_reset_expire_minutes > 24 * 60:
             raise ValueError("PASSWORD_RESET_EXPIRE_MINUTES must be between 5 and 1440.")
+        if self.smtp_port < 1 or self.smtp_port > 65535:
+            raise ValueError("SMTP_PORT must be between 1 and 65535.")
+        if self.smtp_password is not None and not self.smtp_username:
+            raise ValueError("SMTP_USERNAME is required when SMTP_PASSWORD is configured.")
         if self.max_upload_bytes < 1 or self.max_upload_bytes > 25 * 1024 * 1024:
             raise ValueError("MAX_UPLOAD_BYTES must be between 1 byte and 25 MiB.")
         if self.scraping_request_timeout_seconds < 1 or self.scraping_request_timeout_seconds > 120:

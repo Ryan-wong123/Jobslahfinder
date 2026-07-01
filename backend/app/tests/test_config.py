@@ -54,6 +54,7 @@ def test_production_requires_secure_secrets(monkeypatch: pytest.MonkeyPatch) -> 
         ("API_PORT", "70000"),
         ("SESSION_EXPIRE_MINUTES", "5"),
         ("PASSWORD_RESET_EXPIRE_MINUTES", "2"),
+        ("SMTP_PORT", "70000"),
         ("MAX_UPLOAD_BYTES", str(26 * 1024 * 1024)),
     ],
 )
@@ -79,3 +80,24 @@ def test_settings_constructor_rejects_malformed_allowed_domain() -> None:
             UPLOAD_DIR="/tmp/uploads",
             ALLOWED_JOB_SOURCE_DOMAINS="https://sg.jobstreet.com",
         )
+
+
+@pytest.mark.parametrize(
+    ("env_name", "env_value"),
+    [
+        ("FRONTEND_BASE_URL", "javascript:alert(1)"),
+        ("SMTP_HOST", "smtp.example.com:587"),
+        ("SMTP_FROM_EMAIL", "not-an-email"),
+        ("SMTP_USERNAME", "bad user"),
+    ],
+)
+def test_config_rejects_invalid_email_delivery_settings(
+    monkeypatch: pytest.MonkeyPatch,
+    env_name: str,
+    env_value: str,
+) -> None:
+    monkeypatch.setenv(env_name, env_value)
+    get_settings.cache_clear()
+
+    with pytest.raises(ValidationError):
+        get_settings()
