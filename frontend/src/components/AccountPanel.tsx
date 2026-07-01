@@ -205,6 +205,10 @@ export function AccountPanel() {
             <dd className="mt-1 text-sm text-zinc-950">{user.is_active ? "Active" : "Inactive"}</dd>
           </div>
           <div className="border-t border-zinc-200 pt-4">
+            <dt className="text-xs font-medium uppercase text-zinc-500">Two-factor authentication</dt>
+            <dd className="mt-1 text-sm text-zinc-950">{user.totp_enabled ? "Enabled" : "Not enabled"}</dd>
+          </div>
+          <div className="border-t border-zinc-200 pt-4">
             <dt className="text-xs font-medium uppercase text-zinc-500">Last login</dt>
             <dd className="mt-1 text-sm text-zinc-950">{formatDateTime(user.last_login_at)}</dd>
           </div>
@@ -228,6 +232,14 @@ export function AccountPanel() {
               href="/admin"
             >
               Admin tools
+            </a>
+          ) : null}
+          {!user.totp_enabled ? (
+            <a
+              className="rounded border border-teal-700 bg-white px-4 py-2 text-sm font-medium text-teal-800 transition hover:bg-teal-50"
+              href="/two-factor/setup"
+            >
+              Set up 2FA
             </a>
           ) : null}
         </div>

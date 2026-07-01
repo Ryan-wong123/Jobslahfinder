@@ -2,7 +2,7 @@
 
 import { useSearchParams, useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, type LoginResponse } from "@/lib/api";
 import { FormMessage, SubmitButton, TextField } from "./FormControls";
 
 export function LoginForm() {
@@ -19,13 +19,17 @@ export function LoginForm() {
 
     const formData = new FormData(event.currentTarget);
     try {
-      await apiFetch<{ message: string }>("/auth/login", {
+      const response = await apiFetch<LoginResponse>("/auth/login", {
         method: "POST",
         body: JSON.stringify({
           email: formData.get("email"),
           password: formData.get("password")
         })
       });
+      if (response.requires_2fa && response.challenge_token) {
+        router.push(`/two-factor/verify?token=${encodeURIComponent(response.challenge_token)}`);
+        return;
+      }
       router.push("/account");
       router.refresh();
     } catch (caught) {

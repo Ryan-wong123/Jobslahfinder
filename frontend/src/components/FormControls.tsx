@@ -7,8 +7,10 @@ type FieldProps = {
   name: string;
   type?: InputHTMLAttributes<HTMLInputElement>["type"];
   autoComplete?: string;
+  inputMode?: InputHTMLAttributes<HTMLInputElement>["inputMode"];
   required?: boolean;
   minLength?: number;
+  maxLength?: number;
 };
 
 export function TextField({
@@ -16,8 +18,10 @@ export function TextField({
   name,
   type = "text",
   autoComplete,
+  inputMode,
   required = true,
-  minLength
+  minLength,
+  maxLength
 }: FieldProps) {
   return (
     <label className="block">
@@ -27,8 +31,10 @@ export function TextField({
         name={name}
         type={type}
         autoComplete={autoComplete}
+        inputMode={inputMode}
         required={required}
         minLength={minLength}
+        maxLength={maxLength}
       />
     </label>
   );

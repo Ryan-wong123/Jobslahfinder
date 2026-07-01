@@ -11,8 +11,20 @@ export type User = {
   email: string;
   role: "USER" | "ADMIN";
   is_active: boolean;
+  totp_enabled: boolean;
   created_at: string;
   last_login_at: string | null;
+};
+
+export type LoginResponse = {
+  message: string;
+  requires_2fa: boolean;
+  challenge_token: string | null;
+};
+
+export type TwoFactorSetup = {
+  secret: string;
+  provisioning_uri: string;
 };
 
 export type Profile = {
