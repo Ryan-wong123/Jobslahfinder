@@ -80,6 +80,24 @@ class JobListResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class SalaryTrendPointResponse(BaseModel):
+    period: str
+    average_salary: float
+    sample_count: int
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class SalaryTrendResponse(BaseModel):
+    role: str
+    currency: str
+    period: str
+    points: list[SalaryTrendPointResponse]
+    sample_size: int
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class SavedJobResponse(BaseModel):
     job: JobSummaryResponse
     saved_at: datetime

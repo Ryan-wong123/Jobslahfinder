@@ -7,6 +7,7 @@ from app.api.activity import router as activity_router
 from app.api.admin import router as admin_router
 from app.api.auth import router as auth_router
 from app.api.health import router as health_router
+from app.api.job_roles import router as job_roles_router
 from app.api.jobs import router as jobs_router
 from app.api.resumes import router as resumes_router
 from app.api.roadmaps import router as roadmaps_router
@@ -27,6 +28,7 @@ app = FastAPI(
 
 app.include_router(health_router)
 app.include_router(auth_router)
+app.include_router(job_roles_router)
 app.include_router(jobs_router)
 app.include_router(resumes_router)
 app.include_router(roadmaps_router)

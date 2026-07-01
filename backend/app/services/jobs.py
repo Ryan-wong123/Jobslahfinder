@@ -21,6 +21,8 @@ from app.schemas.jobs import (
     JobListResponse,
     JobSourcePublicResponse,
     JobSummaryResponse,
+    SalaryTrendPointResponse,
+    SalaryTrendResponse,
     SavedJobListResponse,
     SavedJobResponse,
 )
@@ -57,6 +59,23 @@ APPROVED_JOB_SOURCES = {
 
 TAG_PATTERN = re.compile(r"<[^>]+>")
 SALARY_NUMBER_PATTERN = re.compile(r"(?i)(\d+(?:,\d{3})*(?:\.\d+)?|\d+(?:\.\d+)?)\s*(k)?")
+SALARY_ROLE_KEYWORD_EXPANSIONS: dict[str, tuple[str, ...]] = {
+    "software engineer": ("software engineer", "software developer", "programmer", "full stack", "full-stack"),
+    "backend developer": ("backend developer", "backend engineer", "back-end", "api developer", "server engineer"),
+    "frontend developer": ("frontend developer", "frontend engineer", "front-end", "react developer", "ui developer"),
+    "data analyst": ("data analyst", "business analyst", "analytics analyst", "reporting analyst", "bi analyst"),
+    "data engineer": ("data engineer", "etl developer", "pipeline engineer"),
+    "security analyst": ("security analyst", "cybersecurity analyst", "soc analyst", "information security analyst"),
+    "devops engineer": ("devops engineer", "sre", "site reliability engineer", "cloud engineer", "platform engineer"),
+    "product manager": ("product manager", "product owner"),
+    "project manager": ("project manager", "program manager", "programme manager"),
+    "marketing executive": ("marketing executive", "digital marketing", "seo", "sem"),
+    "sales executive": ("sales executive", "business development", "account executive"),
+    "customer service officer": ("customer service", "customer support", "call centre", "call center"),
+    "human resources executive": ("human resources", "hr executive", "recruiter", "talent acquisition"),
+    "finance executive": ("finance executive", "accounting", "accounts executive", "audit"),
+    "operations executive": ("operations executive", "admin executive", "administrator"),
+}
 
 
 class JobSourceValidationError(ValueError):
@@ -454,6 +473,98 @@ def job_to_summary_response(job: JobPosting) -> JobSummaryResponse:
         is_active=job.is_active,
         is_suspicious=job.is_suspicious,
         application_url_is_valid=is_job_url_valid_for_source(job),
+    )
+
+
+def salary_midpoint(job: JobPosting) -> float | None:
+    if job.salary_min is None and job.salary_max is None:
+        return None
+    salary_min = float(job.salary_min) if job.salary_min is not None else None
+    salary_max = float(job.salary_max) if job.salary_max is not None else None
+    if salary_min is not None and salary_max is not None:
+        return (salary_min + salary_max) / 2
+    return salary_min if salary_min is not None else salary_max
+
+
+def monthly_salary_midpoint(job: JobPosting) -> float | None:
+    midpoint = salary_midpoint(job)
+    if midpoint is None:
+        return None
+    period = (job.salary_period or "").lower()
+    if period == "month":
+        return midpoint
+    if period == "year":
+        return midpoint / 12
+    if period == "hour":
+        return midpoint * 173.33
+    return None
+
+
+def salary_search_keywords(role: str, role_keywords: tuple[str, ...] | None = None) -> tuple[str, ...]:
+    cleaned_role = clean_text(role, max_length=100)
+    if role_keywords:
+        raw_keywords = (cleaned_role, *role_keywords)
+    else:
+        raw_keywords = (cleaned_role, *SALARY_ROLE_KEYWORD_EXPANSIONS.get(cleaned_role.lower(), ()))
+    keywords = [clean_text(keyword, max_length=100) for keyword in raw_keywords]
+    return tuple(dict.fromkeys(keyword for keyword in keywords if keyword))
+
+
+def get_salary_trend(
+    db: Session,
+    *,
+    role: str,
+    role_keywords: tuple[str, ...] | None = None,
+    months: int = 12,
+) -> SalaryTrendResponse:
+    cleaned_role = clean_text(role, max_length=100)
+    if not cleaned_role:
+        return SalaryTrendResponse(role="", currency="SGD", period="month", points=[], sample_size=0)
+
+    keywords = salary_search_keywords(cleaned_role, role_keywords)
+    patterns = [f"%{escape_like_term(clean_text(keyword, max_length=100))}%" for keyword in keywords]
+    title_filters = [JobPosting.title.ilike(pattern, escape="\\") for pattern in patterns if pattern != "%%"]
+    if not title_filters:
+        return SalaryTrendResponse(role=cleaned_role, currency="SGD", period="month", points=[], sample_size=0)
+
+    jobs = list(
+        db.scalars(
+            select(JobPosting)
+            .where(
+                JobPosting.is_active.is_(True),
+                JobPosting.is_suspicious.is_(False),
+                or_(*title_filters),
+                JobPosting.salary_period.in_(("month", "year", "hour")),
+                or_(JobPosting.salary_min.is_not(None), JobPosting.salary_max.is_not(None)),
+            )
+            .order_by(JobPosting.posting_date.desc().nullslast(), JobPosting.scraped_at.desc())
+            .limit(500)
+        ).all()
+    )
+
+    buckets: dict[str, list[float]] = {}
+    for job in jobs:
+        midpoint = monthly_salary_midpoint(job)
+        if midpoint is None:
+            continue
+        bucket_date = job.posting_date or job.scraped_at.date()
+        bucket = bucket_date.strftime("%Y-%m")
+        buckets.setdefault(bucket, []).append(midpoint)
+
+    points = [
+        SalaryTrendPointResponse(
+            period=period,
+            average_salary=round(sum(values) / len(values), 2),
+            sample_count=len(values),
+        )
+        for period, values in sorted(buckets.items())[-months:]
+    ]
+    return SalaryTrendResponse(
+        role=cleaned_role,
+        currency="SGD",
+        period="month",
+        points=points,
+        sample_size=sum(point.sample_count for point in points),
     )
 
 

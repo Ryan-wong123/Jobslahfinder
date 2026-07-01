@@ -94,6 +94,9 @@ def create_job(
     category: str = "Security",
     description: str = "Build secure systems.",
     job_url: str | None = None,
+    salary_min: float | None = None,
+    salary_max: float | None = None,
+    salary_period: str | None = None,
     is_active: bool = True,
     is_suspicious: bool = False,
 ) -> JobPosting:
@@ -110,6 +113,10 @@ def create_job(
         description=description,
         job_url=job_url or f"https://{hostname}/job/{title.lower().replace(' ', '-')}",
         posting_date=date(2026, 4, 30),
+        salary_min=salary_min,
+        salary_max=salary_max,
+        salary_currency="SGD" if salary_min is not None or salary_max is not None else None,
+        salary_period=salary_period,
         is_active=is_active,
         is_suspicious=is_suspicious,
         content_hash=f"hash-{title}-{company}",
@@ -193,6 +200,66 @@ def test_pagination_limits_are_enforced(client: TestClient, db_session: Session)
 
     oversized = client.get("/jobs", params={"page_size": 51})
     assert oversized.status_code == 422
+
+
+def test_salary_trends_use_monthly_salary_samples(client: TestClient, db_session: Session) -> None:
+    source = create_source(db_session)
+    create_job(
+        db_session,
+        source,
+        title="Software Engineer",
+        salary_min=5000,
+        salary_max=7000,
+        salary_period="month",
+    )
+    create_job(
+        db_session,
+        source,
+        title="Software Engineer Contract",
+        salary_min=120000,
+        salary_max=120000,
+        salary_period="year",
+    )
+
+    response = client.get("/salary-trends", params={"role": "Software Engineer", "months": 12})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["role"] == "Software Engineer"
+    assert body["sample_size"] == 2
+    assert body["points"] == [{"period": "2026-04", "average_salary": 8000.0, "sample_count": 2}]
+
+
+def test_job_role_catalog_and_detail_are_derived_from_visible_jobs(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    source = create_source(db_session)
+    create_job(
+        db_session,
+        source,
+        title="Software Developer",
+        salary_min=4000,
+        salary_max=6000,
+        salary_period="month",
+    )
+
+    list_response = client.get("/job-roles")
+
+    assert list_response.status_code == 200
+    role = list_response.json()["items"][0]
+    assert role["slug"] == "software-engineer"
+    assert role["name"] == "Software Engineer"
+    assert role["job_count"] == 1
+    assert role["typical_monthly_salary"] == 5000.0
+
+    response = client.get("/job-roles/software-engineer")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["job_count"] == 1
+    assert body["typical_monthly_salary"] == 5000.0
+    assert body["salary_points"] == [{"period": "2026-04", "average_salary": 5000.0, "sample_count": 1}]
+    assert body["latest_jobs"][0]["title"] == "Software Developer"
 
 
 def test_suspicious_jobs_are_excluded_by_default_and_marked_when_included(

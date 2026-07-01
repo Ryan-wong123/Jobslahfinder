@@ -8,7 +8,13 @@ from app.models.account import User
 from app.core.config import Settings, get_settings
 from app.schemas.auth import MessageResponse
 from app.schemas.activity import CoverLetterResponse
-from app.schemas.jobs import JobDetailResponse, JobListResponse, SavedJobListResponse, SavedJobResponse
+from app.schemas.jobs import (
+    JobDetailResponse,
+    JobListResponse,
+    SalaryTrendResponse,
+    SavedJobListResponse,
+    SavedJobResponse,
+)
 from app.security.auth import require_authenticated_user
 from app.core.rate_limit import rate_limit_auth
 from app.services.activity import (
@@ -21,6 +27,7 @@ from app.services.jobs import (
     DEFAULT_PAGE_SIZE,
     MAX_PAGE_SIZE,
     JobNotFoundError,
+    get_salary_trend,
     get_visible_job_detail,
     list_jobs,
     list_saved_jobs_for_user,
@@ -42,7 +49,7 @@ SearchText = Annotated[
 Page = Annotated[int, Query(ge=1, le=1000)]
 PageSize = Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)]
 JobId = Annotated[int, Path(gt=0)]
-ApprovedSource = Literal["JobStreet", "MyCareersFuture"]
+ApprovedSource = Literal["JobStreet", "MyCareersFuture", "JobsLah", "FastJobs"]
 
 
 @router.get("/jobs", response_model=JobListResponse)
@@ -72,6 +79,20 @@ def browse_jobs(
         page=page,
         page_size=page_size,
     )
+
+
+@router.get("/salary-trends", response_model=SalaryTrendResponse)
+def salary_trends(
+    request: Request,
+    role: Annotated[
+        str,
+        Query(min_length=2, max_length=100, pattern=r"^[\w\s.,&()+#/'\-]+$"),
+    ],
+    months: Annotated[int, Query(ge=1, le=24)] = 12,
+    db: Session = Depends(get_db),
+) -> SalaryTrendResponse:
+    rate_limit_auth(request, "salary-trends", limit=60, window_seconds=300)
+    return get_salary_trend(db, role=role, months=months)
 
 
 @router.get("/jobs/{job_id}", response_model=JobDetailResponse)
