@@ -28,7 +28,7 @@ export type Profile = {
 
 export type JobSource = {
   id: number;
-  source_name: "JobStreet" | "MyCareersFuture" | string;
+  source_name: "JobStreet" | "MyCareersFuture" | "JobsLah" | "FastJobs" | string;
 };
 
 export type AdminUserListResponse = {
@@ -97,6 +97,11 @@ export type JobSummary = {
   company: string;
   location: string | null;
   category: string | null;
+  salary_min: number | null;
+  salary_max: number | null;
+  salary_currency: string | null;
+  salary_period: string | null;
+  minimum_experience: string | null;
   source: JobSource;
   posting_date: string | null;
   scraped_at: string;
@@ -116,6 +121,43 @@ export type JobListResponse = {
   page: number;
   page_size: number;
   total: number;
+};
+
+export type SalaryTrendPoint = {
+  period: string;
+  average_salary: number;
+  sample_count: number;
+};
+
+export type SalaryTrendResponse = {
+  role: string;
+  currency: string;
+  period: string;
+  points: SalaryTrendPoint[];
+  sample_size: number;
+};
+
+export type JobRoleSummary = {
+  slug: string;
+  name: string;
+  tagline: string;
+  category: string;
+  job_count: number;
+  typical_monthly_salary: number | null;
+};
+
+export type JobRoleListResponse = {
+  items: JobRoleSummary[];
+};
+
+export type JobRoleDetail = JobRoleSummary & {
+  overview: string;
+  tasks: string[];
+  how_to_become_intro: string;
+  how_to_become_steps: string[];
+  top_skills: string[];
+  salary_points: SalaryTrendPoint[];
+  latest_jobs: JobSummary[];
 };
 
 export type SavedJob = {
