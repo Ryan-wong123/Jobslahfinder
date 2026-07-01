@@ -279,6 +279,159 @@ def test_gemini_failure_falls_back_without_logging_sensitive_content(
     assert "sensitive job detail" not in details
 
 
+def test_ai_interview_question_output_is_normalized_to_safe_text() -> None:
+    payload = activity_service.validate_interview_questions_payload(
+        payload={
+            "items": [
+                {
+                    "category": " Technical ",
+                    "difficulty": " Medium ",
+                    "question": "<p>How would you secure a FastAPI endpoint?</p>",
+                },
+                {
+                    "category": "Behavioral",
+                    "difficulty": "Easy",
+                    "question": "Tell me about a time you handled a deadline.\u0000",
+                },
+            ]
+        },
+        job_id=1,
+        resume_id=2,
+        generated_by="gemini",
+    )
+
+    assert payload.items[0].category == "Technical"
+    assert payload.items[0].difficulty == "Medium"
+    assert "<p>" not in payload.items[0].question
+    assert "\u0000" not in payload.items[1].question
+
+
+def test_malformed_ai_interview_question_output_is_rejected() -> None:
+    with pytest.raises(ValueError):
+        activity_service.validate_interview_questions_payload(
+            payload={
+                "items": [
+                    {
+                        "category": "Technical",
+                        "difficulty": "Medium",
+                        "question": "Duplicate?",
+                    },
+                    {
+                        "category": "Technical",
+                        "difficulty": "Medium",
+                        "question": "Duplicate?",
+                    },
+                ]
+            },
+            job_id=1,
+            resume_id=2,
+            generated_by="gemini",
+        )
+
+
+def test_interview_questions_generation_returns_safe_questions_and_audits(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = create_source(db_session)
+    user = create_user(db_session, email="interview@example.com")
+    extraction = create_completed_extraction(db_session, user)
+    job = create_job(db_session, source)
+
+    def fake_generate_interview_questions_with_gemini(*, extraction, job, settings):
+        return activity_service.validate_interview_questions_payload(
+            payload={
+                "items": [
+                    {
+                        "category": "Technical",
+                        "difficulty": "Medium",
+                        "question": "<b>How would you secure this API?</b>",
+                    }
+                ]
+            },
+            job_id=job.id,
+            resume_id=extraction.resume_id,
+            generated_by="gemini",
+        )
+
+    monkeypatch.setattr(
+        activity_service,
+        "generate_interview_questions_with_gemini",
+        fake_generate_interview_questions_with_gemini,
+    )
+    login(client, email=user.email)
+
+    response = client.post(f"/jobs/{job.id}/interview-questions")
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["job_id"] == job.id
+    assert body["resume_id"] == extraction.resume_id
+    assert body["items"][0]["question"] == "How would you secure this API?"
+    audit = db_session.scalar(
+        select(AuditLog)
+        .where(AuditLog.event_type == "interview_questions.generate")
+        .order_by(AuditLog.id.desc())
+    )
+    assert audit is not None
+    assert audit.outcome == "SUCCESS"
+    assert audit.details_json["question_count"] == 1
+    assert "How would you secure" not in str(audit.details_json)
+
+
+def test_interview_questions_require_completed_extraction_and_available_job(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    source = create_source(db_session)
+    user = create_user(db_session, email="missing-interview@example.com")
+    active_job = create_job(db_session, source, title="Active Interview Job")
+    inactive_job = create_job(db_session, source, title="Inactive Interview Job", is_active=False)
+    login(client, email=user.email)
+
+    missing_resume_response = client.post(f"/jobs/{active_job.id}/interview-questions")
+    inactive_job_response = client.post(f"/jobs/{inactive_job.id}/interview-questions")
+
+    assert missing_resume_response.status_code == 400
+    assert missing_resume_response.json() == {"detail": "No completed resume extraction is available."}
+    assert inactive_job_response.status_code == 404
+
+
+def test_interview_questions_provider_failure_returns_safe_error(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = create_source(db_session)
+    user = create_user(db_session, email="interview-failure@example.com")
+    create_completed_extraction(db_session, user, extracted_text="private resume content")
+    job = create_job(db_session, source, description="private job description")
+
+    def fail_generation(*, extraction, job, settings):
+        raise RuntimeError("503 unavailable with private details")
+
+    monkeypatch.setattr(activity_service, "generate_interview_questions_with_gemini", fail_generation)
+    login(client, email=user.email)
+
+    response = client.post(f"/jobs/{job.id}/interview-questions")
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": "Unable to generate interview questions right now. Please try again later."
+    }
+    audit = db_session.scalar(
+        select(AuditLog)
+        .where(AuditLog.event_type == "interview_questions.generate")
+        .order_by(AuditLog.id.desc())
+    )
+    assert audit is not None
+    assert audit.outcome == "FAILURE"
+    assert audit.details_json["reason"] == "ai_provider_unavailable"
+    assert "private resume content" not in str(audit.details_json)
+    assert "private job description" not in str(audit.details_json)
+
+
 def test_generation_without_completed_extraction_fails_safely_and_audits(
     client: TestClient, db_session: Session
 ) -> None:

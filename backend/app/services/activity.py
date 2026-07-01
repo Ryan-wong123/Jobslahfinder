@@ -15,6 +15,8 @@ from app.schemas.activity import (
     CoverLetterListResponse,
     CoverLetterResponse,
     CoverLetterUpdateRequest,
+    InterviewQuestionsResponse,
+    MAX_INTERVIEW_QUESTIONS,
     RecommendationListResponse,
     RecommendationResponse,
 )
@@ -23,6 +25,7 @@ from app.security.auth import assert_owner_or_admin
 from app.services.application_history import APPLICATION_HISTORY_ACTION_TYPES, add_application_history
 from app.services.audit import create_audit_log
 from app.services.jobs import DEFAULT_PAGE_SIZE, JobNotFoundError, clean_text, get_saveable_job, job_to_summary_response
+from app.services.resumes import parse_gemini_json_response
 
 
 class ActivityNotFoundError(ValueError):
@@ -266,6 +269,228 @@ def safe_generation_failure_reason(exc: Exception) -> str:
     if isinstance(exc, ValueError):
         return "ai_response_invalid"
     return "ai_provider_failed"
+
+
+INTERVIEW_QUESTIONS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "items": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": MAX_INTERVIEW_QUESTIONS,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "category": {
+                        "type": "string",
+                        "enum": ["Technical", "Behavioral", "Situational", "Resume-based"],
+                    },
+                    "question": {"type": "string", "minLength": 1, "maxLength": 500},
+                    "difficulty": {"type": "string", "enum": ["Easy", "Medium", "Hard"]},
+                },
+                "required": ["category", "question", "difficulty"],
+                "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["items"],
+    "additionalProperties": False,
+}
+
+
+def build_interview_resume_context(extraction: ResumeExtraction) -> str:
+    skills = safe_profile_items(extraction.skills_json, limit=15)
+    experience = safe_profile_dict_items(
+        extraction.experience_json,
+        keys=("title", "company"),
+        limit=5,
+    )
+    education = safe_profile_dict_items(
+        extraction.education_json,
+        keys=("credential", "field", "institution"),
+        limit=3,
+    )
+    years = float(extraction.years_experience) if extraction.years_experience is not None else None
+
+    return (
+        "Resume profile:\n"
+        f"Skills: {', '.join(skills) if skills else 'Not provided'}\n"
+        f"Work experience only: {', '.join(experience) if experience else 'Not provided'}\n"
+        f"Education: {', '.join(education) if education else 'Not provided'}\n"
+        f"Years experience: {years if years is not None else 'Not provided'}\n"
+    )
+
+
+def validate_interview_questions_payload(
+    *,
+    payload: dict,
+    job_id: int,
+    resume_id: int,
+    generated_by: str,
+) -> InterviewQuestionsResponse:
+    candidate = dict(payload)
+    candidate["job_id"] = job_id
+    candidate["resume_id"] = resume_id
+    candidate["generated_by"] = generated_by
+    return InterviewQuestionsResponse.model_validate(candidate)
+
+
+def generate_interview_questions_with_gemini(
+    *,
+    extraction: ResumeExtraction,
+    job: JobPosting,
+    settings: Settings,
+) -> InterviewQuestionsResponse:
+    if settings.gemini_api_key is None:
+        raise RuntimeError("gemini_api_key_missing")
+
+    try:
+        from google import genai
+    except ImportError as exc:
+        raise RuntimeError("google_genai_dependency_missing") from exc
+
+    client = genai.Client(api_key=settings.gemini_api_key.get_secret_value())
+
+    title = clean_text(job.title, max_length=120) or "this role"
+    company = clean_text(job.company, max_length=120) or "the company"
+    description = clean_text(job.description, max_length=2500) or "No job description provided."
+
+    prompt = (
+        "Generate realistic AI interview practice questions for a job applicant. "
+        "Use only the resume profile and job information provided below. "
+        "Return JSON only and match the provided schema exactly.\n\n"
+        "Important rules:\n"
+        "- These are practice questions, not verified past company interview questions.\n"
+        "- Do not claim that the questions came from the employer or from a real previous interview.\n"
+        "- Do not invent applicant achievements, employers, schools, or projects.\n"
+        "- Use the job title and job description to make the questions relevant.\n"
+        "- Use the resume profile only as context for personalising questions.\n"
+        "- Do not treat personal projects, school projects, coursework, awards, or volunteer activities as work experience.\n"
+        "- Resume-based questions may ask about skills, education, or actual work experience only.\n"
+        "- Do not mislabel projects as jobs.\n"
+        "- Generate exactly 10 questions if possible.\n"
+        "- Include a balanced mix of Technical, Behavioral, Situational, and Resume-based questions.\n"
+        "- Difficulty must be Easy, Medium, or Hard.\n\n"
+        "Categories:\n"
+        "- Technical: questions about tools, systems, programming, workflows, or role-specific knowledge.\n"
+        "- Behavioral: questions about teamwork, communication, conflict, leadership, mistakes, or deadlines.\n"
+        "- Situational: questions about what the candidate would do in a realistic workplace scenario.\n"
+        "- Resume-based: questions about a specific skill, education item, or actual work experience from the resume.\n\n"
+        "Output JSON shape:\n"
+        "{\n"
+        '  "items": [\n'
+        '    {"category": "Technical", "question": "Question text here", "difficulty": "Medium"}\n'
+        "  ]\n"
+        "}\n\n"
+        f"{build_interview_resume_context(extraction)}\n"
+        "Job information:\n"
+        f"Job title: {title}\n"
+        f"Company: {company}\n"
+        f"Job description:\n{description}\n"
+    )
+
+    response = client.models.generate_content(
+        model=settings.gemini_resume_model,
+        contents=prompt,
+        config={
+            "temperature": 0.5,
+            "max_output_tokens": 2048,
+            "response_mime_type": "application/json",
+            "response_json_schema": INTERVIEW_QUESTIONS_SCHEMA,
+            "system_instruction": (
+                "You generate interview practice questions for a secure job application support platform. "
+                "Return compact JSON only. Never claim questions are real past company interview questions."
+            ),
+        },
+    )
+
+    payload = parse_gemini_json_response(response.text or "")
+    return validate_interview_questions_payload(
+        payload=payload,
+        job_id=job.id,
+        resume_id=extraction.resume_id,
+        generated_by="gemini",
+    )
+
+
+def create_interview_questions_for_job(
+    db: Session,
+    request,
+    *,
+    current_user: User,
+    job_id: int,
+    settings: Settings,
+) -> InterviewQuestionsResponse:
+    try:
+        job = get_saveable_job(db, job_id=job_id)
+    except JobNotFoundError as exc:
+        create_audit_log(
+            db,
+            event_type="interview_questions.generate",
+            outcome=AuditOutcome.FAILURE,
+            request=request,
+            user_id=current_user.id,
+            target_type="job_posting",
+            target_id=job_id,
+            details={"reason": "job_unavailable"},
+        )
+        db.commit()
+        raise CoverLetterGenerationJobUnavailableError("Resource not found.") from exc
+
+    extraction = latest_completed_extraction(db, user_id=current_user.id)
+    if extraction is None:
+        create_audit_log(
+            db,
+            event_type="interview_questions.generate",
+            outcome=AuditOutcome.FAILURE,
+            request=request,
+            user_id=current_user.id,
+            target_type="job_posting",
+            target_id=job.id,
+            details={"reason": "no_completed_extraction", "job_id": job.id},
+        )
+        db.commit()
+        raise CoverLetterGenerationInputMissingError("No completed resume extraction is available.")
+
+    try:
+        questions = generate_interview_questions_with_gemini(
+            extraction=extraction,
+            job=job,
+            settings=settings,
+        )
+    except Exception as exc:
+        create_audit_log(
+            db,
+            event_type="interview_questions.generate",
+            outcome=AuditOutcome.FAILURE,
+            request=request,
+            user_id=current_user.id,
+            target_type="job_posting",
+            target_id=job.id,
+            details={
+                "reason": safe_generation_failure_reason(exc),
+                "resume_id": extraction.resume_id,
+            },
+        )
+        db.commit()
+        raise
+
+    create_audit_log(
+        db,
+        event_type="interview_questions.generate",
+        outcome=AuditOutcome.SUCCESS,
+        request=request,
+        user_id=current_user.id,
+        target_type="job_posting",
+        target_id=job.id,
+        details={
+            "resume_id": extraction.resume_id,
+            "question_count": len(questions.items),
+            "generated_by": questions.generated_by,
+        },
+    )
+    db.commit()
+    return questions
 
 
 def create_cover_letter_for_job(

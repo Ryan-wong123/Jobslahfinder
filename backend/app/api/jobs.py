@@ -7,7 +7,7 @@ from app.core.database import get_db
 from app.models.account import User
 from app.core.config import Settings, get_settings
 from app.schemas.auth import MessageResponse
-from app.schemas.activity import CoverLetterResponse
+from app.schemas.activity import CoverLetterResponse, InterviewQuestionsResponse
 from app.schemas.jobs import (
     JobDetailResponse,
     JobListResponse,
@@ -21,6 +21,7 @@ from app.services.activity import (
     CoverLetterGenerationInputMissingError,
     CoverLetterGenerationJobUnavailableError,
     create_cover_letter_for_job,
+    create_interview_questions_for_job,
 )
 from app.services.jobs import (
     APPROVED_JOB_SOURCES,
@@ -124,6 +125,41 @@ def generate_cover_letter(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No completed resume extraction is available.") from exc
     except CoverLetterGenerationJobUnavailableError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resource not found.") from exc
+
+
+@router.post(
+    "/jobs/{job_id}/interview-questions",
+    response_model=InterviewQuestionsResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def generate_interview_questions(
+    job_id: JobId,
+    request: Request,
+    current_user: User = Depends(require_authenticated_user),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> InterviewQuestionsResponse:
+    rate_limit_auth(request, "interview-questions-generate", limit=5, window_seconds=300)
+    try:
+        return create_interview_questions_for_job(
+            db,
+            request,
+            current_user=current_user,
+            job_id=job_id,
+            settings=settings,
+        )
+    except CoverLetterGenerationInputMissingError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No completed resume extraction is available.",
+        ) from exc
+    except CoverLetterGenerationJobUnavailableError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resource not found.") from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Unable to generate interview questions right now. Please try again later.",
+        ) from exc
 
 
 @router.post("/jobs/{job_id}/save", response_model=SavedJobResponse, status_code=status.HTTP_201_CREATED)
