@@ -8,6 +8,7 @@ from app.schemas.auth import (
     AccountDeletionRequest,
     AccountUpdateRequest,
     LoginRequest,
+    LoginResponse,
     MessageResponse,
     PasswordChangeRequest,
     PasswordResetConfirmRequest,
@@ -15,6 +16,9 @@ from app.schemas.auth import (
     ProfileResponse,
     ProfileUpdateRequest,
     RegisterRequest,
+    TwoFactorConfirmRequest,
+    TwoFactorSetupResponse,
+    TwoFactorVerifyRequest,
     UserResponse,
 )
 from app.security.auth import AuthenticatedSession, require_authenticated_session, require_authenticated_user
@@ -38,8 +42,21 @@ from app.services.auth import (
     register_user,
     request_password_reset,
     revoke_session,
+    utc_now,
 )
 from app.models.account import User
+from app.models.enums import AuditOutcome
+from app.services.audit import create_audit_log
+from app.services.two_factor import (
+    create_pending_2fa_challenge,
+    decrypt_totp_secret,
+    encrypt_totp_secret,
+    generate_totp_secret,
+    get_pending_2fa_challenge,
+    invalidate_pending_2fa_challenge,
+    provisioning_uri,
+    verify_totp_code,
+)
 
 
 router = APIRouter(tags=["auth"])
@@ -80,22 +97,153 @@ def register(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=GENERIC_REGISTER_ERROR) from exc
 
 
-@router.post("/auth/login", response_model=MessageResponse)
+@router.post("/auth/login", response_model=LoginResponse)
 def login(
     payload: LoginRequest,
     request: Request,
     response: Response,
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
-) -> MessageResponse:
+) -> LoginResponse:
     rate_limit_auth(request, "login", limit=20, window_seconds=300)
     try:
         user = authenticate_user(db, request, email=payload.email, password=payload.password)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=GENERIC_LOGIN_ERROR) from exc
+    if user.totp_enabled:
+        challenge_token = create_pending_2fa_challenge(user_id=user.id, settings=settings)
+        return LoginResponse(
+            message="Two-factor verification required.",
+            requires_2fa=True,
+            challenge_token=challenge_token,
+        )
     token, _session = create_session(db, request, settings, user=user)
     set_session_cookie(response, settings, token)
-    return MessageResponse(message="Logged in.")
+    return LoginResponse(message="Logged in.")
+
+
+@router.get("/auth/2fa/setup", response_model=TwoFactorSetupResponse)
+def two_factor_setup(
+    current_user: User = Depends(require_authenticated_user),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> TwoFactorSetupResponse:
+    if current_user.totp_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Two-factor authentication is already enabled.",
+        )
+    if current_user.totp_secret_encrypted:
+        secret = decrypt_totp_secret(settings, current_user.totp_secret_encrypted)
+    else:
+        secret = generate_totp_secret()
+        current_user.totp_secret_encrypted = encrypt_totp_secret(settings, secret)
+        db.commit()
+    return TwoFactorSetupResponse(
+        secret=secret,
+        provisioning_uri=provisioning_uri(email=current_user.email, secret=secret),
+    )
+
+
+@router.post("/auth/2fa/confirm", response_model=MessageResponse)
+def two_factor_confirm(
+    payload: TwoFactorConfirmRequest,
+    request: Request,
+    current_user: User = Depends(require_authenticated_user),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> MessageResponse:
+    rate_limit_auth(request, "2fa-confirm", limit=5, window_seconds=60)
+    if current_user.totp_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Two-factor authentication is already enabled.",
+        )
+    if not verify_totp_code(settings, current_user, payload.code):
+        create_audit_log(
+            db,
+            event_type="auth.2fa_setup",
+            outcome=AuditOutcome.FAILURE,
+            request=request,
+            user_id=current_user.id,
+            target_type="user",
+            target_id=current_user.id,
+            details={"reason": "invalid_code"},
+        )
+        db.commit()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid verification code.")
+
+    current_user.totp_enabled = True
+    current_user.totp_confirmed_at = utc_now()
+    create_audit_log(
+        db,
+        event_type="auth.2fa_setup",
+        outcome=AuditOutcome.SUCCESS,
+        request=request,
+        user_id=current_user.id,
+        target_type="user",
+        target_id=current_user.id,
+    )
+    db.commit()
+    return MessageResponse(message="Two-factor authentication enabled.")
+
+
+@router.post("/auth/2fa/verify", response_model=LoginResponse)
+def two_factor_verify(
+    payload: TwoFactorVerifyRequest,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> LoginResponse:
+    rate_limit_auth(request, f"2fa-verify:{payload.challenge_token}", limit=5, window_seconds=60)
+    rate_limit_auth(request, "2fa-verify", limit=10, window_seconds=60)
+    challenge = get_pending_2fa_challenge(payload.challenge_token, settings)
+    if challenge is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Two-factor verification expired.")
+    user = db.get(User, challenge.user_id)
+    if user is None or not user.is_active or not user.totp_enabled:
+        create_audit_log(
+            db,
+            event_type="auth.2fa_verify",
+            outcome=AuditOutcome.FAILURE,
+            request=request,
+            user_id=user.id if user else None,
+            target_type="user",
+            target_id=user.id if user else None,
+            details={"reason": "invalid_user"},
+        )
+        db.commit()
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid verification code.")
+    if not verify_totp_code(settings, user, payload.code):
+        create_audit_log(
+            db,
+            event_type="auth.2fa_verify",
+            outcome=AuditOutcome.FAILURE,
+            request=request,
+            user_id=user.id,
+            target_type="user",
+            target_id=user.id,
+            details={"reason": "invalid_code"},
+        )
+        db.commit()
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid verification code.")
+    if not invalidate_pending_2fa_challenge(payload.challenge_token, settings):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Two-factor verification expired.")
+
+    create_audit_log(
+        db,
+        event_type="auth.2fa_verify",
+        outcome=AuditOutcome.SUCCESS,
+        request=request,
+        user_id=user.id,
+        target_type="user",
+        target_id=user.id,
+    )
+    db.commit()
+    token, _session = create_session(db, request, settings, user=user)
+    set_session_cookie(response, settings, token)
+    return LoginResponse(message="Logged in.")
 
 
 @router.post("/auth/logout", response_model=MessageResponse)

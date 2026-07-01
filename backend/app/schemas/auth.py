@@ -73,6 +73,34 @@ class LoginRequest(BaseModel):
         return validate_email(value)
 
 
+class LoginResponse(BaseModel):
+    message: str
+    requires_2fa: bool = False
+    challenge_token: str | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class TwoFactorSetupResponse(BaseModel):
+    secret: str
+    provisioning_uri: str
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class TwoFactorConfirmRequest(BaseModel):
+    code: str = Field(min_length=6, max_length=8)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class TwoFactorVerifyRequest(BaseModel):
+    challenge_token: str = Field(min_length=32, max_length=256)
+    code: str = Field(min_length=6, max_length=8)
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class PasswordChangeRequest(BaseModel):
     current_password: str = Field(min_length=1, max_length=128)
     new_password: str = Field(min_length=12, max_length=128)
@@ -193,6 +221,7 @@ class UserResponse(BaseModel):
     email: str
     role: str
     is_active: bool
+    totp_enabled: bool
     created_at: datetime
     last_login_at: datetime | None
 
