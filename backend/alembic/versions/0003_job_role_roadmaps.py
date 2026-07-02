@@ -1,7 +1,7 @@
 """add job role roadmaps
 
 Revision ID: 0003_job_role_roadmaps
-Revises: 0002_reco_rank_meta
+Revises: 0003_user_totp
 Create Date: 2026-06-03
 """
 
@@ -12,7 +12,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "0003_job_role_roadmaps"
-down_revision: str | None = "0002_reco_rank_meta"
+down_revision: str | None = "0003_user_totp"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
