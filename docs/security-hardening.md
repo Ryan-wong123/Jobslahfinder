@@ -1,4 +1,4 @@
-# Phase 12 Security Hardening Notes
+# Security Hardening Notes
 
 ## HTTPS/TLS Local Testing
 

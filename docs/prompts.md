@@ -1,6 +1,6 @@
 # Security Hardening Implementation Prompts
 
-Use these prompts one at a time. Before implementing any prompt, read `AGENTS.md`, `PRD.md`, `ARCHITECTURE.md`, `CODING_GUIDELINES.md`, and `TASKS.md`, then keep the change scoped to the named hardening task. Do not remove existing authentication, authorization, validation, audit logging, or tests to make a change pass. After the task is implemented and verified, update the matching checkbox in `TASKS.md` from `[ ]` to `[x]`; leave it unchecked if tests were not run or work remains.
+Use these prompts one at a time. Before implementing any prompt, read `AGENTS.md`, `docs/PRD.md`, `docs/ARCHITECTURE.md`, `docs/CODING_GUIDELINES.md`, and `docs/TASKS.md`, then keep the change scoped to the named hardening task. Do not remove existing authentication, authorization, validation, audit logging, or tests to make a change pass. After the task is implemented and verified, update the matching checkbox in `docs/TASKS.md` from `[ ]` to `[x]`; leave it unchecked if tests were not run or work remains.
 
 ---
 

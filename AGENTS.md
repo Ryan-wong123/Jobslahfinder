@@ -45,39 +45,42 @@ Prefer this structure:
 
 ```text
 /
-├── AGENTS.md
-├── PRD.md
-├── ARCHITECTURE.md
-├── TASKS.md
-├── CODING_GUIDELINES.md
-├── README.md
-├── docker-compose.yml
-├── .env.example
-├── frontend/
-│   ├── package.json
-│   ├── src/
-│   │   ├── app/
-│   │   ├── components/
-│   │   ├── lib/
-│   │   └── styles/
-├── backend/
-│   ├── pyproject.toml
-│   ├── alembic/
-│   ├── app/
-│   │   ├── main.py
-│   │   ├── core/
-│   │   ├── api/
-│   │   ├── models/
-│   │   ├── schemas/
-│   │   ├── services/
-│   │   ├── workers/
-│   │   ├── security/
-│   │   └── tests/
-├── infra/
-│   ├── nginx/
-│   ├── scripts/
-│   └── ci/
-└── docs/
+|-- AGENTS.md
+|-- README.md
+|-- docker-compose.yml
+|-- .env.example
+|-- docs/
+|   |-- PRD.md
+|   |-- ARCHITECTURE.md
+|   |-- TASKS.md
+|   |-- CODING_GUIDELINES.md
+|   |-- DEPLOYMENT.md
+|   |-- DEPLOYMENT_COMMANDS.md
+|   `-- prompts.md
+|-- frontend/
+|   |-- package.json
+|   `-- src/
+|       |-- app/
+|       |-- components/
+|       |-- lib/
+|       `-- styles/
+|-- backend/
+|   |-- pyproject.toml
+|   |-- alembic/
+|   `-- app/
+|       |-- main.py
+|       |-- core/
+|       |-- api/
+|       |-- models/
+|       |-- schemas/
+|       |-- services/
+|       |-- workers/
+|       |-- security/
+|       `-- tests/
+`-- infra/
+    |-- nginx/
+    |-- scripts/
+    `-- ci/
 ```
 
 ---
@@ -85,10 +88,10 @@ Prefer this structure:
 ## Required Supporting Markdown Files
 This repository should also contain:
 
-- `PRD.md` — product requirements, FR/NFR/SFR/FSR/NFSR/SDR.
-- `ARCHITECTURE.md` — physical architecture, logical architecture, Level 0 DFD, database schema.
-- `TASKS.md` — phased implementation checklist.
-- `CODING_GUIDELINES.md` — detailed coding, security, testing, and deployment rules.
+- `docs/PRD.md` — product requirements, FR/NFR/SFR/FSR/NFSR/SDR.
+- `docs/ARCHITECTURE.md` — physical architecture, logical architecture, Level 0 DFD, database schema.
+- `docs/TASKS.md` — phased implementation checklist.
+- `docs/CODING_GUIDELINES.md` — detailed coding, security, testing, and deployment rules.
 
 Codex should consult these files before making implementation decisions.
 
@@ -705,9 +708,9 @@ A feature is done only when:
 - Tests cover success and failure cases.
 - The frontend handles errors safely.
 - Documentation or task files are updated if architecture/behaviour changes.
-- Any matching item in `TASKS.md` is marked `[x]` only after the implementation is complete and verified; leave it `[ ]` or `[~]` if work remains or tests were not run.
+- Any matching item in `docs/TASKS.md` is marked `[x]` only after the implementation is complete and verified; leave it `[ ]` or `[~]` if work remains or tests were not run.
 - No secrets are committed.
-- The implementation follows `PRD.md`, `ARCHITECTURE.md`, `TASKS.md`, and `CODING_GUIDELINES.md`.
+- The implementation follows `docs/PRD.md`, `docs/ARCHITECTURE.md`, `docs/TASKS.md`, and `docs/CODING_GUIDELINES.md`.
 
 ---
 
@@ -716,7 +719,7 @@ A feature is done only when:
 When working on this repository:
 
 1. Read this file first.
-2. Read `PRD.md`, `ARCHITECTURE.md`, `TASKS.md`, and `CODING_GUIDELINES.md` before large changes.
+2. Read `docs/PRD.md`, `docs/ARCHITECTURE.md`, `docs/TASKS.md`, and `docs/CODING_GUIDELINES.md` before large changes.
 3. Prefer small, focused commits/patches.
 4. Do not remove security checks to make tests pass.
 5. Do not introduce insecure shortcuts.
@@ -729,7 +732,7 @@ When working on this repository:
 12. If a feature creates a new user-owned resource, add ownership checks.
 13. If a feature accepts files, apply upload validation.
 14. If a feature displays external or user-generated content, sanitize or encode it.
-15. When completing a tracked task, update the corresponding checkbox in `TASKS.md` to `[x]` only after code, tests, and required documentation updates are done.
+15. When completing a tracked task, update the corresponding checkbox in `docs/TASKS.md` to `[x]` only after code, tests, and required documentation updates are done.
 16. If unsure, choose the safer fail-closed implementation.
 
 ---

@@ -7,9 +7,9 @@ This file is the implementation checklist for the Secure AI-Assisted Job Aggrega
 
 Use it with:
 - `AGENTS.md` for coding-agent instructions.
-- `PRD.md` for product requirements.
-- `ARCHITECTURE.md` for system design, DFD, API areas, database schema, risks, and threat model.
-- `CODING_GUIDELINES.md` for secure coding rules.
+- `docs/PRD.md` for product requirements.
+- `docs/ARCHITECTURE.md` for system design, DFD, API areas, database schema, risks, and threat model.
+- `docs/CODING_GUIDELINES.md` for secure coding rules.
 
 Security is part of every task. Do not treat security hardening as something only done at the end.
 
@@ -45,9 +45,9 @@ A task is only done when:
 
 ### Repository and Documentation
 - [x] Create repository structure.
-- [x] Add `AGENTS.md`, `PRD.md`, `ARCHITECTURE.md`, `TASKS.md`, `CODING_GUIDELINES.md`.
+- [x] Add `AGENTS.md`, `docs/PRD.md`, `docs/ARCHITECTURE.md`, `docs/TASKS.md`, `docs/CODING_GUIDELINES.md`.
 - [x] Add `README.md` with local setup, test, lint, Docker, and deployment commands.
-- [x] Add `docs/` directory for screenshots, diagrams, and report-related assets.
+- [x] Add `docs/` directory for project documentation, screenshots, diagrams, and report-related assets.
 - [x] Add `.gitignore` for `.env`, uploaded files, generated keys, caches, build outputs, logs, local database files, and temporary worker files.
 - [~] Add `.env.example` with placeholder values only.
 - [~] Add `CHANGELOG.md` or simple release notes if useful.

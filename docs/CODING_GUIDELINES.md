@@ -49,39 +49,42 @@ Prefer this structure:
 
 ```text
 /
-├── AGENTS.md
-├── PRD.md
-├── ARCHITECTURE.md
-├── TASKS.md
-├── CODING_GUIDELINES.md
-├── README.md
-├── docker-compose.yml
-├── .env.example
-├── frontend/
-│   ├── package.json
-│   └── src/
-│       ├── app/
-│       ├── components/
-│       ├── lib/
-│       └── styles/
-├── backend/
-│   ├── pyproject.toml
-│   ├── alembic/
-│   └── app/
-│       ├── main.py
-│       ├── core/
-│       ├── api/
-│       ├── models/
-│       ├── schemas/
-│       ├── services/
-│       ├── workers/
-│       ├── security/
-│       └── tests/
-├── infra/
-│   ├── nginx/
-│   ├── scripts/
-│   └── ci/
-└── docs/
+|-- AGENTS.md
+|-- README.md
+|-- docker-compose.yml
+|-- .env.example
+|-- docs/
+|   |-- PRD.md
+|   |-- ARCHITECTURE.md
+|   |-- TASKS.md
+|   |-- CODING_GUIDELINES.md
+|   |-- DEPLOYMENT.md
+|   |-- DEPLOYMENT_COMMANDS.md
+|   `-- prompts.md
+|-- frontend/
+|   |-- package.json
+|   `-- src/
+|       |-- app/
+|       |-- components/
+|       |-- lib/
+|       `-- styles/
+|-- backend/
+|   |-- pyproject.toml
+|   |-- alembic/
+|   `-- app/
+|       |-- main.py
+|       |-- core/
+|       |-- api/
+|       |-- models/
+|       |-- schemas/
+|       |-- services/
+|       |-- workers/
+|       |-- security/
+|       `-- tests/
+`-- infra/
+    |-- nginx/
+    |-- scripts/
+    `-- ci/
 ```
 
 ---
@@ -971,7 +974,7 @@ Before completing any feature, check:
 - Are secrets absent from code and commits?
 - Does this change preserve least privilege?
 - Does this change fail securely?
-- Does this change follow `AGENTS.md`, `PRD.md`, `ARCHITECTURE.md`, and `TASKS.md`?
+- Does this change follow `AGENTS.md`, `docs/PRD.md`, `docs/ARCHITECTURE.md`, and `docs/TASKS.md`?
 
 ---
 
