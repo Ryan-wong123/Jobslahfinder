@@ -17,7 +17,11 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.add_column("job_postings", sa.Column("minimum_experience", sa.String(length=100), nullable=True))
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    existing_columns = {column["name"] for column in inspector.get_columns("job_postings")}
+    if "minimum_experience" not in existing_columns:
+        op.add_column("job_postings", sa.Column("minimum_experience", sa.String(length=100), nullable=True))
 
 
 def downgrade() -> None:

@@ -17,12 +17,23 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.add_column("job_postings", sa.Column("salary_min", sa.Numeric(12, 2), nullable=True))
-    op.add_column("job_postings", sa.Column("salary_max", sa.Numeric(12, 2), nullable=True))
-    op.add_column("job_postings", sa.Column("salary_currency", sa.String(length=10), nullable=True))
-    op.add_column("job_postings", sa.Column("salary_period", sa.String(length=20), nullable=True))
-    op.create_index("ix_job_postings_salary_min", "job_postings", ["salary_min"])
-    op.create_index("ix_job_postings_salary_max", "job_postings", ["salary_max"])
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    existing_columns = {column["name"] for column in inspector.get_columns("job_postings")}
+    existing_indexes = {index["name"] for index in inspector.get_indexes("job_postings")}
+
+    if "salary_min" not in existing_columns:
+        op.add_column("job_postings", sa.Column("salary_min", sa.Numeric(12, 2), nullable=True))
+    if "salary_max" not in existing_columns:
+        op.add_column("job_postings", sa.Column("salary_max", sa.Numeric(12, 2), nullable=True))
+    if "salary_currency" not in existing_columns:
+        op.add_column("job_postings", sa.Column("salary_currency", sa.String(length=10), nullable=True))
+    if "salary_period" not in existing_columns:
+        op.add_column("job_postings", sa.Column("salary_period", sa.String(length=20), nullable=True))
+    if "ix_job_postings_salary_min" not in existing_indexes:
+        op.create_index("ix_job_postings_salary_min", "job_postings", ["salary_min"])
+    if "ix_job_postings_salary_max" not in existing_indexes:
+        op.create_index("ix_job_postings_salary_max", "job_postings", ["salary_max"])
 
 
 def downgrade() -> None:
