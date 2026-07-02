@@ -17,10 +17,17 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.add_column("users", sa.Column("totp_secret_encrypted", sa.Text(), nullable=True))
-    op.add_column("users", sa.Column("totp_enabled", sa.Boolean(), nullable=False, server_default=sa.false()))
-    op.add_column("users", sa.Column("totp_confirmed_at", sa.DateTime(timezone=True), nullable=True))
-    op.alter_column("users", "totp_enabled", server_default=None)
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    existing_columns = {column["name"] for column in inspector.get_columns("users")}
+
+    if "totp_secret_encrypted" not in existing_columns:
+        op.add_column("users", sa.Column("totp_secret_encrypted", sa.Text(), nullable=True))
+    if "totp_enabled" not in existing_columns:
+        op.add_column("users", sa.Column("totp_enabled", sa.Boolean(), nullable=False, server_default=sa.false()))
+        op.alter_column("users", "totp_enabled", server_default=None)
+    if "totp_confirmed_at" not in existing_columns:
+        op.add_column("users", sa.Column("totp_confirmed_at", sa.DateTime(timezone=True), nullable=True))
 
 
 def downgrade() -> None:
