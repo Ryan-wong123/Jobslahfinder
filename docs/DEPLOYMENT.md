@@ -83,3 +83,23 @@ docker compose logs --tail=100 nginx
 ```
 
 The current Compose file maps Nginx to host port `8080`. For public HTTP on port `80`, update `docker-compose.yml` to map `80:80` before production release, or route traffic through a host-level reverse proxy.
+
+## Optional Self-Signed HTTPS For IP-Only EC2 Demo
+
+If you do not have a domain, you can still run encrypted HTTPS with a self-signed certificate for the EC2 public IP. Browsers will show a certificate warning.
+
+```bash
+cd /opt/jobslahfinder
+sh ./infra/scripts/create-ec2-self-signed-cert.sh <EC2_PUBLIC_IP>
+docker compose -f docker-compose.yml -f docker-compose.local-tls.yml up -d --build
+```
+
+Open:
+
+```text
+https://<EC2_PUBLIC_IP>
+```
+
+Only switch secure-cookie production settings after HTTPS is reachable. If you continue using plain HTTP, keep `APP_ENV=development` or otherwise ensure secure cookies are not forced.
+
+Generated cert files under `infra/nginx/certs/` must stay on the server and must not be committed.

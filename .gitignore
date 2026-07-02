@@ -3,9 +3,8 @@
 *.key
 *.p12
 *.pfx
-.env
-.env.*
-!.env.example
+infra/nginx/certs/*
+!infra/nginx/certs/.gitkeep
 
 # Python
 __pycache__/
