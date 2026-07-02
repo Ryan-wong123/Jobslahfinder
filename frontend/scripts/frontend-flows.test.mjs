@@ -37,6 +37,9 @@ test("all implemented frontend routes mount their expected feature components", 
     [["resumes", "[resumeId]", "profile", "edit"], "ExtractedProfilePanel"],
     [["roadmaps"], "RoleCatalogPanel"],
     [["roadmaps", "[slug]"], "RoleDetailPanel"],
+    [["saved-jobs"], "SavedJobsPanel"],
+    [["two-factor", "setup"], "TwoFactorSetupPanel"],
+    [["two-factor", "verify"], "TwoFactorVerifyPanel"],
     [["salary-trends"], "SalaryTrendPanel"]
   ];
 
@@ -45,6 +48,29 @@ test("all implemented frontend routes mount their expected feature components", 
     assert.match(page, new RegExp(`import \\{ ${component} \\}`));
     assert.match(page, new RegExp(`<${component}(\\s|[>/])`));
   }
+});
+
+test("two-factor pages cover setup, confirmation, challenge verification, and safe redirects", () => {
+  const setupPanel = readComponent("TwoFactorSetupPanel");
+  const verifyPanel = readComponent("TwoFactorVerifyPanel");
+
+  assert.match(setupPanel, /apiFetch<TwoFactorSetup>\("\/auth\/2fa\/setup"\)/);
+  assert.match(setupPanel, /QRCode\.toDataURL\(currentSetup\.provisioning_uri/);
+  assert.match(setupPanel, /apiFetch<\{ message: string \}>\("\/auth\/2fa\/confirm", \{/);
+  assert.match(setupPanel, /body: JSON\.stringify\(\{ code: formData\.get\("code"\) \}\)/);
+  assert.match(setupPanel, /router\.push\("\/account"\)/);
+  assert.match(setupPanel, /autoComplete="one-time-code"/);
+
+  assert.match(verifyPanel, /const challenge = searchParams\.get\("challenge"\)/);
+  assert.match(verifyPanel, /apiFetch<\{ message: string \}>\("\/auth\/2fa\/verify", \{/);
+  assert.match(verifyPanel, /challenge_token: challenge/);
+  assert.match(verifyPanel, /code: formData\.get\("code"\)/);
+  assert.match(verifyPanel, /Missing verification challenge\. Sign in again\./);
+  assert.match(verifyPanel, /pending \|\| !challenge/);
+  assert.match(verifyPanel, /router\.push\("\/account"\)/);
+  assert.match(verifyPanel, /autoComplete="one-time-code"/);
+
+  assert.doesNotMatch(`${setupPanel}\n${verifyPanel}`, /localStorage|sessionStorage|dangerouslySetInnerHTML/);
 });
 
 test("account and protected user data flows call authenticated backend endpoints safely", () => {

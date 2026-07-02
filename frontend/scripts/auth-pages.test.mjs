@@ -43,13 +43,45 @@ test("auth forms call the expected backend endpoints with safe generic errors", 
   assert.match(resetConfirmForm, /Unable to reset password\./);
 });
 
+test("login flow routes users into required two-factor flows", () => {
+  const loginForm = readProjectFile("src", "components", "LoginForm.tsx");
+
+  assert.match(loginForm, /result\.requires_2fa && result\.challenge_token/);
+  assert.match(loginForm, /router\.push\(`\/two-factor\/verify\?challenge=\$\{encodeURIComponent\(result\.challenge_token\)\}`\)/);
+  assert.match(loginForm, /result\.requires_2fa_setup/);
+  assert.match(loginForm, /router\.push\("\/two-factor\/setup"\)/);
+});
+
+test("two-factor forms call expected endpoints without browser token storage", () => {
+  const setupPanel = readProjectFile("src", "components", "TwoFactorSetupPanel.tsx");
+  const verifyPanel = readProjectFile("src", "components", "TwoFactorVerifyPanel.tsx");
+  const twoFactorFiles = `${setupPanel}\n${verifyPanel}`;
+
+  assert.match(setupPanel, /apiFetch<TwoFactorSetup>\("\/auth\/2fa\/setup"\)/);
+  assert.match(setupPanel, /apiFetch<\{ message: string \}>\("\/auth\/2fa\/confirm"/);
+  assert.match(setupPanel, /QRCode\.toDataURL\(currentSetup\.provisioning_uri/);
+  assert.match(setupPanel, /autoComplete="one-time-code"/);
+  assert.match(setupPanel, /router\.push\("\/account"\)/);
+
+  assert.match(verifyPanel, /searchParams\.get\("challenge"\)/);
+  assert.match(verifyPanel, /apiFetch<\{ message: string \}>\("\/auth\/2fa\/verify"/);
+  assert.match(verifyPanel, /challenge_token: challenge/);
+  assert.match(verifyPanel, /Missing verification challenge\. Sign in again\./);
+  assert.match(verifyPanel, /autoComplete="one-time-code"/);
+  assert.match(verifyPanel, /router\.push\("\/account"\)/);
+
+  assert.doesNotMatch(twoFactorFiles, /localStorage|sessionStorage/);
+});
+
 test("auth forms avoid browser token storage and include password autocomplete hints", () => {
   const authFiles = [
     readProjectFile("src", "components", "LoginForm.tsx"),
     readProjectFile("src", "components", "RegisterForm.tsx"),
     readProjectFile("src", "components", "PasswordResetRequestForm.tsx"),
     readProjectFile("src", "components", "PasswordResetConfirmForm.tsx"),
-    readProjectFile("src", "components", "AccountPanel.tsx")
+    readProjectFile("src", "components", "AccountPanel.tsx"),
+    readProjectFile("src", "components", "TwoFactorSetupPanel.tsx"),
+    readProjectFile("src", "components", "TwoFactorVerifyPanel.tsx")
   ].join("\n");
 
   assert.doesNotMatch(authFiles, /localStorage|sessionStorage/);
