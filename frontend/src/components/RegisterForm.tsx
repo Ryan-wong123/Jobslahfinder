@@ -45,7 +45,7 @@ export function RegisterForm() {
   }
 
   return (
-    <form className="space-y-4" onSubmit={onSubmit}>
+    <form className="space-y-4" method="post" onSubmit={onSubmit}>
       <FormMessage message={error} tone="error" />
       <TextField label="Email" name="email" type="email" autoComplete="email" maxLength={255} />
       <TextField

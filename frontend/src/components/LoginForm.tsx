@@ -52,7 +52,7 @@ export function LoginForm() {
   }
 
   return (
-    <form className="space-y-4" onSubmit={onSubmit}>
+    <form className="space-y-4" method="post" onSubmit={onSubmit}>
       <FormMessage
         message={
           registered
