@@ -58,3 +58,21 @@ BACKUP_PATH=/var/backups/jobapp/20260630T120000Z docker compose exec postgres sh
 ```
 
 Test restores on a non-production database before relying on backups.
+
+## Risk Engine
+
+The risk engine is mounted at:
+
+```text
+/risk-engine
+```
+
+The human dashboard requires a valid main-app admin session and two-factor authentication. The machine API uses the risk engine API key after setup.
+
+Risk engine state is stored in `RISK_ENGINE_DATA_DIR`, defaulted in Docker to:
+
+```text
+/var/lib/jobapp/risk-engine
+```
+
+Keep that directory private and backed up. It may contain engine state, SQLite risk data, and audit data.

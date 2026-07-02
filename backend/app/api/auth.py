@@ -47,6 +47,13 @@ from app.services.auth import (
 from app.models.account import User
 from app.models.enums import AuditOutcome
 from app.services.audit import create_audit_log
+from app.services.risk_engine import (
+    APP_DEVICE_COOKIE_NAME,
+    evaluate_login_risk,
+    get_or_create_app_device_id,
+    issue_device_cookie,
+    learn_successful_login,
+)
 from app.services.two_factor import (
     create_pending_2fa_challenge,
     decrypt_totp_secret,
@@ -57,9 +64,11 @@ from app.services.two_factor import (
     provisioning_uri,
     verify_totp_code,
 )
+from risk_engine.config import COOKIE_NAME, TOKEN_TTL_DAYS
 
 
 router = APIRouter(tags=["auth"])
+TOO_MANY_LOGIN_ATTEMPTS_ERROR = "Too many login attempts. Please try again later."
 
 
 def set_session_cookie(response: Response, settings: Settings, token: str) -> None:
@@ -84,6 +93,57 @@ def clear_session_cookie(response: Response, settings: Settings) -> None:
     )
 
 
+def risk_engine_device_cookie_name(settings: Settings) -> str:
+    return COOKIE_NAME if settings.secure_cookies else "rba_dt"
+
+
+def set_risk_engine_cookies(
+    request: Request,
+    response: Response,
+    settings: Settings,
+    *,
+    user: User,
+    force_rotate: bool,
+) -> str | None:
+    device_id, is_new_device_id = get_or_create_app_device_id(request)
+    if is_new_device_id:
+        response.set_cookie(
+            key=APP_DEVICE_COOKIE_NAME,
+            value=device_id,
+            max_age=TOKEN_TTL_DAYS * 24 * 60 * 60,
+            httponly=True,
+            secure=settings.secure_cookies,
+            samesite="lax",
+            path="/",
+        )
+
+    issued = issue_device_cookie(user_id=user.id, device_id=device_id, force_rotate=force_rotate)
+    if issued.rotate and issued.raw_token:
+        response.set_cookie(
+            key=risk_engine_device_cookie_name(settings),
+            value=issued.raw_token,
+            max_age=TOKEN_TTL_DAYS * 24 * 60 * 60,
+            httponly=True,
+            secure=settings.secure_cookies,
+            samesite="lax",
+            path="/",
+        )
+        return issued.raw_token
+    return request.cookies.get(COOKIE_NAME) or request.cookies.get(risk_engine_device_cookie_name(settings))
+
+
+def risk_block_status(risk_reasons: list[str]) -> int:
+    if {"rapid_login_attempts", "excessive_login_attempts"}.intersection(risk_reasons):
+        return status.HTTP_429_TOO_MANY_REQUESTS
+    return status.HTTP_401_UNAUTHORIZED
+
+
+def risk_block_message(risk_reasons: list[str]) -> str:
+    if {"rapid_login_attempts", "excessive_login_attempts"}.intersection(risk_reasons):
+        return TOO_MANY_LOGIN_ATTEMPTS_ERROR
+    return GENERIC_LOGIN_ERROR
+
+
 @router.post("/auth/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def register(
     payload: RegisterRequest,
@@ -106,12 +166,47 @@ def login(
     settings: Settings = Depends(get_settings),
 ) -> LoginResponse:
     rate_limit_auth(request, "login", limit=20, window_seconds=300)
+    risk = evaluate_login_risk(
+        request,
+        username=payload.email,
+        device_token=request.cookies.get(COOKIE_NAME) or request.cookies.get(risk_engine_device_cookie_name(settings)),
+        learn_on_non_block=False,
+    )
     try:
         user = authenticate_user(db, request, email=payload.email, password=payload.password)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=GENERIC_LOGIN_ERROR) from exc
+
+    if risk.decision == "block":
+        raise HTTPException(status_code=risk_block_status(risk.reasons), detail=risk_block_message(risk.reasons))
+
+    create_audit_log(
+        db,
+        event_type="auth.risk_engine_assessment",
+        outcome=AuditOutcome.SUCCESS,
+        request=request,
+        user_id=user.id,
+        target_type="user",
+        target_id=user.id,
+        details={
+            "decision": risk.decision,
+            "score": risk.score,
+            "reasons": risk.reasons,
+            "ip_prefix": risk.ip_prefix,
+        },
+    )
+    db.commit()
+
     if user.totp_enabled:
-        challenge_token = create_pending_2fa_challenge(user_id=user.id, settings=settings)
+        if risk.decision == "challenge":
+            challenge_token = create_pending_2fa_challenge(
+                user_id=user.id,
+                settings=settings,
+                force_rotate_device_cookie=True,
+                ip_prefix=risk.ip_prefix,
+            )
+        else:
+            challenge_token = create_pending_2fa_challenge(user_id=user.id, settings=settings)
         return LoginResponse(
             message="Two-factor verification required.",
             requires_2fa=True,
@@ -119,6 +214,14 @@ def login(
         )
     token, _session = create_session(db, request, settings, user=user)
     set_session_cookie(response, settings, token)
+    learned_device_token = set_risk_engine_cookies(
+        request,
+        response,
+        settings,
+        user=user,
+        force_rotate=risk.decision == "challenge",
+    )
+    learn_successful_login(username=user.email, device_token=learned_device_token, ip_prefix=risk.ip_prefix)
     return LoginResponse(message="Logged in.")
 
 
@@ -243,6 +346,14 @@ def two_factor_verify(
     db.commit()
     token, _session = create_session(db, request, settings, user=user)
     set_session_cookie(response, settings, token)
+    learned_device_token = set_risk_engine_cookies(
+        request,
+        response,
+        settings,
+        user=user,
+        force_rotate=challenge.force_rotate_device_cookie,
+    )
+    learn_successful_login(username=user.email, device_token=learned_device_token, ip_prefix=challenge.ip_prefix)
     return LoginResponse(message="Logged in.")
 
 

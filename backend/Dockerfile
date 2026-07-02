@@ -6,16 +6,17 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 COPY pyproject.toml ./
-RUN python -m pip install --no-cache-dir --upgrade pip \
-    && python -m pip install --no-cache-dir .
-
 COPY app ./app
+COPY risk_engine ./risk_engine
 COPY alembic.ini ./alembic.ini
 COPY alembic ./alembic
 
+RUN python -m pip install --no-cache-dir --upgrade pip \
+    && python -m pip install --no-cache-dir .
+
 RUN adduser --disabled-password --gecos "" appuser \
     && mkdir -p /var/lib/jobapp/uploads \
-    && chown -R appuser:appuser /var/lib/jobapp
+    && chown -R appuser:appuser /var/lib/jobapp /app
 
 USER appuser
 

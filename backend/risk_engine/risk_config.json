@@ -1,0 +1,35 @@
+{
+  "risk_scores": {
+    "new_device": 30,
+    "new_ip_prefix": 20,
+    "impossible_travel": 30,
+    "missing_user_agent": 5
+  },
+  "decision_thresholds": {
+    "block": 80,
+    "challenge": 30
+  },
+  "impossible_travel": {
+    "time_window_hours": 6,
+    "minimum_distance_km": 100,
+    "speed_threshold_kmh": 900
+  },
+  "rate_limit": {
+    "window_seconds": 30,
+    "thresholds": [
+      {
+        "attempts": 5,
+        "score": 20
+      },
+      {
+        "attempts": 10,
+        "score": 80
+      }
+    ]
+  },
+  "baseline": {
+    "event_limit": 50,
+    "max_known_devices": 10,
+    "max_known_ip_prefixes": 10
+  }
+}

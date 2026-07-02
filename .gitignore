@@ -5,6 +5,9 @@
 *.pfx
 infra/nginx/certs/*
 !infra/nginx/certs/.gitkeep
+.env
+.env.*
+!.env.example
 
 # Python
 __pycache__/
@@ -44,6 +47,7 @@ backups/
 *.db
 *.csv
 bronze_datasets/
+risk_engine_data/
 
 # OS/editor
 .DS_Store

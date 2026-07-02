@@ -22,6 +22,8 @@ CHALLENGE_TTL_SECONDS = 5 * 60
 class PendingTwoFactorChallenge:
     user_id: int
     expires_at: datetime
+    force_rotate_device_cookie: bool = False
+    ip_prefix: str | None = None
 
 
 def redis_client(settings: Settings) -> Redis:
@@ -65,10 +67,23 @@ def verify_totp_code(settings: Settings, user: User, code: str) -> bool:
     return pyotp.TOTP(secret).verify(normalized, valid_window=1)
 
 
-def create_pending_2fa_challenge(*, user_id: int, settings: Settings) -> str:
+def create_pending_2fa_challenge(
+    *,
+    user_id: int,
+    settings: Settings,
+    force_rotate_device_cookie: bool = False,
+    ip_prefix: str | None = None,
+) -> str:
     token = secrets.token_urlsafe(32)
     expires_at = datetime.now(UTC) + timedelta(seconds=CHALLENGE_TTL_SECONDS)
-    payload = json.dumps({"user_id": user_id, "expires_at": expires_at.isoformat()})
+    payload = json.dumps(
+        {
+            "user_id": user_id,
+            "expires_at": expires_at.isoformat(),
+            "force_rotate_device_cookie": force_rotate_device_cookie,
+            "ip_prefix": ip_prefix,
+        }
+    )
     redis_client(settings).setex(f"{CHALLENGE_KEY_PREFIX}{token}", CHALLENGE_TTL_SECONDS, payload)
     return token
 
@@ -89,7 +104,12 @@ def get_pending_2fa_challenge(token: str, settings: Settings) -> PendingTwoFacto
     if expires_at <= datetime.now(UTC):
         client.delete(key)
         return None
-    return PendingTwoFactorChallenge(user_id=user_id, expires_at=expires_at)
+    return PendingTwoFactorChallenge(
+        user_id=user_id,
+        expires_at=expires_at,
+        force_rotate_device_cookie=bool(parsed.get("force_rotate_device_cookie", False)),
+        ip_prefix=parsed.get("ip_prefix"),
+    )
 
 
 def invalidate_pending_2fa_challenge(token: str, settings: Settings) -> bool:

@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Risk Engine Access</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: grid;
+            place-items: center;
+            background: #f4f7f6;
+            color: #18181b;
+            font-family: Arial, sans-serif;
+            padding: 24px;
+        }
+
+        main {
+            width: 100%;
+            max-width: 520px;
+            border: 1px solid #d4d4d8;
+            background: #ffffff;
+            padding: 24px;
+        }
+
+        h1 {
+            margin: 0 0 12px;
+            font-size: 24px;
+        }
+
+        p {
+            margin: 0;
+            color: #52525b;
+            line-height: 1.5;
+        }
+
+        a {
+            display: inline-block;
+            margin-top: 18px;
+            color: #0f766e;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <main>
+        <h1>Risk Engine</h1>
+        {% if detail == "Authentication required." %}
+        <p>Please sign in with an administrator account to access the risk engine dashboard.</p>
+        {% elif detail == "Access denied." %}
+        <p>Your account does not have permission to access the risk engine dashboard.</p>
+        {% elif detail == "Two-factor setup required." %}
+        <p>Please complete two-factor authentication setup before opening the risk engine dashboard.</p>
+        {% else %}
+        <p>{{ detail }}</p>
+        {% endif %}
+        <a href="/login">Sign in</a>
+    </main>
+</body>
+</html>

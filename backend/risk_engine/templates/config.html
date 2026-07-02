@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Risk Scoring Configuration</title>
+  <link rel="stylesheet" href="{{ static_base_path }}/config.css">
+</head>
+
+<body>
+<div class="page">
+  <header class="page-header">
+    <div>
+      <p class="eyebrow">Risk Engine Admin</p>
+      <h1>Risk Scoring Configuration</h1>
+      <p class="subtitle">Tune your risk signals and thresholds. Start small, monitor outcomes, then iterate.</p>
+    </div>
+    <div class="controls">
+      <a href="{{ admin_base_path }}/audit-logs" class="btn">Audit Logs</a>
+      <a href="{{ admin_base_path }}/dashboard" class="btn">Back to Dashboard</a>
+      <form action="{{ admin_base_path }}/logout" method="post" style="display:inline;" onsubmit="return confirm('Logging out here will also sign you out of the main app. Continue?');">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="btn btn-ghost" type="submit">Logout</button>
+      </form>
+    </div>
+  </header>
+
+  <div class="config-section">
+  <div class="config-container">
+    <div class="config-group">
+      <h4>Risk Scores</h4>
+      <p class="help">Points added when a login looks unusual. Start small and test.</p>
+      <label title="Adds points when a user logs in from a device you haven't seen before.">
+        New Device:
+        <input type="number" id="score_new_device" min="0">
+      </label>
+      <label title="Adds points when the IP prefix is new for the user.">
+        New IP Prefix:
+        <input type="number" id="score_new_ip_prefix" min="0">
+      </label>
+      <label title="Adds a small bump when user agent is missing.">
+        Missing User Agent:
+        <input type="number" id="score_missing_user_agent" min="0">
+      </label>
+    </div>
+
+    <div class="config-group">
+      <h4>Decision Thresholds</h4>
+      <p class="help">Total score at or above these values triggers actions.</p>
+      <label title="Score at or above this value blocks the login.">
+        Block Threshold:
+        <input type="number" id="threshold_block" min="0">
+      </label>
+      <label title="Score at or above this value requires extra verification.">
+        Challenge Threshold:
+        <input type="number" id="threshold_challenge" min="0">
+      </label>
+    </div>
+
+    <div class="config-group">
+      <h4>Rate Limit</h4>
+      <p class="help">Adds points when many login attempts happen in a short time window.</p>
+      <label title="How far back to count recent attempts.">
+        Window (seconds):
+        <input type="number" id="rate_window_seconds" min="1">
+      </label>
+      <div class="threshold-list" id="rate_threshold_list"></div>
+      <button class="btn btn-add" type="button" id="add_rate_threshold">+ Add Threshold</button>
+    </div>
+
+    <div class="config-group">
+      <h4>Baseline Settings</h4>
+      <p class="help">User behavior is learned from known device tokens and IP prefixes.</p>
+      <label title="Maximum events to scan when building a baseline.">
+        Event Limit:
+        <input type="number" id="baseline_event_limit" min="1">
+      </label>
+      <label title="Maximum number of known device tokens kept per user. Oldest are dropped first. Lower values mean new devices are flagged sooner after a user cycles through many devices.">
+        Max Known Devices:
+        <input type="number" id="baseline_max_known_devices" min="1">
+      </label>
+      <label title="Maximum number of known IP prefixes kept per user. Oldest are dropped first.">
+        Max Known IP Prefixes:
+        <input type="number" id="baseline_max_known_ip_prefixes" min="1">
+      </label>
+    </div>
+  </div>
+
+  <div class="config-actions">
+    <button id="saveConfig" class="btn btn-action-primary">Save Configuration</button>
+    <button id="resetConfig" class="btn btn-action-secondary">Reset to Current</button>
+  </div>
+  
+  <div id="configMessage" class="message"></div>
+  </div>
+</div>
+
+<script>
+  const CSRF_TOKEN = "{{ csrf_token }}";
+  let currentConfig = null;
+
+  async function loadConfig() {
+    try {
+      const response = await fetch('{{ admin_base_path }}/config/read', {
+        method: 'POST',
+        headers: {
+          'X-CSRF-Token': CSRF_TOKEN
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to load configuration');
+      }
+      
+      currentConfig = await response.json();
+      populateConfigForm(currentConfig);
+    } catch (error) {
+      showMessage('Error loading configuration: ' + error.message, 'error');
+    }
+  }
+
+  function populateConfigForm(config) {
+    document.getElementById('score_new_device').value = config.risk_scores.new_device;
+    document.getElementById('score_new_ip_prefix').value = config.risk_scores.new_ip_prefix;
+    document.getElementById('score_missing_user_agent').value = config.risk_scores.missing_user_agent;
+    
+    document.getElementById('threshold_block').value = config.decision_thresholds.block;
+    document.getElementById('threshold_challenge').value = config.decision_thresholds.challenge;
+
+    const rateLimit = config.rate_limit || {};
+    const thresholds = rateLimit.thresholds || [];
+    document.getElementById('rate_window_seconds').value = rateLimit.window_seconds || 30;
+    renderRateThresholds(thresholds.length ? thresholds : [
+      { attempts: 5, score: 15 },
+      { attempts: 10, score: 30 },
+      { attempts: 20, score: 60 }
+    ]);
+    
+    document.getElementById('baseline_event_limit').value = config.baseline.event_limit;
+    document.getElementById('baseline_max_known_devices').value = config.baseline.max_known_devices ?? 10;
+    document.getElementById('baseline_max_known_ip_prefixes').value = config.baseline.max_known_ip_prefixes ?? 10;
+  }
+
+  function renderRateThresholds(thresholds) {
+    const container = document.getElementById('rate_threshold_list');
+    container.innerHTML = '';
+
+    thresholds.forEach((rule, index) => {
+      const row = document.createElement('div');
+      row.className = 'threshold-row';
+
+      row.innerHTML = `
+        <label>
+          Attempts >=
+          <input type="number" class="rate_attempts" min="1" value="${rule.attempts ?? ''}">
+        </label>
+        <label>
+          Score +
+          <input type="number" class="rate_score" min="0" value="${rule.score ?? ''}">
+        </label>
+        <button class="btn btn-remove" type="button" data-remove-index="${index}">✕</button>
+      `;
+
+      container.appendChild(row);
+    });
+
+    container.querySelectorAll('[data-remove-index]').forEach(button => {
+      button.addEventListener('click', () => {
+        const idx = Number(button.getAttribute('data-remove-index'));
+        const current = readRateThresholds();
+        current.splice(idx, 1);
+        renderRateThresholds(current.length ? current : [{ attempts: 5, score: 15 }]);
+      });
+    });
+  }
+
+  function readRateThresholds() {
+    const rows = Array.from(document.querySelectorAll('#rate_threshold_list .threshold-row'));
+    return rows.map(row => {
+      const attempts = parseInt(row.querySelector('.rate_attempts').value);
+      const score = parseInt(row.querySelector('.rate_score').value);
+      return { attempts, score };
+    }).filter(rule => Number.isInteger(rule.attempts) && rule.attempts > 0 && Number.isInteger(rule.score) && rule.score >= 0);
+  }
+
+  function getConfigFromForm() {
+    return {
+      risk_scores: {
+        new_device: parseInt(document.getElementById('score_new_device').value),
+        new_ip_prefix: parseInt(document.getElementById('score_new_ip_prefix').value),
+        missing_user_agent: parseInt(document.getElementById('score_missing_user_agent').value)
+      },
+      decision_thresholds: {
+        block: parseInt(document.getElementById('threshold_block').value),
+        challenge: parseInt(document.getElementById('threshold_challenge').value)
+      },
+      rate_limit: {
+        window_seconds: parseInt(document.getElementById('rate_window_seconds').value),
+        thresholds: readRateThresholds()
+      },
+      baseline: {
+        event_limit: parseInt(document.getElementById('baseline_event_limit').value),
+        max_known_devices: parseInt(document.getElementById('baseline_max_known_devices').value),
+        max_known_ip_prefixes: parseInt(document.getElementById('baseline_max_known_ip_prefixes').value)
+      }
+    };
+  }
+
+  document.getElementById('saveConfig').addEventListener('click', async function() {
+    const config = getConfigFromForm();
+    
+    try {
+      const response = await fetch('{{ admin_base_path }}/config', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': CSRF_TOKEN
+        },
+        body: JSON.stringify(config)
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Failed to save configuration');
+      }
+      
+      const result = await response.json();
+      currentConfig = result.config;
+      showMessage('✓ Configuration saved successfully! Changes will take effect immediately.', 'success');
+    } catch (error) {
+      showMessage('✗ Error saving configuration: ' + error.message, 'error');
+    }
+  });
+
+  document.getElementById('add_rate_threshold').addEventListener('click', function() {
+    const current = readRateThresholds();
+    current.push({ attempts: '', score: '' });
+    renderRateThresholds(current);
+  });
+
+  document.getElementById('resetConfig').addEventListener('click', function() {
+    if (currentConfig) {
+      populateConfigForm(currentConfig);
+      showMessage('Form reset to current saved configuration', 'success');
+    } else {
+      loadConfig();
+    }
+  });
+
+  function showMessage(text, type) {
+    const messageDiv = document.getElementById('configMessage');
+    messageDiv.textContent = text;
+    messageDiv.className = 'message ' + type;
+    
+    setTimeout(() => {
+      messageDiv.textContent = '';
+      messageDiv.className = 'message';
+    }, 5000);
+  }
+
+  // Load config on page load
+  loadConfig();
+</script>
+</body>
+</html>

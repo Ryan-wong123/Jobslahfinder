@@ -33,7 +33,9 @@ test("auth forms call the expected backend endpoints with safe generic errors", 
   const resetRequestForm = readProjectFile("src", "components", "PasswordResetRequestForm.tsx");
   const resetConfirmForm = readProjectFile("src", "components", "PasswordResetConfirmForm.tsx");
 
-  assert.match(loginForm, /apiFetch<\{ message: string \}>\("\/auth\/login"/);
+  assert.match(loginForm, /apiFetch<LoginResponse>\("\/auth\/login"/);
+  assert.match(loginForm, /requires_2fa/);
+  assert.match(loginForm, /\/two-factor\/verify\?token=/);
   assert.match(loginForm, /Invalid email or password\./);
   assert.match(registerForm, /apiFetch<User>\("\/auth\/register"/);
   assert.match(registerForm, /Unable to register account\./);

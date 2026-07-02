@@ -103,7 +103,10 @@ def test_enabled_totp_requires_challenge_verification(
         consumed[0] = True
         return True
 
-    monkeypatch.setattr("app.api.auth.create_pending_2fa_challenge", lambda *, user_id, settings: "challenge-token-value-at-least-32")
+    monkeypatch.setattr(
+        "app.api.auth.create_pending_2fa_challenge",
+        lambda *, user_id, settings, **kwargs: "challenge-token-value-at-least-32",
+    )
     monkeypatch.setattr("app.api.auth.get_pending_2fa_challenge", lambda token, settings: challenge)
     monkeypatch.setattr("app.api.auth.invalidate_pending_2fa_challenge", fake_invalidate)
 
