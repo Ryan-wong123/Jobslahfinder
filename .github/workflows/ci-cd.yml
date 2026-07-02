@@ -375,7 +375,7 @@ jobs:
           git fetch --prune origin
           git checkout --force "$DEPLOY_SHA"
 
-          docker compose up -d --build --force-recreate --remove-orphans
-          docker compose exec -T backend alembic upgrade head
-          docker compose ps
+          docker compose -f docker-compose.yml -f docker-compose.local-tls.yml up -d --build --force-recreate --remove-orphans
+          docker compose -f docker-compose.yml -f docker-compose.local-tls.yml exec -T backend alembic upgrade head
+          docker compose -f docker-compose.yml -f docker-compose.local-tls.yml ps
           EOF
