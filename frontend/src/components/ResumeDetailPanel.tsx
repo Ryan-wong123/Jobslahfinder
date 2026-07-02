@@ -26,6 +26,42 @@ function StatusBadge({ status }: { status: string }) {
   return <span className={`rounded border px-2 py-1 text-xs font-medium ${statusClass(status)}`}>{status}</span>;
 }
 
+function formatYearsToDuration(value: unknown): string {
+  if (value === null || value === undefined || value === "") {
+    return "Not extracted yet";
+  }
+
+  if (typeof value !== "number" && typeof value !== "string") {
+    return "Not extracted yet";
+  }
+
+  const yearsValue = Number(value);
+
+  if (Number.isNaN(yearsValue) || yearsValue <= 0) {
+    return "Not extracted yet";
+  }
+
+  const totalMonths = Math.round(yearsValue * 12);
+  const wholeYears = Math.floor(totalMonths / 12);
+  const months = totalMonths % 12;
+
+  if (wholeYears === 0 && months === 0) {
+    return "Less than 1 month";
+  }
+
+  if (wholeYears === 0) {
+    return `${months} ${months === 1 ? "month" : "months"}`;
+  }
+
+  if (months === 0) {
+    return `${wholeYears} ${wholeYears === 1 ? "year" : "years"}`;
+  }
+
+  return `${wholeYears} ${wholeYears === 1 ? "year" : "years"}, ${months} ${
+    months === 1 ? "month" : "months"
+  }`;
+}
+
 export function ResumeDetailPanel({ resumeId }: { resumeId: number }) {
   const router = useRouter();
   const [resume, setResume] = useState<Resume | null>(null);
@@ -144,8 +180,8 @@ export function ResumeDetailPanel({ resumeId }: { resumeId: number }) {
             <dd className="mt-1 text-zinc-950">{formatDateTime(extraction.processed_at)}</dd>
           </div>
           <div className="border-t border-zinc-200 pt-4">
-            <dt className="font-medium text-zinc-500">Years experience</dt>
-            <dd className="mt-1 text-zinc-950">{extraction.years_experience ?? "Not extracted yet"}</dd>
+            <dt className="font-medium text-zinc-500">Years of experience</dt>
+            <dd className="mt-1 text-zinc-950">{formatYearsToDuration(extraction.years_experience)}</dd>
           </div>
         </dl>
         <FormMessage message={message} tone="success" />

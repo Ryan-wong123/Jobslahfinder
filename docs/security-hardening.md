@@ -1,78 +1,73 @@
-# Security Hardening Notes
+# Phase 12 Security Hardening Notes
 
-## Optional Self-Signed HTTPS
+## HTTPS/TLS Local Testing
 
-The default deployment still uses the existing HTTP path. HTTPS is opt-in through `docker-compose.local-tls.yml`.
+Nginx includes security headers and request body limits for the coursework MVP. For local TLS testing, the Dockerized Nginx reverse proxy can terminate HTTPS with a self-signed certificate.
 
-For local Windows testing:
+This repository includes local self-signed TLS files:
+
+- `docker-compose.local-tls.yml` exposes Nginx on `80` for HTTP and `443` for HTTPS.
+- `infra/nginx/local-tls.conf` redirects HTTP to HTTPS and proxies frontend/backend traffic after TLS termination.
+- `infra/scripts/create-local-cert.ps1` generates `localhost.crt` and `localhost.key` for local testing.
+- `infra/nginx/certs/` stores generated local certificate files and is ignored by Git except for `.gitkeep`.
+
+Create the local certificate from Windows PowerShell:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\infra\scripts\create-local-cert.ps1
+```
+
+Start the app with local HTTPS:
+
+```powershell
 docker compose -f docker-compose.yml -f docker-compose.local-tls.yml up -d --build
 ```
 
-For an EC2 IP-only project demo:
+Verify:
 
-```sh
-sh ./infra/scripts/create-ec2-self-signed-cert.sh EC2_PUBLIC_IP
-docker compose -f docker-compose.yml -f docker-compose.local-tls.yml up -d --build
+```powershell
+curl.exe -k -I https://localhost
+curl.exe -k -I https://localhost/health
+curl.exe -I http://localhost
 ```
 
-Then browse to:
+Expected results:
 
-```text
-https://EC2_PUBLIC_IP
-```
+- `https://localhost` returns the frontend.
+- `https://localhost/health` reaches the backend through Nginx.
+- `http://localhost` redirects to `https://localhost`.
 
-Browser warnings are expected because the certificate is self-signed. This encrypts traffic for a project demo, but it is not a publicly trusted production TLS setup.
+The certificate is self-signed, so browser warnings are expected. Do not use the self-signed certificate for public production deployment.
 
-Only set these EC2 `.env` values after HTTPS is actually working:
+## Logs And Sensitive Data
 
-```env
-APP_ENV=production
-FRONTEND_BASE_URL=https://EC2_PUBLIC_IP
-```
+Application audit logs must remain metadata-only. Do not log passwords, password hashes, raw tokens, API keys, raw prompts, resume contents, generated cover letter text, edited cover letter text, environment variables, or internal stack traces to user-facing responses. Admin audit-log responses filter sensitive audit detail keys before display and should bound nested detail string lengths to prevent log bloat.
 
-Do not commit generated `.crt`, `.key`, or OpenSSL config files from `infra/nginx/certs/`.
+Runtime logs should be written to restricted host or container log storage, not to `frontend/public`, `.next`, `infra/nginx/html`, or any other public web directory.
+
+Resume extraction paths must not print raw extracted resume text, including local debugging output for AI-backed extraction.
+
+## Input Validation Hardening
+
+Backend validation must remain the enforcement point. Public job browsing should only expose active, non-suspicious postings; inactive and suspicious job filters belong behind admin-only job moderation routes.
+
+Password reset tokens should use strict allowlist validation that matches the generated token format. Resource IDs should use positive integer path constraints consistently across normal and admin routes.
+
+Resume uploads should validate extension, declared MIME type, content-derived type or signature, file size, filename safety, and path traversal. DOCX handling should also enforce archive safety limits such as maximum entry count, maximum total uncompressed bytes, and maximum compression ratio.
+
+External job URLs should be HTTPS-only, belong to the approved source domain allowlist, and reject credentialed, malformed, or excessively long URLs. Structured AI output such as interview questions should be validated against explicit response schemas before it is returned or stored.
 
 ## Backups And Restore
 
-`infra/scripts/backup.sh` creates:
+`infra/scripts/backup.sh` creates a PostgreSQL dump and optional protected upload/log archives in `BACKUP_DIR`, defaulting to `/var/backups/jobapp`. The directory is created with owner-only permissions and should be mounted to protected storage, not served by Nginx.
 
-- a PostgreSQL custom dump
-- an optional protected resume storage archive
-- an optional app log archive
+`infra/scripts/restore.sh` restores a selected backup directory. Run restore tests on a non-production database before relying on a backup for deployment recovery.
 
-The default backup directory is `/var/backups/jobapp`. Keep it outside any Nginx public directory.
-
-Example:
+Example container usage:
 
 ```sh
 docker compose exec postgres sh /infra/scripts/backup.sh
+BACKUP_PATH=/var/backups/jobapp/20260502T120000Z docker compose exec postgres sh /infra/scripts/restore.sh
 ```
 
-`infra/scripts/restore.sh` restores a backup directory selected by `BACKUP_PATH`:
-
-```sh
-BACKUP_PATH=/var/backups/jobapp/20260630T120000Z docker compose exec postgres sh /infra/scripts/restore.sh
-```
-
-Test restores on a non-production database before relying on backups.
-
-## Risk Engine
-
-The risk engine is mounted at:
-
-```text
-/risk-engine
-```
-
-The human dashboard requires a valid main-app admin session and two-factor authentication. The machine API uses the risk engine API key after setup.
-
-Risk engine state is stored in `RISK_ENGINE_DATA_DIR`, defaulted in Docker to:
-
-```text
-/var/lib/jobapp/risk-engine
-```
-
-Keep that directory private and backed up. It may contain engine state, SQLite risk data, and audit data.
+Mount the scripts and backup directory into the appropriate maintenance container before running these commands in production.

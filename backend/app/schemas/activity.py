@@ -1,10 +1,8 @@
 from datetime import datetime
-
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.schemas.auth import validate_optional_text
 from app.schemas.jobs import JobSummaryResponse
 from app.security.text import sanitize_required_text, sanitize_text
 
@@ -47,10 +45,12 @@ class CoverLetterUpdateRequest(BaseModel):
     @field_validator("edited_text")
     @classmethod
     def edited_text_is_safe(cls, value: str) -> str:
-        cleaned = validate_optional_text(value, field_name="edited_text")
-        if cleaned is None:
-            raise ValueError("Invalid edited text.")
-        return cleaned
+        return sanitize_required_text(
+            value,
+            field_name="edited_text",
+            max_length=MAX_COVER_LETTER_TEXT_LENGTH,
+            html_policy="strip",
+        )
 
 
 class CoverLetterResponse(BaseModel):

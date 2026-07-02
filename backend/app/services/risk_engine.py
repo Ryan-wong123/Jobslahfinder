@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import secrets
 from dataclasses import dataclass
 from datetime import datetime
@@ -73,9 +72,6 @@ def evaluate_login_risk(
     device_token: str | None,
     learn_on_non_block: bool = False,
 ) -> RiskDecision:
-    if os.getenv("APP_ENV", "").lower() == "test":
-        return RiskDecision(decision="allow", score=0, reasons=[], ip_prefix=ip_prefix_for_risk(request))
-
     db: RiskSession = SessionLocal()
     try:
         ip = client_ip_for_risk(request)

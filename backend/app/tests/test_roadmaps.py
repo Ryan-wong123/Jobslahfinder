@@ -1,6 +1,6 @@
 from collections.abc import Generator
 
-import pytest
+import pyotp
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
@@ -15,11 +15,10 @@ from app.models.enums import UserRole
 from app.models.roadmap import JobRoleRoadmap
 from app.security.passwords import hash_password
 
-USER_PASSWORD = "StrongPass123"
+USER_PASSWORD = "StrongPass123" # gitleaks:allow
 
 
-@pytest.fixture()
-def db_session() -> Generator[Session, None, None]:
+def db_session_fixture() -> Generator[Session, None, None]:
     engine = create_engine(
         "sqlite+pysqlite://",
         connect_args={"check_same_thread": False},
@@ -36,8 +35,7 @@ def db_session() -> Generator[Session, None, None]:
         engine.dispose()
 
 
-@pytest.fixture()
-def client(db_session: Session) -> Generator[TestClient, None, None]:
+def client_fixture(db_session: Session) -> Generator[TestClient, None, None]:
     AUTH_RATE_LIMITER.clear()
 
     def override_get_db() -> Generator[Session, None, None]:
@@ -48,6 +46,19 @@ def client(db_session: Session) -> Generator[TestClient, None, None]:
         yield test_client
     app.dependency_overrides.clear()
     AUTH_RATE_LIMITER.clear()
+
+
+import pytest
+
+
+@pytest.fixture()
+def db_session() -> Generator[Session, None, None]:
+    yield from db_session_fixture()
+
+
+@pytest.fixture()
+def client(db_session: Session) -> Generator[TestClient, None, None]:
+    yield from client_fixture(db_session)
 
 
 def create_user(db_session: Session, *, email: str) -> User:
@@ -68,6 +79,12 @@ def create_user(db_session: Session, *, email: str) -> User:
 def login(client: TestClient, *, email: str) -> None:
     response = client.post("/auth/login", json={"email": email, "password": USER_PASSWORD})
     assert response.status_code == 200
+    if response.json().get("requires_2fa_setup"):
+        setup_response = client.get("/auth/2fa/setup")
+        assert setup_response.status_code == 200
+        code = pyotp.TOTP(setup_response.json()["secret"]).now()
+        confirm_response = client.post("/auth/2fa/confirm", json={"code": code})
+        assert confirm_response.status_code == 200
 
 
 def test_user_can_create_and_list_own_roadmap(client: TestClient, db_session: Session) -> None:
@@ -103,6 +120,59 @@ def test_user_can_create_and_list_own_roadmap(client: TestClient, db_session: Se
     list_response = client.get("/roadmaps")
     assert list_response.status_code == 200
     assert list_response.json()["total"] == 1
+
+
+def test_roadmap_create_removes_duplicate_skills(client: TestClient, db_session: Session) -> None:
+    user = create_user(db_session, email="duplicates@example.com")
+    login(client, email=user.email)
+
+    response = client.post(
+        "/roadmaps",
+        json={
+            "target_role": "Security Analyst",
+            "target_level": "JUNIOR",
+            "timeline_months": 6,
+            "current_skills": ["Python", "python", "Linux", "PYTHON"],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["current_skills"] == ["Python", "Linux"]
+
+
+def test_roadmap_create_skips_blank_skills(client: TestClient, db_session: Session) -> None:
+    user = create_user(db_session, email="blank-skills@example.com")
+    login(client, email=user.email)
+
+    response = client.post(
+        "/roadmaps",
+        json={
+            "target_role": "Security Analyst",
+            "target_level": "JUNIOR",
+            "timeline_months": 6,
+            "current_skills": ["Python", "   ", "\t", "Linux"],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["current_skills"] == ["Python", "Linux"]
+
+
+def test_roadmap_create_rejects_too_many_skills(client: TestClient, db_session: Session) -> None:
+    user = create_user(db_session, email="too-many-skills@example.com")
+    login(client, email=user.email)
+
+    response = client.post(
+        "/roadmaps",
+        json={
+            "target_role": "Security Analyst",
+            "target_level": "JUNIOR",
+            "timeline_months": 6,
+            "current_skills": [f"Skill {index}" for index in range(31)],
+        },
+    )
+
+    assert response.status_code == 422
 
 
 def test_roadmap_create_rejects_overlong_skill(client: TestClient, db_session: Session) -> None:
@@ -182,9 +252,8 @@ def test_user_cannot_access_another_users_roadmap(client: TestClient, db_session
     assert audit is not None
     assert audit.target_type == "job_role_roadmap"
 
-
 def test_user_can_archive_own_roadmap(client: TestClient, db_session: Session) -> None:
-    user = create_user(db_session, email="archive@example.com")
+    user = create_user(db_session, email="user@example.com")
     roadmap = JobRoleRoadmap(
         user_id=user.id,
         target_role="Software Engineer",

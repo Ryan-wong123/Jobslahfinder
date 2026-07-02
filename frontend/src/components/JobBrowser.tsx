@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { apiFetch, formatDate, type JobListResponse, type JobSummary, type SavedJob } from "@/lib/api";
 
 const pageSize = 10;
+const searchPattern = /^[\p{L}\p{N}_\s.,&()+#\/'-]{0,100}$/u;
 
 type Filters = {
   keyword: string;
@@ -31,6 +32,23 @@ function JobStatus({ job }: { job: JobSummary }) {
     return <span className="rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-900">Review</span>;
   }
   return <span className="rounded border border-teal-200 bg-teal-50 px-2 py-1 text-xs text-teal-900">Active</span>;
+}
+
+function formatSalary(job: JobSummary): string {
+  if (job.salary_min === null && job.salary_max === null) {
+    return "Not listed";
+  }
+
+  const formatter = new Intl.NumberFormat("en-SG", {
+    maximumFractionDigits: 0,
+    style: "currency",
+    currency: job.salary_currency ?? "SGD"
+  });
+  const min = job.salary_min !== null ? formatter.format(job.salary_min) : null;
+  const max = job.salary_max !== null ? formatter.format(job.salary_max) : null;
+  const amount = min && max && min !== max ? `${min} - ${max}` : min ?? max ?? "Not listed";
+
+  return job.salary_period ? `${amount} / ${job.salary_period}` : amount;
 }
 
 type JobRowProps = {
@@ -62,10 +80,18 @@ function JobRow({ job, isSaving, isSaved, onSave }: JobRowProps) {
           </button>
         </div>
       </div>
-      <dl className="mt-4 grid gap-3 text-sm text-zinc-600 sm:grid-cols-4">
+      <dl className="mt-4 grid gap-3 text-sm text-zinc-600 sm:grid-cols-3 lg:grid-cols-6">
         <div>
           <dt className="font-medium text-zinc-500">Location</dt>
           <dd className="mt-1 text-zinc-900">{job.location ?? "Not listed"}</dd>
+        </div>
+        <div>
+          <dt className="font-medium text-zinc-500">Salary</dt>
+          <dd className="mt-1 text-zinc-900">{formatSalary(job)}</dd>
+        </div>
+        <div>
+          <dt className="font-medium text-zinc-500">Min. experience</dt>
+          <dd className="mt-1 text-zinc-900">{job.minimum_experience ?? "Not listed"}</dd>
         </div>
         <div>
           <dt className="font-medium text-zinc-500">Category</dt>
@@ -135,6 +161,11 @@ export function JobBrowser() {
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const invalidFilter = Object.values(filters).some((value) => value.trim() && !searchPattern.test(value.trim()));
+    if (invalidFilter) {
+      setError("Search fields can use letters, numbers, spaces, and common punctuation only.");
+      return;
+    }
     setLoading(true);
     setError(null);
     setPage(1);
@@ -223,6 +254,8 @@ export function JobBrowser() {
               <option value="">All approved sources</option>
               <option value="JobStreet">JobStreet</option>
               <option value="MyCareersFuture">MyCareersFuture</option>
+              <option value="JobsLah">JobsLah</option>
+              <option value="FastJobs">FastJobs</option>
             </select>
           </label>
           <button className="w-full rounded bg-zinc-950 px-4 py-2 text-sm font-medium text-white" type="submit">

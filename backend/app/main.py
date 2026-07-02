@@ -9,12 +9,11 @@ from app.api.auth import router as auth_router
 from app.api.health import router as health_router
 from app.api.job_roles import router as job_roles_router
 from app.api.jobs import router as jobs_router
-from app.api.resumes import router as resumes_router
 from app.api.roadmaps import router as roadmaps_router
+from app.api.resumes import router as resumes_router
 from app.core.config import get_settings
 from app.core.logging import configure_logging, get_logger
 from app.services.risk_engine import init_risk_engine_storage
-from risk_engine import config as risk_engine_config
 from risk_engine.api import app as risk_engine_app
 
 settings = get_settings()
@@ -37,7 +36,7 @@ app.include_router(resumes_router)
 app.include_router(roadmaps_router)
 app.include_router(activity_router)
 app.include_router(admin_router)
-app.mount(risk_engine_config.BASE_PATH, risk_engine_app)
+app.mount("/risk-engine", risk_engine_app)
 
 
 @app.on_event("startup")

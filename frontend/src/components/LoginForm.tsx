@@ -11,23 +11,35 @@ export function LoginForm() {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const registered = searchParams.get("registered") === "1";
+  const passwordReset = searchParams.get("password_reset") === "success";
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const email = String(formData.get("email") ?? "").trim();
+    const password = String(formData.get("password") ?? "");
+
+    if (!email || email.length > 255 || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || password.length < 1 || password.length > 128) {
+      setError("Invalid email or password.");
+      return;
+    }
     setPending(true);
     setError(null);
 
-    const formData = new FormData(event.currentTarget);
     try {
-      const response = await apiFetch<LoginResponse>("/auth/login", {
+      const result = await apiFetch<LoginResponse>("/auth/login", {
         method: "POST",
         body: JSON.stringify({
-          email: formData.get("email"),
-          password: formData.get("password")
+          email,
+          password
         })
       });
-      if (response.requires_2fa && response.challenge_token) {
-        router.push(`/two-factor/verify?token=${encodeURIComponent(response.challenge_token)}`);
+      if (result.requires_2fa && result.challenge_token) {
+        router.push(`/two-factor/verify?challenge=${encodeURIComponent(result.challenge_token)}`);
+        return;
+      }
+      if (result.requires_2fa_setup) {
+        router.push("/two-factor/setup");
         return;
       }
       router.push("/account");
@@ -42,16 +54,23 @@ export function LoginForm() {
   return (
     <form className="space-y-4" onSubmit={onSubmit}>
       <FormMessage
-        message={registered ? "Account created. Sign in to continue." : null}
+        message={
+          registered
+            ? "Account created. Sign in to continue."
+            : passwordReset
+              ? "Password reset complete. Sign in with your new password."
+              : null
+        }
         tone="success"
       />
       <FormMessage message={error} tone="error" />
-      <TextField label="Email" name="email" type="email" autoComplete="email" />
+      <TextField label="Email" name="email" type="email" autoComplete="email" maxLength={255} />
       <TextField
         label="Password"
         name="password"
         type="password"
         autoComplete="current-password"
+        maxLength={128}
       />
       <SubmitButton pending={pending}>Sign in</SubmitButton>
     </form>

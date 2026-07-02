@@ -48,6 +48,10 @@ export function CoverLetterEditor() {
   }, [params.coverLetterId, router]);
 
   async function onSave() {
+    if (editedText.trim().length === 0 || editedText.length > maxDraftLength) {
+      setError(`Draft text must be between 1 and ${maxDraftLength} characters.`);
+      return;
+    }
     setSaving(true);
     setMessage(null);
     setError(null);

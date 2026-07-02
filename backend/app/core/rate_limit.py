@@ -6,6 +6,9 @@ from typing import Final
 
 from fastapi import HTTPException, Request, status
 
+from app.core.client_ip import get_client_ip as get_trusted_client_ip
+from app.core.config import Settings, get_settings
+
 
 @dataclass
 class RateLimitBucket:
@@ -44,13 +47,15 @@ class InMemoryRateLimiter:
 AUTH_RATE_LIMITER: Final = InMemoryRateLimiter()
 
 
-def get_client_ip(request: Request) -> str:
-    forwarded_for = request.headers.get("x-forwarded-for")
-    if forwarded_for:
-        return forwarded_for.split(",", 1)[0].strip()[:64]
-    if request.client and request.client.host:
-        return request.client.host[:64]
-    return "unknown"
+def _direct_peer_ip(request: Request) -> str:
+    return request.client.host[:64] if request.client and request.client.host else "unknown"
+
+
+def get_client_ip(request: Request, settings: Settings | None = None) -> str:
+    resolved_settings = settings or get_settings()
+    if resolved_settings.trust_proxy_headers:
+        return get_trusted_client_ip(request) or "unknown"
+    return _direct_peer_ip(request)
 
 
 def rate_limit_auth(request: Request, action: str, limit: int = 20, window_seconds: int = 300) -> None:

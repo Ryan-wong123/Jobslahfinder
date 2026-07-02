@@ -111,9 +111,9 @@ export function RoleDetailPanel({ slug }: { slug: string }) {
             <p className="mt-1 text-sm text-zinc-700">Typical monthly salary in Singapore</p>
           </div>
           <div className="rounded border border-zinc-200 bg-white p-6 text-center shadow-sm">
-            <h2 className="text-base font-semibold text-zinc-950">Top skills</h2>
-            <p className="mt-3 text-3xl font-light text-zinc-950">{role.top_skills.length}</p>
-            <p className="mt-1 text-sm text-zinc-700">Signals from stored postings</p>
+            <h2 className="text-base font-semibold text-zinc-950">Job growth</h2>
+            <p className="mt-3 text-3xl font-light text-zinc-950">N/A</p>
+            <p className="mt-1 text-sm text-zinc-700">In the last year</p>
           </div>
         </div>
 
@@ -124,7 +124,7 @@ export function RoleDetailPanel({ slug }: { slug: string }) {
               <ul className="mt-4 list-disc space-y-1 pl-5 text-sm">
                 <li>
                   <a className="font-medium underline" href="#overview">
-                    What&apos;s it like to be a {role.name}?
+                    What's it like to be a {role.name}?
                   </a>
                 </li>
                 <li>
@@ -146,7 +146,7 @@ export function RoleDetailPanel({ slug }: { slug: string }) {
             </section>
 
             <section id="overview">
-              <h2 className="text-2xl font-semibold text-zinc-950">What&apos;s it like to be a {role.name}?</h2>
+              <h2 className="text-2xl font-semibold text-zinc-950">What's it like to be a {role.name}?</h2>
               <p className="mt-5 text-base leading-7 text-zinc-800">{role.overview}</p>
               <h3 className="mt-8 text-xl font-medium text-zinc-950">Tasks and duties</h3>
               <ul className="mt-4 list-disc space-y-2 pl-5 text-base leading-7 text-zinc-800">

@@ -1,6 +1,7 @@
 from collections.abc import Generator
 from datetime import date
 
+import pyotp
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
@@ -71,6 +72,12 @@ def create_user(db_session: Session, *, email: str) -> User:
 def login(client: TestClient, *, email: str) -> None:
     response = client.post("/auth/login", json={"email": email, "password": USER_PASSWORD})
     assert response.status_code == 200
+    if response.json().get("requires_2fa_setup"):
+        setup_response = client.get("/auth/2fa/setup")
+        assert setup_response.status_code == 200
+        code = pyotp.TOTP(setup_response.json()["secret"]).now()
+        confirm_response = client.post("/auth/2fa/confirm", json={"code": code})
+        assert confirm_response.status_code == 200
 
 
 def create_source(db_session: Session) -> JobSource:

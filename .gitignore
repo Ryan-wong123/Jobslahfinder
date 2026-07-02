@@ -1,13 +1,13 @@
 # Environment and secrets
+.env
+.env.*
+!.env.example
 *.pem
 *.key
 *.p12
 *.pfx
 infra/nginx/certs/*
 !infra/nginx/certs/.gitkeep
-.env
-.env.*
-!.env.example
 
 # Python
 __pycache__/
@@ -39,6 +39,8 @@ pnpm-debug.log*
 uploads/
 protected_uploads/
 resume_storage/
+risk_engine_data/
+backend/risk_engine/engine_state.json
 logs/
 Logs/
 backups/
@@ -47,7 +49,6 @@ backups/
 *.db
 *.csv
 bronze_datasets/
-risk_engine_data/
 
 # OS/editor
 .DS_Store

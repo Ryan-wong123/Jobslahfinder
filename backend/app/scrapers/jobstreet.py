@@ -12,6 +12,33 @@ except ImportError:  # pragma: no cover - optional scraper dependency
     launch = None
 
 try:
+    from selenium import webdriver
+    from selenium.common.exceptions import (
+        ElementClickInterceptedException,
+        NoSuchElementException,
+        StaleElementReferenceException,
+        TimeoutException,
+    )
+    from selenium.webdriver.chrome.options import Options
+    from selenium.webdriver.chrome.service import Service
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support import expected_conditions as EC
+    from selenium.webdriver.support.ui import WebDriverWait
+    from webdriver_manager.chrome import ChromeDriverManager
+except ImportError:  # pragma: no cover - optional scraper dependencies
+    webdriver = None
+    ElementClickInterceptedException = Exception
+    NoSuchElementException = Exception
+    StaleElementReferenceException = Exception
+    TimeoutException = Exception
+    Options = None
+    Service = None
+    By = None
+    EC = None
+    WebDriverWait = None
+    ChromeDriverManager = None
+
+try:
     import pandas as pd
 except ImportError:  # pragma: no cover - optional scraper dependency
     pd = None
@@ -22,6 +49,13 @@ except ImportError:  # pragma: no cover - optional scraper dependency
 # settings variables
 debug_flag = False
 TOTAL_SCRAPE_PAGE = 5
+JOBSTREET_CATEGORY_URLS = [
+    "https://sg.jobstreet.com/jobs-in-information-communication-technology",
+    "https://sg.jobstreet.com/jobs-in-engineering",
+    "https://sg.jobstreet.com/jobs-in-banking-financial-services",
+    "https://sg.jobstreet.com/jobs-in-administration-office-support",
+    "https://sg.jobstreet.com/jobs-in-healthcare-medical",
+]
 
 
 
@@ -32,10 +66,11 @@ month = current_datetime.month
 year = current_datetime.year
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+SCRAPER_LOG_ROOT = Path(os.getenv("SCRAPER_LOG_DIR", "/tmp/jobapp-scraper-logs"))
 
 
 # set up logging settings
-log_dir = PROJECT_ROOT / "Logs" / "JS"
+log_dir = SCRAPER_LOG_ROOT / "JS"
 log_file_name = "js_scraper_log_"+ current_datetime.strftime("%Y_%m_%d") +".log"
 log_file_path = log_dir / log_file_name
 
@@ -43,36 +78,341 @@ logger = logging.getLogger(__name__)
 
 
 def fetch_jobstreet_jobs(*, timeout_seconds: int) -> list[dict[str, Any]]:
-    """Coursework-safe JobStreet adapter.
+    """Fetch live JobStreet postings and return normalized raw job dicts."""
+    return scrape_jobstreet_jobs_with_selenium(timeout_seconds=timeout_seconds)
 
-    Real browser automation for JobStreet is brittle in local/CI environments
-    and depends on optional packages, so the production scraper service calls
-    this normalized seeded adapter by default. The signature accepts a timeout
-    so a real implementation can be swapped in without changing worker policy.
-    """
-    _ = timeout_seconds
-    return [
-        {
-            "external_job_id": "jobstreet-demo-1",
-            "title": "Security Analyst",
-            "company": "SecureWorks SG",
-            "location": "Singapore",
-            "category": "Information & Communication Technology",
-            "description": "Monitor alerts, investigate incidents, and support secure operations.",
-            "job_url": "https://sg.jobstreet.com/job/secure-analyst-demo",
-            "posting_date": "2026-04-30",
-        },
-        {
-            "external_job_id": "jobstreet-demo-2",
-            "title": "Backend Developer",
-            "company": "Cloud Apps Pte Ltd",
-            "location": "Singapore",
-            "category": "Information & Communication Technology",
-            "description": "<p>Build APIs and handle untrusted job data safely.</p>",
-            "job_url": "https://sg.jobstreet.com/job/backend-developer-demo",
-            "posting_date": "2026-04-29",
-        },
-    ]
+
+def chromium_executable_path() -> str | None:
+    configured_path = os.getenv("CHROME_BIN") or os.getenv("CHROMIUM_BIN")
+    if configured_path and Path(configured_path).exists():
+        return configured_path
+    for candidate in ("/usr/bin/chromium", "/usr/bin/chromium-browser", "/usr/bin/google-chrome"):
+        if Path(candidate).exists():
+            return candidate
+    return None
+
+
+def chrome_driver_path() -> str | None:
+    configured_path = os.getenv("CHROMEDRIVER_PATH")
+    if configured_path and Path(configured_path).exists():
+        return configured_path
+    for candidate in ("/usr/bin/chromedriver", "/usr/local/bin/chromedriver"):
+        if Path(candidate).exists():
+            return candidate
+    return None
+
+
+def ensure_selenium_dependencies() -> None:
+    missing = []
+    if webdriver is None:
+        missing.append("selenium")
+    if ChromeDriverManager is None:
+        missing.append("webdriver-manager")
+    if missing:
+        raise RuntimeError("JobStreet scraper dependencies are not installed: " + ", ".join(missing))
+
+
+def create_selenium_driver():
+    ensure_selenium_dependencies()
+    options = Options()
+    options.add_argument("--headless=new")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--window-size=1920,1080")
+    options.add_argument(
+        "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
+    )
+    chromium_path = chromium_executable_path()
+    if chromium_path:
+        options.binary_location = chromium_path
+
+    driver_path = chrome_driver_path()
+    service = Service(driver_path) if driver_path else Service(ChromeDriverManager().install())
+    return webdriver.Chrome(service=service, options=options)
+
+
+def selenium_text(parent: Any, by: Any, selector: str) -> str | None:
+    try:
+        text = parent.find_element(by, selector).text
+        return text.strip() or None
+    except (NoSuchElementException, StaleElementReferenceException):
+        return None
+
+
+def selenium_href(parent: Any, by: Any, selector: str) -> str | None:
+    try:
+        href = parent.find_element(by, selector).get_attribute("href")
+        return href.strip() if href else None
+    except (NoSuchElementException, StaleElementReferenceException):
+        return None
+
+
+async def maybe_text(parent: Any, selector: str) -> str | None:
+    try:
+        element = await parent.querySelector(selector)
+        if element is None:
+            return None
+        content_js = await element.getProperty("textContent")
+        content = await content_js.jsonValue()
+        return str(content).strip() if content is not None else None
+    except Exception:
+        return None
+
+
+async def maybe_href(parent: Any, selector: str) -> str | None:
+    try:
+        element = await parent.querySelector(selector)
+        if element is None:
+            return None
+        href_js = await element.getProperty("href")
+        href = await href_js.jsonValue()
+        return str(href).strip() if href else None
+    except Exception:
+        return None
+
+
+def job_id_from_url(url: str | None) -> str | None:
+    if not url:
+        return None
+    match = re.search(r"/job/([^/?#]+)", url)
+    return match.group(1) if match else None
+
+
+def parse_jobstreet_relative_date(value: str | None) -> str | None:
+    if not value:
+        return None
+    text = value.strip()
+    match = re.search(r"Posted\s+(\d+)([dhm])\s+ago", text, flags=re.IGNORECASE)
+    if not match:
+        return text
+    number = int(match.group(1))
+    unit = match.group(2).lower()
+    if unit == "d":
+        calculated_date = datetime.now() - timedelta(days=number)
+    elif unit == "h":
+        calculated_date = datetime.now() - timedelta(hours=number)
+    else:
+        calculated_date = datetime.now()
+    return calculated_date.date().isoformat()
+
+
+def extract_jobstreet_minimum_experience(detail_card: Any) -> str | None:
+    selectors = (
+        "span[data-automation='job-detail-experience']",
+        "[data-automation='job-detail-minimum-experience']",
+        "[data-automation='job-detail-experience']",
+    )
+    for selector in selectors:
+        value = selenium_text(detail_card, By.CSS_SELECTOR, selector)
+        if value:
+            return value
+
+    try:
+        detail_text = detail_card.text
+    except Exception:
+        return None
+    match = re.search(
+        r"(?i)(?:minimum\s+)?(?:experience|required experience)\s*:?\s*([^\n.]{1,80})",
+        detail_text,
+    )
+    if match:
+        return match.group(1).strip(" :-")
+    match = re.search(r"(?i)(\d+\+?\s*(?:-\s*\d+\s*)?years?\s+(?:of\s+)?experience)", detail_text)
+    if match:
+        return match.group(1).strip()
+    return None
+
+
+def scrape_jobstreet_jobs_with_selenium(*, timeout_seconds: int) -> list[dict[str, Any]]:
+    configure_scraper_logging()
+    driver = create_selenium_driver()
+    wait = WebDriverWait(driver, min(max(timeout_seconds, 5), 30))
+    scraped_jobs: list[dict[str, Any]] = []
+    deadline = datetime.now().timestamp() + max(timeout_seconds - 2, 1)
+
+    try:
+        for url in JOBSTREET_CATEGORY_URLS:
+            if datetime.now().timestamp() >= deadline:
+                break
+            try:
+                driver.get(url)
+                wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "[data-automation='jobTitle']")))
+            except TimeoutException:
+                logger.warning("Unable to load JobStreet category page: %s", url)
+                continue
+
+            current_page = 1
+            while current_page <= TOTAL_SCRAPE_PAGE and datetime.now().timestamp() < deadline:
+                cards = driver.find_elements(By.CSS_SELECTOR, "[data-automation='jobTitle']")
+                if not cards:
+                    break
+
+                for index in range(len(cards)):
+                    if datetime.now().timestamp() >= deadline:
+                        break
+                    try:
+                        cards = driver.find_elements(By.CSS_SELECTOR, "[data-automation='jobTitle']")
+                        if index >= len(cards):
+                            break
+                        card = cards[index]
+                        try:
+                            card.click()
+                        except ElementClickInterceptedException:
+                            driver.execute_script("arguments[0].click();", card)
+
+                        detail_card = wait.until(
+                            EC.presence_of_element_located((By.CSS_SELECTOR, "div[data-automation='jobDetailsPage']"))
+                        )
+                        title = selenium_text(detail_card, By.CSS_SELECTOR, "h1[data-automation='job-detail-title'] > a")
+                        link = selenium_href(detail_card, By.CSS_SELECTOR, "h1[data-automation='job-detail-title'] > a")
+                        company = selenium_text(detail_card, By.CSS_SELECTOR, "span[data-automation='advertiser-name']")
+                        location = selenium_text(detail_card, By.CSS_SELECTOR, "span[data-automation='job-detail-location']")
+                        classification = selenium_text(detail_card, By.CSS_SELECTOR, "span[data-automation='job-detail-classifications'] > a")
+                        employment_type = selenium_text(detail_card, By.CSS_SELECTOR, "span[data-automation='job-detail-work-type']")
+                        salary = selenium_text(detail_card, By.CSS_SELECTOR, "span[data-automation='job-detail-salary']")
+                        minimum_experience = extract_jobstreet_minimum_experience(detail_card)
+                        description = selenium_text(detail_card, By.CSS_SELECTOR, "div[data-automation='jobAdDetails']")
+                        date_text = None
+                        try:
+                            date_text = detail_card.find_element(By.XPATH, ".//span[contains(text(), 'Posted')]").text
+                        except NoSuchElementException:
+                            pass
+
+                        if not link:
+                            continue
+                        scraped_jobs.append(
+                            {
+                                "external_job_id": job_id_from_url(link),
+                                "title": title,
+                                "company": company,
+                                "location": location,
+                                "category": classification,
+                                "description": description,
+                                "job_url": link,
+                                "posting_date": parse_jobstreet_relative_date(date_text),
+                                "salary": salary,
+                                "minimum_experience": minimum_experience,
+                                "employment_type": employment_type,
+                            }
+                        )
+                    except Exception as exc:
+                        logger.warning("Unable to scrape JobStreet card: %s", exc)
+                        continue
+
+                try:
+                    next_link = driver.find_element(By.CSS_SELECTOR, "li > a[title='Next']")
+                    driver.execute_script("arguments[0].click();", next_link)
+                    wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "[data-automation='jobTitle']")))
+                    current_page += 1
+                except (NoSuchElementException, TimeoutException):
+                    break
+    finally:
+        driver.quit()
+
+    if not scraped_jobs:
+        raise RuntimeError("No JobStreet jobs were scraped.")
+    return scraped_jobs
+
+
+async def scrape_jobstreet_jobs(*, timeout_seconds: int) -> list[dict[str, Any]]:
+    configure_scraper_logging()
+    ensure_scraper_dependencies()
+
+    launch_options: dict[str, Any] = {
+        "headless": True,
+        "args": ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+    }
+    executable_path = chromium_executable_path()
+    if executable_path:
+        launch_options["executablePath"] = executable_path
+
+    browser = await launch(launch_options)
+    scraped_jobs: list[dict[str, Any]] = []
+    deadline = datetime.now().timestamp() + max(timeout_seconds - 2, 1)
+
+    try:
+        page = await browser.newPage()
+        await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36")
+        await page.setViewport({"width": 1920, "height": 1080})
+        page.setDefaultNavigationTimeout(timeout_seconds * 1000)
+        if hasattr(page, "setDefaultTimeout"):
+            page.setDefaultTimeout(timeout_seconds * 1000)
+
+        for url in JOBSTREET_CATEGORY_URLS:
+            if datetime.now().timestamp() >= deadline:
+                break
+            try:
+                await page.goto(url, {"waitUntil": "networkidle2", "timeout": timeout_seconds * 1000})
+                await page.waitForSelector("[data-automation='jobTitle']", {"visible": True, "timeout": 15000})
+            except Exception:
+                logger.warning("Unable to load JobStreet category page: %s", url)
+                continue
+
+            current_page = 1
+            while current_page <= TOTAL_SCRAPE_PAGE and datetime.now().timestamp() < deadline:
+                cards = await page.querySelectorAll("[data-automation='jobTitle']")
+                if not cards:
+                    break
+
+                for card in cards:
+                    if datetime.now().timestamp() >= deadline:
+                        break
+                    try:
+                        await card.click()
+                        await page.waitForSelector("div[data-automation='jobDetailsPage']", {"visible": True, "timeout": 10000})
+                        detail_card = await page.querySelector("div[data-automation='jobDetailsPage']")
+                        if detail_card is None:
+                            continue
+
+                        title = await maybe_text(detail_card, "h1[data-automation='job-detail-title'] > a")
+                        link = await maybe_href(detail_card, "h1[data-automation='job-detail-title'] > a")
+                        company = await maybe_text(detail_card, "span[data-automation='advertiser-name']")
+                        location = await maybe_text(detail_card, "span[data-automation='job-detail-location']")
+                        classification = await maybe_text(detail_card, "span[data-automation='job-detail-classifications'] > a")
+                        employment_type = await maybe_text(detail_card, "span[data-automation='job-detail-work-type']")
+                        salary = await maybe_text(detail_card, "span[data-automation='job-detail-salary']")
+                        description = await maybe_text(detail_card, "div[data-automation='jobAdDetails']")
+                        date_nodes = await detail_card.xpath(".//span[contains(text(), 'Posted')]")
+                        date_text = None
+                        if date_nodes:
+                            date_text = await page.evaluate("(element) => element.textContent", date_nodes[0])
+
+                        if not link:
+                            continue
+                        scraped_jobs.append(
+                            {
+                                "external_job_id": job_id_from_url(link),
+                                "title": title,
+                                "company": company,
+                                "location": location,
+                                "category": classification,
+                                "description": description,
+                                "job_url": link,
+                                "posting_date": parse_jobstreet_relative_date(date_text),
+                                "salary": salary,
+                                "employment_type": employment_type,
+                            }
+                        )
+                    except Exception as exc:
+                        logger.warning("Unable to scrape JobStreet card: %s", exc)
+                        continue
+
+                next_link = await page.querySelector("li > a[title='Next']")
+                if next_link is None:
+                    break
+                try:
+                    await next_link.click()
+                    await page.waitFor(1500)
+                    current_page += 1
+                except Exception:
+                    break
+    finally:
+        await browser.close()
+
+    if not scraped_jobs:
+        raise RuntimeError("No JobStreet jobs were scraped.")
+    return scraped_jobs
 
 
 def configure_scraper_logging():

@@ -18,8 +18,13 @@ celery_app.conf.update(
     result_serializer="json",
     timezone="UTC",
     enable_utc=True,
-    task_time_limit=300,
-    task_soft_time_limit=240,
+    task_time_limit=600,
+    task_soft_time_limit=540,
+    task_acks_late=True,
+    task_reject_on_worker_lost=True,
+    worker_prefetch_multiplier=1,
+    result_expires=settings.celery_result_expires_seconds,
+    broker_transport_options={"visibility_timeout": 3600},
     beat_schedule={
         "weekly-approved-source-scraping": {
             "task": "app.workers.tasks.run_weekly_scraping",

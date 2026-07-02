@@ -47,14 +47,7 @@ def skill_gap_actions(current_skills: list[str], focus: str) -> list[str]:
 def build_roadmap(payload: RoadmapCreateRequest) -> dict:
     focus_items = roadmap_focus_for_role(payload.target_role)
     interval = max(1, payload.timeline_months // 4)
-    months = sorted(
-        {
-            1,
-            min(payload.timeline_months, 1 + interval),
-            min(payload.timeline_months, 1 + interval * 2),
-            payload.timeline_months,
-        }
-    )
+    months = sorted({1, min(payload.timeline_months, 1 + interval), min(payload.timeline_months, 1 + interval * 2), payload.timeline_months})
     milestone_titles = ["Foundation", "Practice", "Portfolio", "Application readiness"]
     milestones = []
 

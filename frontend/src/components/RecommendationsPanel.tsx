@@ -8,6 +8,12 @@ import { apiFetch, formatDate, formatDateTime, type CoverLetter, type Recommenda
 const pageSize = 10;
 const missingExtractionMessage = "No completed resume extraction is available.";
 
+async function refreshRecommendations(): Promise<RecommendationListResponse> {
+  return apiFetch<RecommendationListResponse>("/recommendations/refresh", {
+    method: "POST"
+  });
+}
+
 export function RecommendationsPanel() {
   const router = useRouter();
   const [recommendations, setRecommendations] = useState<RecommendationListResponse | null>(null);
@@ -19,13 +25,25 @@ export function RecommendationsPanel() {
 
   useEffect(() => {
     let active = true;
-    apiFetch<RecommendationListResponse>(`/recommendations?page=${page}&page_size=${pageSize}`)
-      .then((response) => {
-        if (active) {
-          setRecommendations(response);
+    async function loadRecommendations() {
+      setLoading(true);
+      setError(null);
+      try {
+        const response = await apiFetch<RecommendationListResponse>(`/recommendations?page=${page}&page_size=${pageSize}`);
+        if (!active) {
+          return;
         }
-      })
-      .catch((caught) => {
+
+        if (page === 1 && response.total === 0) {
+          const refreshed = await refreshRecommendations();
+          if (active) {
+            setRecommendations(refreshed);
+          }
+          return;
+        }
+
+        setRecommendations(response);
+      } catch (caught) {
         const message = caught instanceof Error ? caught.message : "Unable to load recommendations.";
         if (message === "Authentication required.") {
           router.push("/login");
@@ -35,12 +53,13 @@ export function RecommendationsPanel() {
           setError(message);
           setRecommendations(null);
         }
-      })
-      .finally(() => {
+      } finally {
         if (active) {
           setLoading(false);
         }
-      });
+      }
+    }
+    loadRecommendations();
     return () => {
       active = false;
     };
@@ -50,9 +69,7 @@ export function RecommendationsPanel() {
     setRefreshing(true);
     setError(null);
     try {
-      const response = await apiFetch<RecommendationListResponse>("/recommendations/refresh", {
-        method: "POST"
-      });
+      const response = await refreshRecommendations();
       setPage(1);
       setRecommendations(response);
     } catch (caught) {
@@ -110,9 +127,9 @@ export function RecommendationsPanel() {
       ) : null}
       {!loading && !error && recommendations?.items.length === 0 ? (
         <div className="rounded border border-zinc-200 bg-white p-5 text-sm text-zinc-600">
-          <p>No recommendations yet.</p>
-          <Link className="mt-3 inline-block font-medium text-teal-800" href="/resumes">
-            Upload or review a resume
+          <p>No matching jobs are available for your extracted resume profile yet.</p>
+          <Link className="mt-3 inline-block font-medium text-teal-800" href="/jobs">
+            Browse all jobs
           </Link>
         </div>
       ) : null}

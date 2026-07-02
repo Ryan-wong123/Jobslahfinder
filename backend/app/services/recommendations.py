@@ -12,6 +12,7 @@ from app.models.activity import Recommendation
 from app.models.enums import AuditOutcome, ProcessingStatus, UploadStatus
 from app.models.job import JobPosting
 from app.models.resume import Resume, ResumeExtraction
+from app.security.text import sanitize_text
 from app.services.application_history import add_application_history
 from app.services.audit import create_audit_log
 
@@ -69,7 +70,20 @@ def json_items(value: dict | None) -> list:
 def normalize_phrase(value: object, *, max_chars: int = 80) -> str | None:
     if not isinstance(value, str):
         return None
-    cleaned = re.sub(r"\s+", " ", value).strip().casefold()
+    cleaned_text = sanitize_text(
+        value,
+        field_name="profile signal",
+        max_length=max_chars,
+        empty_to_none=True,
+        html_policy="strip",
+        overflow="truncate",
+        control_policy="strip",
+        collapse_whitespace=True,
+        allow_multiline=False,
+    )
+    if cleaned_text is None:
+        return None
+    cleaned = re.sub(r"\s+", " ", cleaned_text).strip().casefold()
     if not cleaned:
         return None
     return cleaned[:max_chars]
@@ -79,7 +93,18 @@ def text_terms(*values: object) -> frozenset[str]:
     terms: set[str] = set()
     for value in values:
         if isinstance(value, str):
-            terms.update(WORD_PATTERN.findall(value.casefold()))
+            cleaned = sanitize_text(
+                value,
+                field_name="recommendation text",
+                max_length=2000,
+                empty_to_none=True,
+                html_policy="strip",
+                overflow="truncate",
+                control_policy="strip",
+                collapse_whitespace=True,
+            )
+            if cleaned:
+                terms.update(WORD_PATTERN.findall(cleaned.casefold()))
     return frozenset(term[:40] for term in terms if len(term) >= 2 and term not in GENERIC_PROFILE_TERMS)
 
 

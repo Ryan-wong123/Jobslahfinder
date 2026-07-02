@@ -1,8 +1,9 @@
 from collections.abc import Generator
 from io import BytesIO
 from pathlib import Path
-from zipfile import ZipFile, ZIP_DEFLATED
+from zipfile import ZIP_DEFLATED, ZipFile
 
+import pyotp
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
@@ -99,6 +100,12 @@ def create_user(db_session: Session, *, email: str) -> User:
 def login(client: TestClient, *, email: str) -> None:
     response = client.post("/auth/login", json={"email": email, "password": USER_PASSWORD})
     assert response.status_code == 200
+    if response.json().get("requires_2fa_setup"):
+        setup_response = client.get("/auth/2fa/setup")
+        assert setup_response.status_code == 200
+        code = pyotp.TOTP(setup_response.json()["secret"]).now()
+        confirm_response = client.post("/auth/2fa/confirm", json={"code": code})
+        assert confirm_response.status_code == 200
 
 
 def docx_content(text: str = "") -> bytes:
@@ -115,16 +122,11 @@ def docx_content(text: str = "") -> bytes:
     return buffer.getvalue()
 
 
-def docx_with_extra_entries(extra_entries: int) -> bytes:
+def docx_archive(entries: dict[str, str | bytes], *, compression: int = ZIP_DEFLATED) -> bytes:
     buffer = BytesIO()
-    with ZipFile(buffer, "w", compression=ZIP_DEFLATED) as archive:
-        archive.writestr("[Content_Types].xml", "<Types></Types>")
-        archive.writestr(
-            "word/document.xml",
-            '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" />',
-        )
-        for index in range(extra_entries):
-            archive.writestr(f"word/extra-{index}.xml", "<x />")
+    with ZipFile(buffer, "w", compression=compression) as archive:
+        for name, value in entries.items():
+            archive.writestr(name, value)
     return buffer.getvalue()
 
 
@@ -182,18 +184,221 @@ def test_valid_docx_upload_is_accepted(client: TestClient, db_session: Session) 
     assert response.json()["mime_type"] == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 
+def test_docx_upload_with_excessive_archive_entry_count_is_rejected(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(resume_service, "DOCX_MAX_ARCHIVE_ENTRIES", 2)
+    create_user(db_session, email="user@example.com")
+    login(client, email="user@example.com")
+    content = docx_archive(
+        {
+            "[Content_Types].xml": "<Types></Types>",
+            "word/document.xml": "<w:document></w:document>",
+            "word/extra.xml": "<extra></extra>",
+        }
+    )
+
+    response = upload(
+        client,
+        filename="resume.docx",
+        content=content,
+        mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": "Unable to upload resume. Please provide a valid PDF or DOCX file."
+    }
+    assert db_session.scalar(select(Resume)) is None
+    audit = db_session.scalar(select(AuditLog).where(AuditLog.event_type == "resume.upload"))
+    assert audit is not None
+    assert audit.details_json["reason"] == "docx_archive_too_many_entries"
+    assert "word/document.xml" not in str(audit.details_json)
+    assert "word/extra.xml" not in str(audit.details_json)
+
+
+def test_docx_upload_with_excessive_total_uncompressed_size_is_rejected(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(resume_service, "DOCX_MAX_TOTAL_UNCOMPRESSED_BYTES", 200)
+    monkeypatch.setattr(resume_service, "DOCX_MAX_ENTRY_UNCOMPRESSED_BYTES", 1000)
+    create_user(db_session, email="user@example.com")
+    login(client, email="user@example.com")
+    content = docx_archive(
+        {
+            "[Content_Types].xml": "<Types></Types>",
+            "word/document.xml": "<w:document></w:document>",
+            "word/styles.xml": "A" * 180,
+        }
+    )
+
+    response = upload(
+        client,
+        filename="resume.docx",
+        content=content,
+        mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+
+    assert response.status_code == 400
+    assert db_session.scalar(select(Resume)) is None
+    audit = db_session.scalar(select(AuditLog).where(AuditLog.event_type == "resume.upload"))
+    assert audit is not None
+    assert audit.details_json["reason"] == "docx_archive_too_large"
+    assert "A" * 20 not in str(audit.details_json)
+
+
+def test_docx_upload_with_excessive_individual_file_size_is_rejected(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(resume_service, "DOCX_MAX_ENTRY_UNCOMPRESSED_BYTES", 100)
+    create_user(db_session, email="user@example.com")
+    login(client, email="user@example.com")
+    content = docx_archive(
+        {
+            "[Content_Types].xml": "<Types></Types>",
+            "word/document.xml": "<w:document></w:document>",
+            "word/styles.xml": "B" * 120,
+        }
+    )
+
+    response = upload(
+        client,
+        filename="resume.docx",
+        content=content,
+        mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+
+    assert response.status_code == 400
+    assert db_session.scalar(select(Resume)) is None
+    audit = db_session.scalar(select(AuditLog).where(AuditLog.event_type == "resume.upload"))
+    assert audit is not None
+    assert audit.details_json["reason"] == "docx_archive_entry_too_large"
+    assert "B" * 20 not in str(audit.details_json)
+
+
+def test_docx_upload_with_high_compression_ratio_is_rejected(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(resume_service, "DOCX_MAX_COMPRESSION_RATIO", 5)
+    create_user(db_session, email="user@example.com")
+    login(client, email="user@example.com")
+    content = docx_archive(
+        {
+            "[Content_Types].xml": "<Types></Types>",
+            "word/document.xml": "C" * 2000,
+        },
+        compression=ZIP_DEFLATED,
+    )
+
+    response = upload(
+        client,
+        filename="resume.docx",
+        content=content,
+        mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+
+    assert response.status_code == 400
+    assert db_session.scalar(select(Resume)) is None
+    audit = db_session.scalar(select(AuditLog).where(AuditLog.event_type == "resume.upload"))
+    assert audit is not None
+    assert audit.details_json["reason"] == "docx_archive_compression_ratio"
+    assert "C" * 20 not in str(audit.details_json)
+
+
+def test_docx_upload_missing_required_docx_files_is_rejected(
+    client: TestClient, db_session: Session
+) -> None:
+    create_user(db_session, email="user@example.com")
+    login(client, email="user@example.com")
+    content = docx_archive({"[Content_Types].xml": "<Types></Types>"})
+
+    response = upload(
+        client,
+        filename="resume.docx",
+        content=content,
+        mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": "Unable to upload resume. Please provide a valid PDF or DOCX file."
+    }
+    assert db_session.scalar(select(Resume)) is None
+    audit = db_session.scalar(select(AuditLog).where(AuditLog.event_type == "resume.upload"))
+    assert audit is not None
+    assert audit.details_json["reason"] == "invalid_file_signature"
+
+
+def test_pdf_upload_with_docx_mime_is_rejected(client: TestClient, db_session: Session) -> None:
+    create_user(db_session, email="user@example.com")
+    login(client, email="user@example.com")
+
+    response = upload(
+        client,
+        filename="resume.pdf",
+        content=PDF_CONTENT,
+        mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": "Unable to upload resume. Please provide a valid PDF or DOCX file."
+    }
+    assert db_session.scalar(select(Resume)) is None
+
+
+def test_docx_upload_with_pdf_mime_is_rejected(client: TestClient, db_session: Session) -> None:
+    create_user(db_session, email="user@example.com")
+    login(client, email="user@example.com")
+
+    response = upload(
+        client,
+        filename="resume.docx",
+        content=docx_content(),
+        mime_type="application/pdf",
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": "Unable to upload resume. Please provide a valid PDF or DOCX file."
+    }
+    assert db_session.scalar(select(Resume)) is None
+
+
+def test_forged_resume_extension_with_invalid_content_is_rejected(
+    client: TestClient, db_session: Session
+) -> None:
+    create_user(db_session, email="user@example.com")
+    login(client, email="user@example.com")
+
+    response = upload(
+        client,
+        filename="resume.docx",
+        content=b"not a zip-backed docx",
+        mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": "Unable to upload resume. Please provide a valid PDF or DOCX file."
+    }
+    assert db_session.scalar(select(Resume)) is None
+
+
 @pytest.mark.parametrize(
     ("filename", "content", "mime_type"),
     [
         ("resume.txt", PDF_CONTENT, "application/pdf"),
         ("resume.pdf", PDF_CONTENT, "text/plain"),
         ("resume.pdf", b"not a pdf", "application/pdf"),
-        ("resume.pdf", docx_content(), "application/pdf"),
-        (
-            "resume.docx",
-            PDF_CONTENT,
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        ),
         ("resume.pdf", b"", "application/pdf"),
         ("../resume.pdf", PDF_CONTENT, "application/pdf"),
     ],
@@ -209,29 +414,6 @@ def test_invalid_uploads_are_rejected_with_safe_error(
     login(client, email="user@example.com")
 
     response = upload(client, filename=filename, content=content, mime_type=mime_type)
-
-    assert response.status_code == 400
-    assert response.json() == {
-        "detail": "Unable to upload resume. Please provide a valid PDF or DOCX file."
-    }
-    assert db_session.scalar(select(Resume)) is None
-
-
-def test_docx_archive_with_too_many_entries_is_rejected(
-    client: TestClient,
-    db_session: Session,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(resume_service, "DOCX_MAX_ARCHIVE_ENTRIES", 3)
-    create_user(db_session, email="user@example.com")
-    login(client, email="user@example.com")
-
-    response = upload(
-        client,
-        filename="resume.docx",
-        content=docx_with_extra_entries(extra_entries=3),
-        mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    )
 
     assert response.status_code == 400
     assert response.json() == {
@@ -412,6 +594,47 @@ def test_extraction_worker_uses_gemini_flash_lite_when_configured(
     assert extraction.skills_json == {"items": ["Python"]}
 
 
+def test_gemini_resume_extraction_does_not_print_or_log_raw_text(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    settings = get_settings()
+    monkeypatch.setattr(settings, "resume_parser_max_text_chars", 80)
+    monkeypatch.setattr(settings, "resume_parser_timeout_seconds", 5)
+    secret_resume_text = "SECRET RESUME TEXT Python developer 6 years Singapore University"
+    captured: dict[str, object] = {}
+
+    def fake_gemini_parser(text: str, settings_arg):
+        captured["text"] = text
+        captured["settings"] = settings_arg
+        return {
+            "skills": ["Python"],
+            "experience": [{"title": "Developer", "years": 6}],
+            "education": [{"institution": "Singapore University"}],
+            "years_experience": 6,
+        }
+
+    monkeypatch.setattr(resume_service, "parse_resume_with_gemini", fake_gemini_parser)
+
+    with caplog.at_level("INFO"):
+        parsed = resume_service.parse_resume_with_gemini_timeout(
+            docx_content(secret_resume_text + " additional filler text" * 20),
+            ".docx",
+            settings,
+        )
+
+    stdio = capsys.readouterr()
+    assert parsed["skills"] == ["Python"]
+    assert captured["settings"] is settings
+    assert isinstance(captured["text"], str)
+    assert secret_resume_text in captured["text"]
+    assert len(captured["text"]) <= settings.resume_parser_max_text_chars
+    assert secret_resume_text not in stdio.out
+    assert secret_resume_text not in stdio.err
+    assert secret_resume_text not in caplog.text
+
+
 def test_gemini_resume_schema_leaves_limits_to_backend_validation() -> None:
     schema_text = str(GEMINI_RESUME_SCHEMA)
 
@@ -537,3 +760,25 @@ def test_extracted_profile_edit_validation(client: TestClient, db_session: Sessi
     response = client.patch(f"/resumes/{resume_id}/extraction", json=payload)
 
     assert response.status_code == 422
+
+
+def test_extracted_profile_edit_rejects_html_text(client: TestClient, db_session: Session) -> None:
+    create_user(db_session, email="user@example.com")
+    login(client, email="user@example.com")
+    created = upload(client)
+    resume_id = created.json()["id"]
+
+    response = client.patch(
+        f"/resumes/{resume_id}/extraction",
+        json={
+            "skills": ["Python", "<script>alert(1)</script>"],
+            "experience": [{"title": "<b>Developer</b>", "company": "Acme"}],
+            "education": [],
+            "years_experience": 1,
+        },
+    )
+
+    assert response.status_code == 422
+    extraction = db_session.scalar(select(ResumeExtraction).where(ResumeExtraction.resume_id == resume_id))
+    assert extraction is not None
+    assert extraction.skills_json is None

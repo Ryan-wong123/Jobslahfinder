@@ -8,28 +8,22 @@ from app.models.account import User
 from app.core.config import Settings, get_settings
 from app.schemas.auth import MessageResponse
 from app.schemas.activity import CoverLetterResponse, InterviewQuestionsResponse
-from app.schemas.jobs import (
-    JobDetailResponse,
-    JobListResponse,
-    SalaryTrendResponse,
-    SavedJobListResponse,
-    SavedJobResponse,
-)
+from app.schemas.jobs import JobDetailResponse, JobListResponse, SalaryTrendResponse, SavedJobListResponse, SavedJobResponse
 from app.security.auth import require_authenticated_user
 from app.core.rate_limit import rate_limit_auth
 from app.services.activity import (
     CoverLetterGenerationInputMissingError,
     CoverLetterGenerationJobUnavailableError,
-    create_cover_letter_for_job,
     create_interview_questions_for_job,
+    create_cover_letter_for_job,
 )
 from app.services.jobs import (
     APPROVED_JOB_SOURCES,
     DEFAULT_PAGE_SIZE,
     MAX_PAGE_SIZE,
     JobNotFoundError,
-    get_salary_trend,
     get_visible_job_detail,
+    get_salary_trend,
     list_jobs,
     list_saved_jobs_for_user,
     save_job_for_user,
@@ -60,8 +54,6 @@ def browse_jobs(
     location: SearchText = None,
     category: SearchText = None,
     source: Annotated[ApprovedSource | None, Query()] = None,
-    active_only: bool = True,
-    include_suspicious: bool = False,
     page: Page = 1,
     page_size: PageSize = DEFAULT_PAGE_SIZE,
     db: Session = Depends(get_db),
@@ -75,8 +67,8 @@ def browse_jobs(
         location=location,
         category=category,
         source=source,
-        active_only=active_only,
-        include_suspicious=include_suspicious,
+        active_only=True,
+        include_suspicious=False,
         page=page,
         page_size=page_size,
     )
@@ -125,8 +117,7 @@ def generate_cover_letter(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No completed resume extraction is available.") from exc
     except CoverLetterGenerationJobUnavailableError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resource not found.") from exc
-
-
+    
 @router.post(
     "/jobs/{job_id}/interview-questions",
     response_model=InterviewQuestionsResponse,
@@ -140,6 +131,7 @@ def generate_interview_questions(
     settings: Settings = Depends(get_settings),
 ) -> InterviewQuestionsResponse:
     rate_limit_auth(request, "interview-questions-generate", limit=5, window_seconds=300)
+
     try:
         return create_interview_questions_for_job(
             db,
@@ -154,13 +146,15 @@ def generate_interview_questions(
             detail="No completed resume extraction is available.",
         ) from exc
     except CoverLetterGenerationJobUnavailableError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resource not found.") from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Resource not found.",
+        ) from exc
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Unable to generate interview questions right now. Please try again later.",
         ) from exc
-
 
 @router.post("/jobs/{job_id}/save", response_model=SavedJobResponse, status_code=status.HTTP_201_CREATED)
 def save_job(

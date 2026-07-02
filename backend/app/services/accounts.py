@@ -13,6 +13,7 @@ from app.models.enums import AuditOutcome
 from app.models.resume import Resume, ResumeExtraction
 from app.schemas.auth import AccountUpdateRequest, ProfileResponse, ProfileUpdateRequest
 from app.security.passwords import hash_password, verify_password
+from app.security.text import sanitize_text
 from app.security.tokens import generate_token
 from app.services.audit import create_audit_log
 from app.services.auth import utc_now
@@ -20,6 +21,19 @@ from app.services.auth import utc_now
 
 GENERIC_ACCOUNT_UPDATE_ERROR = "Unable to update account."
 GENERIC_DELETE_ERROR = "Unable to delete account."
+
+
+def _safe_profile_text(value: str | None, *, max_length: int, collapse_whitespace: bool = False) -> str | None:
+    return sanitize_text(
+        value or "",
+        field_name="profile",
+        max_length=max_length,
+        empty_to_none=True,
+        html_policy="strip",
+        overflow="truncate",
+        control_policy="strip",
+        collapse_whitespace=collapse_whitespace,
+    )
 
 
 def _skills_from_json(skills_json: dict[str, Any] | list[Any] | None) -> list[str]:
@@ -33,16 +47,26 @@ def _skills_from_json(skills_json: dict[str, Any] | list[Any] | None) -> list[st
 
     if not isinstance(raw_items, list):
         return []
-    return [item for item in raw_items if isinstance(item, str)]
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for item in raw_items:
+        if not isinstance(item, str):
+            continue
+        skill = _safe_profile_text(item, max_length=80, collapse_whitespace=True)
+        if not skill or skill.casefold() in seen:
+            continue
+        cleaned.append(skill)
+        seen.add(skill.casefold())
+    return cleaned
 
 
 def profile_to_response(profile: UserProfile) -> ProfileResponse:
     return ProfileResponse(
         user_id=profile.user_id,
-        full_name=profile.full_name,
-        phone=profile.phone,
-        location=profile.location,
-        summary=profile.summary,
+        full_name=_safe_profile_text(profile.full_name, max_length=255, collapse_whitespace=True),
+        phone=_safe_profile_text(profile.phone, max_length=50, collapse_whitespace=True),
+        location=_safe_profile_text(profile.location, max_length=255, collapse_whitespace=True),
+        summary=_safe_profile_text(profile.summary, max_length=2000),
         skills=_skills_from_json(profile.skills_json),
         created_at=profile.created_at,
         updated_at=profile.updated_at,

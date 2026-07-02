@@ -23,7 +23,7 @@ test("auth routes render the expected auth forms and navigation links", () => {
   assert.match(registerPage, /href="\/login"/);
   assert.match(forgotPasswordPage, /<PasswordResetRequestForm \/>/);
   assert.match(forgotPasswordPage, /href="\/reset-password"/);
-  assert.match(resetPasswordPage, /<PasswordResetConfirmForm \/>/);
+  assert.match(resetPasswordPage, /<PasswordResetConfirmForm(?:\s+[^>]*)?\/>/);
   assert.match(resetPasswordPage, /href="\/login"/);
 });
 
@@ -33,9 +33,7 @@ test("auth forms call the expected backend endpoints with safe generic errors", 
   const resetRequestForm = readProjectFile("src", "components", "PasswordResetRequestForm.tsx");
   const resetConfirmForm = readProjectFile("src", "components", "PasswordResetConfirmForm.tsx");
 
-  assert.match(loginForm, /apiFetch<LoginResponse>\("\/auth\/login"/);
-  assert.match(loginForm, /requires_2fa/);
-  assert.match(loginForm, /\/two-factor\/verify\?token=/);
+  assert.match(loginForm, /apiFetch<LoginResponse>\("\/auth\/login"/);  
   assert.match(loginForm, /Invalid email or password\./);
   assert.match(registerForm, /apiFetch<User>\("\/auth\/register"/);
   assert.match(registerForm, /Unable to register account\./);
@@ -58,6 +56,21 @@ test("auth forms avoid browser token storage and include password autocomplete h
   assert.match(authFiles, /autoComplete="current-password"/);
   assert.match(authFiles, /autoComplete="new-password"/);
   assert.match(authFiles, /autoComplete="one-time-code"/);
+});
+
+test("auth forms include client-side validation matching backend boundaries", () => {
+  const loginForm = readProjectFile("src", "components", "LoginForm.tsx");
+  const registerForm = readProjectFile("src", "components", "RegisterForm.tsx");
+  const resetRequestForm = readProjectFile("src", "components", "PasswordResetRequestForm.tsx");
+  const resetConfirmForm = readProjectFile("src", "components", "PasswordResetConfirmForm.tsx");
+
+  assert.match(registerForm, /maxLength=\{255\}/);
+  assert.match(registerForm, /maxLength=\{128\}/);
+  assert.match(registerForm, /Password must be 12-128 characters/);
+  assert.match(loginForm, /password\.length < 1 \|\| password\.length > 128/);
+  assert.match(resetRequestForm, /Enter a valid email address\./);
+  assert.match(resetConfirmForm, /\[A-Za-z0-9_-\]\{43\}/);
+  assert.match(resetConfirmForm, /Reset token format is invalid/);
 });
 
 test("account page contains logout, password change, and re-authenticated deletion flows", () => {

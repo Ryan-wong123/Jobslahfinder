@@ -339,6 +339,15 @@ Use:
 - strict URL validation
 - file validation
 
+Implementation rules:
+
+- Prefer one shared backend text validation helper for trimming, Unicode normalization, control-character handling, length limits, and optional HTML rejection.
+- Validate password reset tokens with an allowlist pattern matching the generated token format, not length alone.
+- Validate all public query flags that can reveal moderated or inactive content; suspicious/inactive job filters must remain admin-only.
+- Use positive path parameter constraints consistently for all resource IDs, including admin IDs.
+- Use explicit response schemas for AI-generated structured output such as interview questions.
+- Reject overlong list items rather than silently truncating security-relevant user input.
+
 Do not rely on frontend validation only.
 
 ---
@@ -429,12 +438,15 @@ Validate:
 
 - file extension
 - MIME type
+- content-derived MIME or signature match
 - basic file signature/content structure
 - file size
 - filename safety
 - path traversal attempts
+- archive safety for DOCX files, including maximum entry count, maximum total uncompressed size, and maximum compression ratio
 
 Do not trust the original filename.
+Do not trust the client-provided MIME type by itself.
 
 ### 12.3 Storage
 
@@ -454,6 +466,7 @@ Do not trust the original filename.
 - Handle parser failures safely.
 - Do not log full resume contents.
 - Log only metadata such as user ID, file hash, upload status, and outcome.
+- Never print or log raw extracted resume text, even during debugging.
 
 ---
 
@@ -483,7 +496,7 @@ Normalize these fields:
 - Reject or flag malformed jobs.
 - Detect duplicates using source ID, external job ID, normalized fields, or content hash.
 - Mark suspicious jobs before presenting them to users.
-- Allow admins to disable invalid or suspicious jobs.
+- Allow admins to disable or delete invalid or suspicious jobs.
 
 ### 13.4 Security
 
@@ -525,6 +538,7 @@ AI features include:
 - Never auto-submit applications to external job platforms.
 - Treat AI output as untrusted until safely displayed.
 - Store recommendation rationale when useful.
+- Validate structured AI responses against explicit schemas before returning or storing them.
 
 ### 14.4 Abuse Prevention
 
@@ -586,6 +600,8 @@ Never log:
 - private keys
 - full resume contents
 - full AI prompts containing personal data
+- generated cover letter text
+- edited cover letter text
 - sensitive environment variables
 - raw database credentials
 
@@ -595,6 +611,7 @@ Never log:
 - Protect logs from tampering.
 - Retain audit logs for at least 90 days if feasible for the coursework deployment.
 - Redact sensitive values.
+- Apply maximum length limits to nested audit detail strings and user-agent values.
 - Use structured logging where possible.
 
 ---
@@ -790,7 +807,9 @@ Test:
 - valid DOCX upload
 - invalid extension rejected
 - invalid MIME rejected
+- forged MIME/content mismatch rejected
 - oversized file rejected
+- DOCX archive bomb or excessive archive structure rejected
 - path traversal filename rejected
 - parser failure handled safely
 
@@ -928,6 +947,7 @@ Admin:
 - `PATCH /admin/users/{user_id}`
 - `GET /admin/jobs`
 - `PATCH /admin/jobs/{job_id}`
+- `DELETE /admin/jobs/{job_id}`
 - `GET /admin/scraping-runs`
 - `GET /admin/audit-logs`
 - `GET /admin/health`

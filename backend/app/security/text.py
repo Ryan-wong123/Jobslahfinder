@@ -22,7 +22,8 @@ def normalize_text_value(value: Any) -> str:
 def is_unsafe_control_character(character: str, *, allow_multiline: bool) -> bool:
     if allow_multiline and character in MULTILINE_WHITESPACE:
         return False
-    return unicodedata.category(character) in {"Cc", "Cf", "Cs", "Co", "Cn"}
+    category = unicodedata.category(character)
+    return category in {"Cc", "Cf", "Cs", "Co", "Cn"}
 
 
 def has_unsafe_control_characters(text: str, *, allow_multiline: bool) -> bool:
@@ -49,7 +50,8 @@ def sanitize_text(
     allow_multiline: bool = True,
     reject_placeholders: bool = False,
 ) -> str | None:
-    text = html.unescape(normalize_text_value(value))
+    text = normalize_text_value(value)
+    text = html.unescape(text)
 
     if html_policy == "reject" and HTML_TAG_PATTERN.search(text):
         raise ValueError(f"Invalid {field_name}.")

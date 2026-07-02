@@ -46,6 +46,61 @@ function ItemList({ items, empty }: { items: string[]; empty: string }) {
   );
 }
 
+function formatYearsToDuration(value: unknown): string {
+  if (value === null || value === undefined || value === "") {
+    return "Not provided";
+  }
+
+  if (typeof value !== "number" && typeof value !== "string") {
+    return "Not provided";
+  }
+
+  const yearsValue = Number(value);
+
+  if (Number.isNaN(yearsValue) || yearsValue <= 0) {
+    return "Not provided";
+  }
+
+  const totalMonths = Math.round(yearsValue * 12);
+  const wholeYears = Math.floor(totalMonths / 12);
+  const months = totalMonths % 12;
+
+  if (wholeYears === 0 && months === 0) {
+    return "Less than 1 month";
+  }
+
+  if (wholeYears === 0) {
+    return `${months} ${months === 1 ? "month" : "months"}`;
+  }
+
+  if (months === 0) {
+    return `${wholeYears} ${wholeYears === 1 ? "year" : "years"}`;
+  }
+
+  return `${wholeYears} ${wholeYears === 1 ? "year" : "years"}, ${months} ${
+    months === 1 ? "month" : "months"
+  }`;
+}
+
+function calculateTotalExperienceDuration(experience: Array<Record<string, unknown>>): string {
+  const totalYears = experience.reduce((sum, item) => {
+    const years = item.years;
+
+    if (typeof years === "number") {
+      return sum + years;
+    }
+
+    if (typeof years === "string") {
+      const parsed = Number(years);
+      return Number.isNaN(parsed) ? sum : sum + parsed;
+    }
+
+    return sum;
+  }, 0);
+
+  return formatYearsToDuration(totalYears);
+}
+
 export function ExtractedProfilePanel({ resumeId, editing }: { resumeId: number; editing: boolean }) {
   const router = useRouter();
   const [resume, setResume] = useState<Resume | null>(null);
@@ -238,15 +293,29 @@ export function ExtractedProfilePanel({ resumeId, editing }: { resumeId: number;
       <section className="rounded border border-zinc-200 bg-white p-6 shadow-sm">
         <h2 className="text-lg font-semibold text-zinc-950">Experience</h2>
         <p className="mt-2 text-sm text-zinc-700">
-          Years of experience: {extraction.years_experience ?? "Not provided"}
+          Years of experience: {calculateTotalExperienceDuration(extraction.experience)}
         </p>
         {extraction.experience.length === 0 ? (
           <p className="mt-3 text-sm text-zinc-600">No experience entries extracted yet.</p>
         ) : (
           <ul className="mt-3 space-y-3">
             {extraction.experience.map((item, index) => (
-              <li key={index} className="rounded border border-zinc-200 bg-zinc-50 p-3 text-sm text-zinc-800">
-                {String(item.description ?? item.title ?? "Experience entry")}
+              <li
+                key={index}
+                className="space-y-1 rounded border border-zinc-200 bg-zinc-50 p-3 text-sm text-zinc-800"
+              >
+                <p>
+                  <span className="font-medium text-zinc-950">Role:</span>{" "}
+                  {String(item.title ?? "Not provided")}
+                </p>
+                <p>
+                  <span className="font-medium text-zinc-950">Company:</span>{" "}
+                  {String(item.company ?? "Not provided")}
+                </p>
+                <p>
+                  <span className="font-medium text-zinc-950">Duration:</span>{" "}
+                  {formatYearsToDuration(item.years)}
+                </p>
               </li>
             ))}
           </ul>
@@ -259,8 +328,26 @@ export function ExtractedProfilePanel({ resumeId, editing }: { resumeId: number;
         ) : (
           <ul className="mt-3 space-y-3">
             {extraction.education.map((item, index) => (
-              <li key={index} className="rounded border border-zinc-200 bg-zinc-50 p-3 text-sm text-zinc-800">
-                {String(item.description ?? item.institution ?? item.credential ?? "Education entry")}
+              <li
+                key={index}
+                className="space-y-1 rounded border border-zinc-200 bg-zinc-50 p-3 text-sm text-zinc-800"
+              >
+                <p>
+                  <span className="font-medium text-zinc-950">Institution:</span>{" "}
+                  {String(item.institution ?? "Not provided")}
+                </p>
+                <p>
+                  <span className="font-medium text-zinc-950">Qualification:</span>{" "}
+                  {String(
+                    [item.credential, item.field]
+                      .filter(Boolean)
+                      .join(", ") || "Not provided"
+                  )}
+                </p>
+                <p>
+                  <span className="font-medium text-zinc-950">Year of graduation:</span>{" "}
+                  {String(item.year ?? "Not provided")}
+                </p>
               </li>
             ))}
           </ul>

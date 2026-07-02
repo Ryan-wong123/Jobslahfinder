@@ -21,6 +21,9 @@ import { FormMessage } from "./FormControls";
 type SourceActionState = Record<number, boolean>;
 type UserActionState = Record<number, boolean>;
 type JobActionState = Record<number, boolean>;
+const adminJobPageSize = 8;
+const trackedPortalNames = ["JobStreet", "MyCareersFuture", "JobsLah", "FastJobs"] as const;
+const auditEventPattern = /^[a-zA-Z0-9_.:-]{1,100}$/;
 
 function statusClass(status: string): string {
   if (status === "SUCCESS" || status === "ok") {
@@ -34,6 +37,40 @@ function statusClass(status: string): string {
 
 function pill(label: string, tone: string) {
   return <span className={`rounded border px-2 py-1 text-xs font-medium ${statusClass(tone)}`}>{label}</span>;
+}
+
+async function fetchJobsThroughPage(page: number) {
+  const firstPage = await apiFetch<JobListResponse>(`/admin/jobs?page=1&page_size=${adminJobPageSize}`);
+  if (page <= 1) {
+    return firstPage;
+  }
+
+  const nextPages = await Promise.all(
+    Array.from({ length: page - 1 }, (_, index) =>
+      apiFetch<JobListResponse>(`/admin/jobs?page=${index + 2}&page_size=${adminJobPageSize}`)
+    )
+  );
+
+  return {
+    ...firstPage,
+    items: [firstPage, ...nextPages].flatMap((response) => response.items),
+    page,
+    total: nextPages.at(-1)?.total ?? firstPage.total
+  };
+}
+
+async function fetchAdminData(targetJobPage = 1) {
+  const [currentUser, currentHealth, currentUsers, currentJobs, currentSources, currentRuns, currentAuditLogs] =
+    await Promise.all([
+      apiFetch<User>("/me"),
+      apiFetch<AdminHealth>("/admin/health"),
+      apiFetch<AdminUserListResponse>("/admin/users?page=1&page_size=8"),
+      fetchJobsThroughPage(targetJobPage),
+      apiFetch<AdminJobSource[]>("/admin/job-sources"),
+      apiFetch<ScrapingRun[]>("/admin/scraping-runs?page=1&page_size=8"),
+      apiFetch<AdminAuditLogListResponse>("/admin/audit-logs?page=1&page_size=10")
+    ]);
+  return { currentUser, currentHealth, currentUsers, currentJobs, currentSources, currentRuns, currentAuditLogs };
 }
 
 export function AdminScrapingPanel() {
@@ -52,6 +89,8 @@ export function AdminScrapingPanel() {
   const [auditToFilter, setAuditToFilter] = useState("");
   const [loading, setLoading] = useState(true);
   const [seeding, setSeeding] = useState(false);
+  const [loadingMoreJobs, setLoadingMoreJobs] = useState(false);
+  const [jobPage, setJobPage] = useState(1);
   const [runningBySource, setRunningBySource] = useState<SourceActionState>({});
   const [updatingUser, setUpdatingUser] = useState<UserActionState>({});
   const [updatingJob, setUpdatingJob] = useState<JobActionState>({});
@@ -62,22 +101,16 @@ export function AdminScrapingPanel() {
     return new Map(sources.map((source) => [source.id, source.source_name]));
   }, [sources]);
 
-  async function fetchAdminData() {
-    const [currentUser, currentHealth, currentUsers, currentJobs, currentSources, currentRuns, currentAuditLogs] =
-      await Promise.all([
-        apiFetch<User>("/me"),
-        apiFetch<AdminHealth>("/admin/health"),
-        apiFetch<AdminUserListResponse>("/admin/users?page=1&page_size=8"),
-        apiFetch<JobListResponse>("/admin/jobs?page=1&page_size=8"),
-        apiFetch<AdminJobSource[]>("/admin/job-sources"),
-        apiFetch<ScrapingRun[]>("/admin/scraping-runs?page=1&page_size=8"),
-        apiFetch<AdminAuditLogListResponse>("/admin/audit-logs?page=1&page_size=10")
-      ]);
-    return { currentUser, currentHealth, currentUsers, currentJobs, currentSources, currentRuns, currentAuditLogs };
-  }
+  const portalJobCounts = useMemo(() => {
+    const countsBySourceName = new Map(sources.map((source) => [source.source_name, source.job_count]));
+    return trackedPortalNames.map((sourceName) => ({
+      sourceName,
+      jobCount: countsBySourceName.get(sourceName) ?? 0
+    }));
+  }, [sources]);
 
   async function refreshAdminData() {
-    const data = await fetchAdminData();
+    const data = await fetchAdminData(jobPage);
     setUser(data.currentUser);
     setHealth(data.currentHealth);
     setUsers(data.currentUsers);
@@ -185,6 +218,53 @@ export function AdminScrapingPanel() {
     }
   }
 
+  async function deleteJob(job: JobSummary) {
+    const confirmed = window.confirm(`Delete "${job.title}" from the platform? This cannot be undone.`);
+    if (!confirmed) {
+      return;
+    }
+    setUpdatingJob((current) => ({ ...current, [job.id]: true }));
+    setMessage(null);
+    setError(null);
+    try {
+      await apiFetch<{ message: string }>(`/admin/jobs/${job.id}`, { method: "DELETE" });
+      await refreshAdminData();
+      setMessage("Job deleted.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to delete job.");
+    } finally {
+      setUpdatingJob((current) => ({ ...current, [job.id]: false }));
+    }
+  }
+
+  async function loadMoreJobs() {
+    if (!jobs || jobs.items.length >= jobs.total) {
+      return;
+    }
+    const nextPage = jobPage + 1;
+    setLoadingMoreJobs(true);
+    setMessage(null);
+    setError(null);
+    try {
+      const nextJobs = await apiFetch<JobListResponse>(`/admin/jobs?page=${nextPage}&page_size=${adminJobPageSize}`);
+      setJobs((current) => {
+        if (!current) {
+          return nextJobs;
+        }
+        return {
+          ...nextJobs,
+          items: [...current.items, ...nextJobs.items],
+          page: nextPage
+        };
+      });
+      setJobPage(nextPage);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to load more jobs.");
+    } finally {
+      setLoadingMoreJobs(false);
+    }
+  }
+
   async function loadUserDetail(target: User) {
     setMessage(null);
     setError(null);
@@ -208,9 +288,30 @@ export function AdminScrapingPanel() {
   async function applyAuditFilters() {
     setMessage(null);
     setError(null);
+    const eventFilter = auditEventFilter.trim();
+    if (eventFilter && !auditEventPattern.test(eventFilter)) {
+      setError("Audit event filters can use letters, numbers, underscore, dot, colon, and hyphen only.");
+      return;
+    }
+    if (auditOutcomeFilter && !["SUCCESS", "FAILURE", "DENIED"].includes(auditOutcomeFilter)) {
+      setError("Choose a valid audit outcome.");
+      return;
+    }
+    if (auditFromFilter && Number.isNaN(new Date(auditFromFilter).getTime())) {
+      setError("Choose a valid start date.");
+      return;
+    }
+    if (auditToFilter && Number.isNaN(new Date(auditToFilter).getTime())) {
+      setError("Choose a valid end date.");
+      return;
+    }
+    if (auditFromFilter && auditToFilter && new Date(auditFromFilter) > new Date(auditToFilter)) {
+      setError("Start date must be before end date.");
+      return;
+    }
     const query = new URLSearchParams({ page: "1", page_size: "10" });
-    if (auditEventFilter.trim()) {
-      query.set("event_type", auditEventFilter.trim());
+    if (eventFilter) {
+      query.set("event_type", eventFilter);
     }
     if (auditOutcomeFilter) {
       query.set("outcome", auditOutcomeFilter);
@@ -271,6 +372,14 @@ export function AdminScrapingPanel() {
           <div className="rounded border border-zinc-200 p-4">
             <p className="text-xs uppercase text-zinc-500">Jobs</p>
             <p className="mt-2 text-xl font-semibold">{jobs?.total ?? 0}</p>
+            <dl className="mt-2 space-y-1 text-xs text-zinc-600">
+              {portalJobCounts.map((portal) => (
+                <div key={portal.sourceName} className="flex items-center justify-between gap-2">
+                  <dt>{portal.sourceName}</dt>
+                  <dd className="text-sm font-semibold text-zinc-950">{portal.jobCount}</dd>
+                </div>
+              ))}
+            </dl>
           </div>
           <div className="rounded border border-zinc-200 p-4">
             <p className="text-xs uppercase text-zinc-500">Runs</p>
@@ -378,23 +487,33 @@ export function AdminScrapingPanel() {
                       {pill(job.is_active ? "Active" : "Disabled", job.is_active ? "SUCCESS" : "FAILED")}
                       {job.is_suspicious ? pill("Suspicious", "FAILED") : pill("Reviewed", "SUCCESS")}
                     </td>
-                    <td className="flex flex-wrap gap-2 py-3">
-                      <button
-                        className="rounded border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-900 disabled:cursor-not-allowed disabled:text-zinc-400"
-                        disabled={Boolean(updatingJob[job.id])}
-                        onClick={() => updateJob(job, { is_active: !job.is_active })}
-                        type="button"
-                      >
-                        {job.is_active ? "Disable" : "Enable"}
-                      </button>
-                      <button
-                        className="rounded border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-900 disabled:cursor-not-allowed disabled:text-zinc-400"
-                        disabled={Boolean(updatingJob[job.id])}
-                        onClick={() => updateJob(job, { is_suspicious: !job.is_suspicious })}
-                        type="button"
-                      >
-                        {job.is_suspicious ? "Clear flag" : "Flag"}
-                      </button>
+                    <td className="py-3">
+                      <div className="grid w-28 gap-2">
+                        <button
+                          className="rounded border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-900 disabled:cursor-not-allowed disabled:text-zinc-400"
+                          disabled={Boolean(updatingJob[job.id])}
+                          onClick={() => updateJob(job, { is_active: !job.is_active })}
+                          type="button"
+                        >
+                          {job.is_active ? "Disable" : "Enable"}
+                        </button>
+                        <button
+                          className="rounded border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-900 disabled:cursor-not-allowed disabled:text-zinc-400"
+                          disabled={Boolean(updatingJob[job.id])}
+                          onClick={() => updateJob(job, { is_suspicious: !job.is_suspicious })}
+                          type="button"
+                        >
+                          {job.is_suspicious ? "Clear flag" : "Flag"}
+                        </button>
+                        <button
+                          className="rounded border border-red-300 px-3 py-2 text-sm font-medium text-red-700 disabled:cursor-not-allowed disabled:text-zinc-400"
+                          disabled={Boolean(updatingJob[job.id])}
+                          onClick={() => deleteJob(job)}
+                          type="button"
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -406,6 +525,23 @@ export function AdminScrapingPanel() {
             </tbody>
           </table>
         </div>
+        {jobs && jobs.items.length < jobs.total ? (
+          <div className="mt-4 flex items-center justify-between gap-3">
+            <p className="text-sm text-zinc-600">
+              Showing {jobs.items.length} of {jobs.total} scraped jobs.
+            </p>
+            <button
+              className="rounded border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-900 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-400"
+              disabled={loadingMoreJobs}
+              onClick={loadMoreJobs}
+              type="button"
+            >
+              {loadingMoreJobs ? "Loading..." : "See more"}
+            </button>
+          </div>
+        ) : jobs && jobs.total > 0 ? (
+          <p className="mt-4 text-sm text-zinc-600">Showing all {jobs.total} scraped jobs.</p>
+        ) : null}
       </section>
 
       <section className="rounded border border-zinc-200 bg-white p-6 shadow-sm">
@@ -510,7 +646,9 @@ export function AdminScrapingPanel() {
         <div className="mt-4 grid gap-3 md:grid-cols-5">
           <input
             className="rounded border border-zinc-300 px-3 py-2 text-sm"
+            maxLength={100}
             onChange={(event) => setAuditEventFilter(event.target.value)}
+            pattern="[a-zA-Z0-9_.:-]{1,100}"
             placeholder="event_type"
             value={auditEventFilter}
           />

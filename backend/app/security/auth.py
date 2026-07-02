@@ -34,7 +34,9 @@ def require_authenticated_session(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required.")
 
     session_token_hash = hash_token(token, settings.session_secret)
-    session = db.scalar(select(UserSession).where(UserSession.session_token_hash == session_token_hash))
+    session = db.scalar(
+        select(UserSession).where(UserSession.session_token_hash == session_token_hash)
+    )
     if (
         session is None
         or session.revoked_at is not None
@@ -42,6 +44,13 @@ def require_authenticated_session(
         or not session.user.is_active
     ):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required.")
+
+    if (
+        not session.user.totp_enabled
+        and request.url.path not in {"/auth/2fa/setup", "/auth/2fa/confirm", "/auth/logout"}
+        and not request.url.path.startswith("/risk-engine")
+    ):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Two-factor setup required.")
 
     return AuthenticatedSession(user=session.user, session=session)
 
@@ -91,7 +100,6 @@ def require_admin(
             reason="admin_role_required",
         )
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied.")
-
     created_at = authenticated_session.session.created_at
     if created_at.tzinfo is None:
         created_at = created_at.replace(tzinfo=utc_now().tzinfo)
@@ -105,9 +113,30 @@ def require_admin(
             reason="admin_recent_session_required",
         )
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Admin authentication required.")
-
     return user
 
+
+def assert_owner_or_admin(
+    db: Session,
+    request: Request | None,
+    *,
+    current_user: User,
+    owner_user_id: int,
+    target_type: str,
+    target_id: int | None = None,
+) -> None:
+    if current_user.role == UserRole.ADMIN.value or current_user.id == owner_user_id:
+        return
+
+    log_authorization_denied(
+        db,
+        request,
+        user=current_user,
+        target_type=target_type,
+        target_id=target_id,
+        reason="owner_or_admin_required",
+    )
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resource not found.")
 
 def assert_owner_or_admin(
     db: Session,

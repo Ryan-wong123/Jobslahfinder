@@ -62,7 +62,7 @@ services:
     restart: unless-stopped
     env_file:
       - .env
-    command: ["celery", "-A", "app.workers.celery_app", "worker", "--loglevel=INFO"]
+    command: ["celery", "-A", "app.workers.celery_app", "worker", "--loglevel=INFO", "--concurrency=2", "-Ofair"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -97,15 +97,24 @@ services:
   frontend:
     build:
       context: ./frontend
+      target: dev
+    command: ["npm", "run", "dev", "--", "--hostname", "0.0.0.0"]
     restart: unless-stopped
     environment:
       NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-/api}
+      NEXT_SERVER_API_BASE_URL: http://backend:8000
       HOSTNAME: 0.0.0.0
       PORT: 3000
     networks:
       - internal
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "const net=require('net'); const socket=net.connect(3000,'127.0.0.1',()=>process.exit(0)); socket.on('error',()=>process.exit(1)); setTimeout(()=>process.exit(1),5000);"
+        ]
       interval: 30s
       timeout: 10s
       retries: 3

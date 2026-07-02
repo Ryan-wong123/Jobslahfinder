@@ -1,6 +1,6 @@
 services:
   nginx:
-    ports:
+    ports: !override
       - "80:80"
       - "443:443"
     volumes:

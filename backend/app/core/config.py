@@ -1,11 +1,10 @@
 from functools import lru_cache
-import re
 from pathlib import Path
+import re
 from urllib.parse import urlsplit
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
 
 COOKIE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$")
 HOSTNAME_PATTERN = re.compile(
@@ -23,6 +22,9 @@ def validate_url(value: str, *, field_name: str, allowed_schemes: set[str]) -> s
         raise ValueError(f"{field_name} must be a valid URL.") from exc
     if parsed.scheme not in allowed_schemes or not parsed.hostname:
         raise ValueError(f"{field_name} must use one of: {', '.join(sorted(allowed_schemes))}.")
+    if parsed.username is not None or parsed.password is not None:
+        if field_name not in {"DATABASE_URL", "REDIS_URL"}:
+            raise ValueError(f"{field_name} must not contain credentials.")
     return cleaned
 
 
@@ -37,7 +39,7 @@ class Settings(BaseSettings):
     app_name: str = "Secure Job Platform API"
     app_env: str = Field(default="development", validation_alias="APP_ENV")
     debug: bool = Field(default=False, validation_alias="DEBUG")
-    api_host: str = Field(default="127.0.0.1", validation_alias="API_HOST")
+    api_host: str = Field(default="0.0.0.0", validation_alias="API_HOST")
     api_port: int = Field(default=8000, validation_alias="API_PORT")
 
     database_url: str = Field(validation_alias="DATABASE_URL")
@@ -47,13 +49,15 @@ class Settings(BaseSettings):
     password_reset_secret: SecretStr = Field(validation_alias="PASSWORD_RESET_SECRET")
     session_cookie_name: str = Field(default="job_platform_session", validation_alias="SESSION_COOKIE_NAME")
     session_expire_minutes: int = Field(default=60 * 8, validation_alias="SESSION_EXPIRE_MINUTES")
+    trust_proxy_headers: bool = Field(default=False, validation_alias="TRUST_PROXY_HEADERS")
     admin_session_max_age_minutes: int = Field(
         default=120, validation_alias="ADMIN_SESSION_MAX_AGE_MINUTES"
     )
     password_reset_expire_minutes: int = Field(
         default=30, validation_alias="PASSWORD_RESET_EXPIRE_MINUTES"
     )
-    frontend_base_url: str = Field(default="http://localhost:3000", validation_alias="FRONTEND_BASE_URL")
+
+    frontend_base_url: str = Field(default="http://localhost:8080", validation_alias="FRONTEND_BASE_URL")
     smtp_host: str | None = Field(default=None, validation_alias="SMTP_HOST")
     smtp_port: int = Field(default=587, validation_alias="SMTP_PORT")
     smtp_username: str | None = Field(default=None, validation_alias="SMTP_USERNAME")
@@ -95,6 +99,8 @@ class Settings(BaseSettings):
         default=15, validation_alias="SCRAPING_REQUEST_TIMEOUT_SECONDS"
     )
     scraping_max_retries: int = Field(default=2, validation_alias="SCRAPING_MAX_RETRIES")
+    celery_queue_max_length: int = Field(default=1000, validation_alias="CELERY_QUEUE_MAX_LENGTH")
+    celery_result_expires_seconds: int = Field(default=3600, validation_alias="CELERY_RESULT_EXPIRES_SECONDS")
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -106,21 +112,13 @@ class Settings(BaseSettings):
     @field_validator("allowed_job_source_domains")
     @classmethod
     def normalize_allowed_domains(cls, value: str) -> str:
-        domains = [
-            validate_hostname(item, field_name="ALLOWED_JOB_SOURCE_DOMAINS")
-            for item in value.split(",")
-            if item.strip()
-        ]
+        domains = [validate_hostname(item, field_name="ALLOWED_JOB_SOURCE_DOMAINS") for item in value.split(",") if item.strip()]
         return ",".join(dict.fromkeys(domains))
 
     @field_validator("database_url")
     @classmethod
     def database_url_is_valid(cls, value: str) -> str:
-        return validate_url(
-            value,
-            field_name="DATABASE_URL",
-            allowed_schemes={"postgresql", "postgresql+psycopg"},
-        )
+        return validate_url(value, field_name="DATABASE_URL", allowed_schemes={"postgresql", "postgresql+psycopg"})
 
     @field_validator("redis_url")
     @classmethod
@@ -169,24 +167,22 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_secure_production_settings(self) -> "Settings":
-        if self.api_port < 1 or self.api_port > 65535:
-            raise ValueError("API_PORT must be between 1 and 65535.")
         if self.session_expire_minutes < 15 or self.session_expire_minutes > 24 * 60:
             raise ValueError("SESSION_EXPIRE_MINUTES must be between 15 and 1440.")
-        if self.password_reset_expire_minutes < 5 or self.password_reset_expire_minutes > 24 * 60:
-            raise ValueError("PASSWORD_RESET_EXPIRE_MINUTES must be between 5 and 1440.")
-        if self.smtp_port < 1 or self.smtp_port > 65535:
-            raise ValueError("SMTP_PORT must be between 1 and 65535.")
-        if self.smtp_password is not None and not self.smtp_username:
-            raise ValueError("SMTP_USERNAME is required when SMTP_PASSWORD is configured.")
-        if self.max_upload_bytes < 1 or self.max_upload_bytes > 25 * 1024 * 1024:
-            raise ValueError("MAX_UPLOAD_BYTES must be between 1 byte and 25 MiB.")
         if self.scraping_request_timeout_seconds < 1 or self.scraping_request_timeout_seconds > 120:
             raise ValueError("SCRAPING_REQUEST_TIMEOUT_SECONDS must be between 1 and 120.")
         if self.admin_session_max_age_minutes < 5 or self.admin_session_max_age_minutes > 24 * 60:
             raise ValueError("ADMIN_SESSION_MAX_AGE_MINUTES must be between 5 and 1440.")
         if self.scraping_max_retries < 0 or self.scraping_max_retries > 5:
             raise ValueError("SCRAPING_MAX_RETRIES must be between 0 and 5.")
+        if self.celery_queue_max_length < 10 or self.celery_queue_max_length > 100000:
+            raise ValueError("CELERY_QUEUE_MAX_LENGTH must be between 10 and 100000.")
+        if self.celery_result_expires_seconds < 60 or self.celery_result_expires_seconds > 86400:
+            raise ValueError("CELERY_RESULT_EXPIRES_SECONDS must be between 60 and 86400.")
+        if self.smtp_port < 1 or self.smtp_port > 65535:
+            raise ValueError("SMTP_PORT must be between 1 and 65535.")
+        if self.smtp_password is not None and not self.smtp_username:
+            raise ValueError("SMTP_USERNAME is required when SMTP_PASSWORD is configured.")
         if self.resume_parser_timeout_seconds < 1 or self.resume_parser_timeout_seconds > 60:
             raise ValueError("RESUME_PARSER_TIMEOUT_SECONDS must be between 1 and 60.")
         if self.resume_parser_max_text_chars < 1000 or self.resume_parser_max_text_chars > 100000:
@@ -203,6 +199,7 @@ class Settings(BaseSettings):
             raise ValueError("GEMINI_RESUME_MAX_OUTPUT_TOKENS must be between 256 and 8192.")
         if self.gemini_cover_letter_max_output_tokens < 256 or self.gemini_cover_letter_max_output_tokens > 8192:
             raise ValueError("GEMINI_COVER_LETTER_MAX_OUTPUT_TOKENS must be between 256 and 8192.")
+
         if self.app_env.lower() == "production":
             if self.debug:
                 raise ValueError("DEBUG must be false in production.")
@@ -210,10 +207,13 @@ class Settings(BaseSettings):
                 raise ValueError("SESSION_SECRET must be at least 32 characters.")
             if len(self.password_reset_secret.get_secret_value()) < 32:
                 raise ValueError("PASSWORD_RESET_SECRET must be at least 32 characters.")
+            if not self.smtp_host or not self.smtp_from_email:
+                raise ValueError("SMTP_HOST and SMTP_FROM_EMAIL are required in production.")
             if self.resume_extraction_provider == "gemini" and self.gemini_api_key is None:
                 raise ValueError("GEMINI_API_KEY is required when Gemini resume extraction is enabled.")
             if self.cover_letter_generation_provider == "gemini" and self.gemini_api_key is None:
                 raise ValueError("GEMINI_API_KEY is required when Gemini cover letter generation is enabled.")
+
         return self
 
     @property

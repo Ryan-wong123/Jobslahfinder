@@ -11,6 +11,9 @@ type FieldProps = {
   required?: boolean;
   minLength?: number;
   maxLength?: number;
+  pattern?: string;
+  title?: string;
+  defaultValue?: string;
 };
 
 export function TextField({
@@ -21,7 +24,10 @@ export function TextField({
   inputMode,
   required = true,
   minLength,
-  maxLength
+  maxLength,
+  pattern,
+  title,
+  defaultValue
 }: FieldProps) {
   return (
     <label className="block">
@@ -35,6 +41,9 @@ export function TextField({
         required={required}
         minLength={minLength}
         maxLength={maxLength}
+        pattern={pattern}
+        title={title}
+        defaultValue={defaultValue}
       />
     </label>
   );

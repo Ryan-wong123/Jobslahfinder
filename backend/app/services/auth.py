@@ -7,22 +7,28 @@ from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.services.email import send_password_reset_email
+
 from app.core.config import Settings
 from app.models.account import PasswordResetToken, Session as UserSession, User, UserProfile
 from app.models.enums import AuditOutcome, UserRole
 from app.security.passwords import hash_password, needs_rehash, verify_password
 from app.security.tokens import generate_token, hash_token
 from app.services.audit import create_audit_log
-from app.services.email import send_password_reset_email
 
 
 GENERIC_LOGIN_ERROR = "Invalid email or password."
 GENERIC_REGISTER_ERROR = "Unable to register account."
 GENERIC_RESET_MESSAGE = "If the account exists, a reset link has been sent."
 GENERIC_RESET_ERROR = "Unable to reset password."
+TOO_MANY_LOGIN_ATTEMPTS_ERROR = "Too many login attempts. Please try again later."
 
-MAX_FAILED_LOGINS = 5
-LOCKOUT_MINUTES = 15
+MAX_FAILED_LOGINS = 25
+LOCKOUT_MINUTES = 1
+
+
+class AccountLockedError(ValueError):
+    """Raised when a valid account is temporarily locked after repeated failures."""
 
 
 def utc_now() -> datetime:
@@ -114,7 +120,7 @@ def authenticate_user(db: Session, request: Request, *, email: str, password: st
             details={"reason": "account_locked"},
         )
         db.commit()
-        raise ValueError(GENERIC_LOGIN_ERROR)
+        raise AccountLockedError(TOO_MANY_LOGIN_ATTEMPTS_ERROR)
 
     if not verify_password(password, user.password_hash):
         user.failed_login_count += 1
@@ -131,6 +137,8 @@ def authenticate_user(db: Session, request: Request, *, email: str, password: st
             details={"reason": "invalid_credentials"},
         )
         db.commit()
+        if user.failed_login_count >= MAX_FAILED_LOGINS:
+            raise AccountLockedError(TOO_MANY_LOGIN_ATTEMPTS_ERROR)
         raise ValueError(GENERIC_LOGIN_ERROR)
 
     if needs_rehash(user.password_hash):
@@ -234,6 +242,7 @@ def change_password(
 
 def request_password_reset(db: Session, request: Request, settings: Settings, *, email: str) -> None:
     user = db.scalar(select(User).where(User.email == email, User.is_active.is_(True)))
+
     if user is None:
         create_audit_log(
             db,
@@ -253,12 +262,14 @@ def request_password_reset(db: Session, request: Request, settings: Settings, *,
         expires_at=utc_now() + timedelta(minutes=settings.password_reset_expire_minutes),
     )
     db.add(reset_token)
+
     delivery = "email"
     try:
         send_password_reset_email(settings, to_email=user.email, token=token)
     except RuntimeError:
         delivery = "not_configured"
-    except Exception:
+    except Exception as exc:
+        print(f"Password reset email delivery failed: {type(exc).__name__}: {exc}", flush=True)
         delivery = "failed"
 
     create_audit_log(

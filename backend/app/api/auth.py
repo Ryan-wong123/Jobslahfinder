@@ -31,10 +31,12 @@ from app.services.accounts import (
     update_profile_for_user,
 )
 from app.services.auth import (
+    AccountLockedError,
     GENERIC_LOGIN_ERROR,
     GENERIC_REGISTER_ERROR,
     GENERIC_RESET_ERROR,
     GENERIC_RESET_MESSAGE,
+    TOO_MANY_LOGIN_ATTEMPTS_ERROR,
     authenticate_user,
     change_password,
     confirm_password_reset,
@@ -42,18 +44,18 @@ from app.services.auth import (
     register_user,
     request_password_reset,
     revoke_session,
-    utc_now,
 )
 from app.models.account import User
 from app.models.enums import AuditOutcome
-from app.services.audit import create_audit_log
 from app.services.risk_engine import (
     APP_DEVICE_COOKIE_NAME,
     evaluate_login_risk,
     get_or_create_app_device_id,
+    ip_prefix_for_risk,
     issue_device_cookie,
     learn_successful_login,
 )
+from app.services.audit import create_audit_log
 from app.services.two_factor import (
     create_pending_2fa_challenge,
     decrypt_totp_secret,
@@ -64,11 +66,11 @@ from app.services.two_factor import (
     provisioning_uri,
     verify_totp_code,
 )
+from app.services.auth import utc_now
 from risk_engine.config import COOKIE_NAME, TOKEN_TTL_DAYS
 
 
 router = APIRouter(tags=["auth"])
-TOO_MANY_LOGIN_ATTEMPTS_ERROR = "Too many login attempts. Please try again later."
 
 
 def set_session_cookie(response: Response, settings: Settings, token: str) -> None:
@@ -117,7 +119,11 @@ def set_risk_engine_cookies(
             path="/",
         )
 
-    issued = issue_device_cookie(user_id=user.id, device_id=device_id, force_rotate=force_rotate)
+    issued = issue_device_cookie(
+        user_id=user.id,
+        device_id=device_id,
+        force_rotate=force_rotate,
+    )
     if issued.rotate and issued.raw_token:
         response.set_cookie(
             key=risk_engine_device_cookie_name(settings),
@@ -133,13 +139,15 @@ def set_risk_engine_cookies(
 
 
 def risk_block_status(risk_reasons: list[str]) -> int:
-    if {"rapid_login_attempts", "excessive_login_attempts"}.intersection(risk_reasons):
+    rate_limit_reasons = {"rapid_login_attempts", "excessive_login_attempts"}
+    if rate_limit_reasons.intersection(risk_reasons):
         return status.HTTP_429_TOO_MANY_REQUESTS
     return status.HTTP_401_UNAUTHORIZED
 
 
 def risk_block_message(risk_reasons: list[str]) -> str:
-    if {"rapid_login_attempts", "excessive_login_attempts"}.intersection(risk_reasons):
+    rate_limit_reasons = {"rapid_login_attempts", "excessive_login_attempts"}
+    if rate_limit_reasons.intersection(risk_reasons):
         return TOO_MANY_LOGIN_ATTEMPTS_ERROR
     return GENERIC_LOGIN_ERROR
 
@@ -165,21 +173,38 @@ def login(
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> LoginResponse:
-    rate_limit_auth(request, "login", limit=20, window_seconds=300)
+    rate_limit_auth(request, "login", limit=100, window_seconds=30)
     risk = evaluate_login_risk(
         request,
         username=payload.email,
-        device_token=request.cookies.get(COOKIE_NAME) or request.cookies.get(risk_engine_device_cookie_name(settings)),
+        device_token=request.cookies.get(COOKIE_NAME)
+        or request.cookies.get(risk_engine_device_cookie_name(settings)),
         learn_on_non_block=False,
     )
+    _auth_exc: HTTPException | None = None
+    user = None
     try:
         user = authenticate_user(db, request, email=payload.email, password=payload.password)
+    except AccountLockedError as exc:
+        _auth_exc = HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=TOO_MANY_LOGIN_ATTEMPTS_ERROR,
+        )
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=GENERIC_LOGIN_ERROR) from exc
+        _auth_exc = HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=GENERIC_LOGIN_ERROR)
 
+    # Preserve risk-engine rate-limit/block messages even when credentials are
+    # wrong, so abuse responses stay consistent.
     if risk.decision == "block":
-        raise HTTPException(status_code=risk_block_status(risk.reasons), detail=risk_block_message(risk.reasons))
+        raise HTTPException(
+            status_code=risk_block_status(risk.reasons),
+            detail=risk_block_message(risk.reasons),
+        )
 
+    if _auth_exc is not None:
+        raise _auth_exc
+
+    # At this point risk.decision is never "block" (already raised above).
     create_audit_log(
         db,
         event_type="auth.risk_engine_assessment",
@@ -197,21 +222,24 @@ def login(
     )
     db.commit()
 
-    if user.totp_enabled:
-        if risk.decision == "challenge":
-            challenge_token = create_pending_2fa_challenge(
-                user_id=user.id,
-                settings=settings,
-                force_rotate_device_cookie=True,
-                ip_prefix=risk.ip_prefix,
-            )
-        else:
-            challenge_token = create_pending_2fa_challenge(user_id=user.id, settings=settings)
+    if not user.totp_enabled:
+        token, _session = create_session(db, request, settings, user=user)
+        set_session_cookie(response, settings, token)
+        return LoginResponse(message="Two-factor setup required.", requires_2fa_setup=True)
+
+    if risk.decision == "challenge":
+        challenge_token = create_pending_2fa_challenge(
+            user_id=user.id,
+            force_rotate_device_cookie=True,
+            settings=settings,
+            ip_prefix=risk.ip_prefix,
+        )
         return LoginResponse(
             message="Two-factor verification required.",
             requires_2fa=True,
             challenge_token=challenge_token,
         )
+
     token, _session = create_session(db, request, settings, user=user)
     set_session_cookie(response, settings, token)
     learned_device_token = set_risk_engine_cookies(
@@ -221,15 +249,19 @@ def login(
         user=user,
         force_rotate=risk.decision == "challenge",
     )
-    learn_successful_login(username=user.email, device_token=learned_device_token, ip_prefix=risk.ip_prefix)
+    learn_successful_login(
+        username=user.email,
+        device_token=learned_device_token,
+        ip_prefix=risk.ip_prefix,
+    )
     return LoginResponse(message="Logged in.")
 
 
 @router.get("/auth/2fa/setup", response_model=TwoFactorSetupResponse)
 def two_factor_setup(
     current_user: User = Depends(require_authenticated_user),
-    db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
+    db: Session = Depends(get_db),
 ) -> TwoFactorSetupResponse:
     if current_user.totp_enabled:
         raise HTTPException(
@@ -252,11 +284,12 @@ def two_factor_setup(
 def two_factor_confirm(
     payload: TwoFactorConfirmRequest,
     request: Request,
+    response: Response,
     current_user: User = Depends(require_authenticated_user),
-    db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
+    db: Session = Depends(get_db),
 ) -> MessageResponse:
-    rate_limit_auth(request, "2fa-confirm", limit=5, window_seconds=60)
+    rate_limit_auth(request, "2fa_confirm", limit=5, window_seconds=60)
     if current_user.totp_enabled:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -288,6 +321,31 @@ def two_factor_confirm(
         target_id=current_user.id,
     )
     db.commit()
+    try:
+        learned_device_token = set_risk_engine_cookies(
+            request,
+            response,
+            settings,
+            user=current_user,
+            force_rotate=True,
+        )
+        learn_successful_login(
+            username=current_user.email,
+            device_token=learned_device_token,
+            ip_prefix=ip_prefix_for_risk(request),
+        )
+    except Exception:
+        create_audit_log(
+            db,
+            event_type="auth.risk_engine_assessment",
+            outcome=AuditOutcome.FAILURE,
+            request=request,
+            user_id=current_user.id,
+            target_type="user",
+            target_id=current_user.id,
+            details={"reason": "post_2fa_setup_learning_failed"},
+        )
+        db.commit()
     return MessageResponse(message="Two-factor authentication enabled.")
 
 
@@ -299,8 +357,11 @@ def two_factor_verify(
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> LoginResponse:
-    rate_limit_auth(request, f"2fa-verify:{payload.challenge_token}", limit=5, window_seconds=60)
-    rate_limit_auth(request, "2fa-verify", limit=10, window_seconds=60)
+    # Limit both the specific challenge token and the client IP. The challenge
+    # remains retryable on wrong codes until these limits or its Redis TTL stop it.
+    rate_limit_auth(request, f"2fa_verify:token:{payload.challenge_token}", limit=5, window_seconds=60)
+    rate_limit_auth(request, "2fa_verify", limit=10, window_seconds=60)
+    # Read without consuming first; consume only after TOTP verification succeeds.
     challenge = get_pending_2fa_challenge(payload.challenge_token, settings)
     if challenge is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Two-factor verification expired.")
@@ -331,9 +392,11 @@ def two_factor_verify(
         )
         db.commit()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid verification code.")
+
+    # TOTP verified; consume the challenge before creating a session so a
+    # replay racing with this request cannot also complete login.
     if not invalidate_pending_2fa_challenge(payload.challenge_token, settings):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Two-factor verification expired.")
-
     create_audit_log(
         db,
         event_type="auth.2fa_verify",
@@ -353,7 +416,11 @@ def two_factor_verify(
         user=user,
         force_rotate=challenge.force_rotate_device_cookie,
     )
-    learn_successful_login(username=user.email, device_token=learned_device_token, ip_prefix=challenge.ip_prefix)
+    learn_successful_login(
+        username=user.email,
+        device_token=learned_device_token,
+        ip_prefix=challenge.ip_prefix,
+    )
     return LoginResponse(message="Logged in.")
 
 

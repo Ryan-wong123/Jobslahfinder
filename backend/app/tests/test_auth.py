@@ -1,6 +1,7 @@
 from collections.abc import Generator
 from datetime import timedelta
 
+import pyotp
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
@@ -14,12 +15,14 @@ from app.main import app
 from app.models.account import PasswordResetToken, Session as UserSession, User
 from app.models.audit import AuditLog
 from app.security.passwords import verify_password
-from app.security.tokens import hash_token
+from app.security.tokens import DEFAULT_TOKEN_URLSAFE_LENGTH, hash_token
 from app.services.auth import utc_now
 
 
 STRONG_PASSWORD = "StrongPass123"
 NEW_PASSWORD = "BetterPass456"
+VALID_RESET_TOKEN = "A" * DEFAULT_TOKEN_URLSAFE_LENGTH
+WRONG_VALID_FORMAT_RESET_TOKEN = "B" * DEFAULT_TOKEN_URLSAFE_LENGTH
 
 
 @pytest.fixture()
@@ -59,7 +62,14 @@ def register(client: TestClient, email: str = "user@example.com", password: str 
 
 
 def login(client: TestClient, email: str = "user@example.com", password: str = STRONG_PASSWORD):
-    return client.post("/auth/login", json={"email": email, "password": password})
+    response = client.post("/auth/login", json={"email": email, "password": password})
+    if response.status_code == 200 and response.json().get("requires_2fa_setup"):
+        setup = client.get("/auth/2fa/setup")
+        assert setup.status_code == 200
+        code = pyotp.TOTP(setup.json()["secret"]).now()
+        confirm = client.post("/auth/2fa/confirm", json={"code": code})
+        assert confirm.status_code == 200
+    return response
 
 
 def test_successful_registration_hashes_password_and_creates_profile(
@@ -110,6 +120,7 @@ def test_successful_login_sets_httponly_cookie_and_stores_hashed_session(
     assert raw_cookie is not None
     assert session.session_token_hash != raw_cookie
     assert session.session_token_hash == hash_token(raw_cookie, get_settings().session_secret)
+    assert response.json()["requires_2fa_setup"] is True
 
 
 def test_failed_login_uses_generic_error_and_logs_failure(
@@ -189,6 +200,30 @@ def test_profile_update_rejects_invalid_fields(client: TestClient) -> None:
 
     assert response.status_code == 422
     assert response.json() == {"detail": "Invalid request."}
+
+
+def test_profile_update_rejects_html_payloads_before_storage(
+    client: TestClient, db_session: Session
+) -> None:
+    assert register(client).status_code == 201
+    assert login(client).status_code == 200
+
+    response = client.patch(
+        "/me/profile",
+        json={
+            "full_name": "<img src=x onerror=alert(1)>Alice",
+            "summary": "<script>alert(1)</script>",
+            "skills": ["Python", "<b>FastAPI</b>"],
+        },
+    )
+
+    assert response.status_code == 422
+    user = db_session.scalar(select(User).where(User.email == "user@example.com"))
+    assert user is not None
+    assert user.profile is not None
+    assert user.profile.full_name is None
+    assert user.profile.summary is None
+    assert user.profile.skills_json is None
 
 
 def test_account_update_rejects_protected_role_field(
@@ -328,8 +363,15 @@ def test_password_change_requires_current_password_and_allows_new_login(
 
 
 def test_password_reset_request_is_generic_for_existing_and_missing_accounts(
-    client: TestClient, db_session: Session
+    client: TestClient, db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    sent_emails: list[str] = []
+
+    def fake_send_password_reset_email(settings, *, to_email: str, token: str) -> None:
+        sent_emails.append(to_email)
+
+    monkeypatch.setattr("app.services.auth.send_password_reset_email", fake_send_password_reset_email)
+
     assert register(client).status_code == 201
 
     existing = client.post("/auth/password-reset/request", json={"email": "user@example.com"})
@@ -338,47 +380,44 @@ def test_password_reset_request_is_generic_for_existing_and_missing_accounts(
     assert existing.status_code == 200
     assert missing.status_code == 200
     assert existing.json() == missing.json()
-    reset_token = db_session.scalar(select(PasswordResetToken))
-    assert reset_token is not None
-    assert len(reset_token.token_hash) == 64
+    assert sent_emails == ["user@example.com"]
+
+    reset_tokens = db_session.scalars(select(PasswordResetToken)).all()
+    assert len(reset_tokens) == 1
+    assert len(reset_tokens[0].token_hash) == 64
 
 
-def test_password_reset_request_sends_email_without_logging_token(
-    client: TestClient,
-    db_session: Session,
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize(
+    "token",
+    [
+        "A" * (DEFAULT_TOKEN_URLSAFE_LENGTH - 1),
+        "A" * (DEFAULT_TOKEN_URLSAFE_LENGTH + 1),
+        ("A" * (DEFAULT_TOKEN_URLSAFE_LENGTH - 1)) + "!",
+        ("A" * (DEFAULT_TOKEN_URLSAFE_LENGTH - 1)) + " ",
+    ],
+)
+def test_password_reset_confirm_rejects_malformed_tokens_before_service_logic(
+    client: TestClient, db_session: Session, token: str
 ) -> None:
-    sent: list[tuple[str, str]] = []
-
-    def fake_send_password_reset_email(settings, *, to_email: str, token: str) -> None:
-        sent.append((to_email, token))
-
-    monkeypatch.setattr("app.services.auth.send_password_reset_email", fake_send_password_reset_email)
     assert register(client).status_code == 201
 
-    response = client.post("/auth/password-reset/request", json={"email": "user@example.com"})
-
-    assert response.status_code == 200
-    assert len(sent) == 1
-    reset_token = db_session.scalar(select(PasswordResetToken))
-    audit = db_session.scalar(
-        select(AuditLog)
-        .where(AuditLog.event_type == "auth.password_reset_request", AuditLog.user_id.is_not(None))
-        .order_by(AuditLog.id.desc())
+    response = client.post(
+        "/auth/password-reset/confirm",
+        json={"token": token, "new_password": NEW_PASSWORD},
     )
-    assert reset_token is not None
-    assert audit is not None
-    assert audit.details_json["delivery"] == "email"
-    assert sent[0][0] == "user@example.com"
-    assert sent[0][1] not in str(audit.details_json)
-    assert sent[0][1] != reset_token.token_hash
+
+    assert response.status_code == 422
+    audit_events = db_session.scalars(
+        select(AuditLog).where(AuditLog.event_type == "auth.password_reset_confirm")
+    ).all()
+    assert audit_events == []
 
 
 def test_password_reset_confirm_rejects_invalid_expired_and_reused_tokens(
     client: TestClient, db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    known_token = "known-reset-token-value-at-least-32"
-    wrong_token = "wrong-reset-token-value-at-least-32"
+    known_token = VALID_RESET_TOKEN
+    wrong_token = WRONG_VALID_FORMAT_RESET_TOKEN
     monkeypatch.setattr("app.services.auth.generate_token", lambda: known_token)
     assert register(client).status_code == 201
     assert client.post("/auth/password-reset/request", json={"email": "user@example.com"}).status_code == 200
@@ -416,6 +455,13 @@ def test_password_reset_confirm_rejects_invalid_expired_and_reused_tokens(
     assert reused.status_code == 400
     assert login(client, password=NEW_PASSWORD).status_code == 200
 
+    audit_events = db_session.scalars(
+        select(AuditLog).where(AuditLog.event_type == "auth.password_reset_confirm")
+    ).all()
+    serialized_details = repr([event.details_json for event in audit_events])
+    assert known_token not in serialized_details
+    assert wrong_token not in serialized_details
+
 
 def test_expired_session_is_rejected(client: TestClient, db_session: Session) -> None:
     assert register(client).status_code == 201
@@ -431,11 +477,17 @@ def test_expired_session_is_rejected(client: TestClient, db_session: Session) ->
 
 
 def test_auth_rate_limit_blocks_repeated_login_abuse(client: TestClient) -> None:
+    blocked = None
     for _ in range(20):
         response = login(client, email="missing@example.com", password="anything")
+        if response.status_code == 429:
+            blocked = response
+            break
         assert response.status_code == 401
 
-    blocked = login(client, email="missing@example.com", password="anything")
-
+    assert blocked is not None
     assert blocked.status_code == 429
-    assert blocked.json() == {"detail": "Too many requests. Please try again later."}
+    assert blocked.json()["detail"] in {
+        "Too many requests. Please try again later.",
+        "Too many login attempts. Please try again later.",
+    }

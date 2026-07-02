@@ -20,7 +20,7 @@ The system helps administrators:
 - Monitor scraping tasks.
 - Manage users.
 - Review scraping outcomes.
-- Review and disable invalid, duplicate, malformed, or suspicious job postings.
+- Review, disable, and delete invalid, duplicate, malformed, or suspicious job postings.
 - Monitor platform activity.
 - Review audit logs for investigation and accountability.
 
@@ -158,7 +158,7 @@ Can:
 
 - Manage users.
 - Review scraping outcomes.
-- Disable invalid, duplicate, malformed, or suspicious job postings.
+- Disable or delete invalid, duplicate, malformed, or suspicious job postings.
 - Monitor scraping task status.
 - Monitor platform activity and system health.
 - Review audit logs for investigation.
@@ -204,7 +204,7 @@ Cannot:
 
 ### 7.5 Administration
 
-- **FR8 Administrative management:** The system shall allow administrators to manage users, review scraping outcomes, disable invalid jobs, and monitor platform activity.
+- **FR8 Administrative management:** The system shall allow administrators to manage users, review scraping outcomes, disable or delete invalid jobs, and monitor platform activity.
 
 ### 7.6 Account Management
 
@@ -284,12 +284,12 @@ Cannot:
 - **FSR2 Secure password storage:** The system shall store user passwords using strong password hashing and shall never store passwords in plaintext.
 - **FSR3 Secure session management:** The system shall use secure session tokens that are random, hard to guess, expire after a defined period of inactivity, and are invalidated upon logout.
 - **FSR4 Role-based access control:** The system shall enforce role-based access control so that normal users can only access their own data, while administrative functions are restricted to authorized administrators.
-- **FSR5 Secure file upload validation:** The system shall validate uploaded resume files by checking file type, file size, and file content, and shall reject unsupported or potentially malicious files.
+- **FSR5 Secure file upload validation:** The system shall validate uploaded resume files by checking file extension, declared MIME type, content-derived file type, file size, file signatures or document structure, archive safety for DOCX files, and path traversal attempts, and shall reject unsupported or potentially malicious files.
 - **FSR6 Secure storage of uploaded files:** The system shall store uploaded resume files in a protected location outside publicly accessible web directories.
 - **FSR7 Logging and audit trail:** The system shall log security-relevant events, including registration attempts, login attempts, failed access attempts, resume uploads, password changes, password reset requests, admin actions, and scraping failures, for auditing and investigation purposes.
-- **FSR8 Protection of logs:** The system shall protect system logs from unauthorized access or tampering and shall avoid storing sensitive information such as passwords, reset tokens, or session tokens in logs.
+- **FSR8 Protection of logs:** The system shall protect system logs from unauthorized access or tampering and shall avoid storing sensitive information such as passwords, reset tokens, session tokens, raw resume contents, AI prompts, generated cover letters, or edited cover letters in logs.
 - **FSR9 Rate limiting:** The system shall apply rate limiting to sensitive functions such as registration, login, password reset, resume upload, and cover letter generation to reduce the risk of brute-force attacks and service abuse.
-- **FSR10 Password recovery security:** The system shall provide a verified password reset mechanism that uses secure, time-limited, single-use recovery tokens or equivalent controls to prevent unauthorized account recovery.
+- **FSR10 Password recovery security:** The system shall provide a verified password reset mechanism that uses secure, time-limited, single-use recovery tokens with strict format validation or equivalent controls to prevent unauthorized account recovery.
 - **FSR11 Secure backup protection:** The system shall protect backup copies of account data, resumes, extracted profile information, and application records against unauthorized access and tampering.
 
 ### 9.3 Non-Functional Security Requirements
@@ -297,8 +297,8 @@ Cannot:
 - **NFSR1 Secure transmission of data:** The system shall protect all data transmitted between users and the website using HTTPS/TLS.
 - **NFSR2 Account privacy protection:** The system shall protect account and profile information so that such information is accessible only to the owning user and authorized administrators.
 - **NFSR3 Resume confidentiality:** The system shall protect uploaded resumes and extracted resume information so that they are accessible only to the owning user and authorized administrators.
-- **NFSR4 Input validation:** The system shall validate all user input and external scraped data before processing or storing it in order to reduce the risk of injection and malformed data attacks.
-- **NFSR5 Output encoding:** The system shall encode or sanitize displayed content, including scraped job descriptions, profile content, and user-generated content, to reduce the risk of cross-site scripting attacks.
+- **NFSR4 Input validation:** The system shall validate all user input, AI-related input and output, uploaded files, route/query parameters, and external scraped data before processing or storing it in order to reduce the risk of injection, malformed data attacks, malicious uploads, and log bloat.
+- **NFSR5 Output encoding:** The system shall encode or sanitize displayed content, including scraped job descriptions, profile content, extracted resume fields, AI-generated output, admin-visible text, and user-generated content, to reduce the risk of cross-site scripting attacks.
 - **NFSR6 Database query protection:** The system shall use parameterized queries or ORM-based protections for all database operations involving user input or external data.
 - **NFSR7 Availability of core services:** The system shall separate background tasks such as scraping, resume extraction, recommendation generation, and cover letter generation from the main web service so that long-running jobs do not affect normal user access.
 - **NFSR8 Protection against unauthorized data access:** The system shall ensure that users cannot access, modify, or delete resumes, cover letters, recommendations, saved jobs, or application records belonging to other users.
@@ -424,6 +424,7 @@ The frontend and backend should remain separate logical components even if hoste
 - `PATCH /admin/users/{user_id}`
 - `GET /admin/jobs`
 - `PATCH /admin/jobs/{job_id}`
+- `DELETE /admin/jobs/{job_id}`
 - `GET /admin/scraping-runs`
 - `GET /admin/audit-logs`
 - `GET /admin/health`

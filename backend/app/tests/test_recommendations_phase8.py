@@ -1,12 +1,14 @@
 from datetime import date
 from collections.abc import Generator
 
+import pyotp
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.core.config import get_settings
 from app.core.database import Base, get_db
 from app.core.rate_limit import AUTH_RATE_LIMITER
 from app.main import app
@@ -17,6 +19,7 @@ from app.models.enums import ProcessingStatus, UploadStatus, UserRole
 from app.models.job import JobPosting, JobSource
 from app.models.resume import Resume, ResumeExtraction
 from app.security.passwords import hash_password
+from app.services.two_factor import decrypt_totp_secret
 
 
 USER_PASSWORD = "StrongPass123"
@@ -69,9 +72,30 @@ def create_user(db_session: Session, *, email: str) -> User:
     return user
 
 
-def login(client: TestClient, *, email: str) -> None:
+def login(client: TestClient, *, email: str, db_session: Session | None = None) -> None:
     response = client.post("/auth/login", json={"email": email, "password": USER_PASSWORD})
     assert response.status_code == 200
+    body = response.json()
+    if body.get("requires_2fa_setup"):
+        setup_response = client.get("/auth/2fa/setup")
+        assert setup_response.status_code == 200
+        code = pyotp.TOTP(setup_response.json()["secret"]).now()
+        confirm_response = client.post("/auth/2fa/confirm", json={"code": code})
+        assert confirm_response.status_code == 200
+    elif body.get("requires_2fa"):
+        assert db_session is not None
+        user = db_session.scalar(select(User).where(User.email == email))
+        assert user is not None
+        assert user.totp_secret_encrypted is not None
+        secret = decrypt_totp_secret(get_settings(), user.totp_secret_encrypted)
+        verify_response = client.post(
+            "/auth/2fa/verify",
+            json={
+                "challenge_token": body["challenge_token"],
+                "code": pyotp.TOTP(secret).now(),
+            },
+        )
+        assert verify_response.status_code == 200
 
 
 def create_source(db_session: Session) -> JobSource:
@@ -176,7 +200,7 @@ def test_authenticated_recommendation_refresh_scores_and_stores_ranked_results(
         description="Prepare drinks and manage shifts.",
         category="Hospitality",
     )
-    login(client, email=user.email)
+    login(client, email=user.email, db_session=db_session)
 
     response = client.post("/recommendations/refresh")
 
@@ -195,6 +219,34 @@ def test_authenticated_recommendation_refresh_scores_and_stores_ranked_results(
         select(Recommendation).where(Recommendation.user_id == user.id).order_by(Recommendation.rank)
     ).all()
     assert [item.rank for item in stored] == [1, 2]
+
+
+def test_recommendation_refresh_sanitizes_legacy_extraction_json(
+    client: TestClient, db_session: Session
+) -> None:
+    source = create_source(db_session)
+    user = create_user(db_session, email="legacy-profile@example.com")
+    create_completed_extraction(
+        db_session,
+        user,
+        skills=["<script>alert(1)</script>Python", "FastAPI\u0000"],
+        experience_title="<b>Backend Developer</b>",
+    )
+    create_job(
+        db_session,
+        source,
+        title="Python Backend Developer",
+        description="<p>Build FastAPI services with Python.</p>",
+    )
+    login(client, email=user.email, db_session=db_session)
+
+    response = client.post("/recommendations/refresh")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 1
+    assert "<script>" not in body["items"][0]["rationale"]
+    assert "\u0000" not in body["items"][0]["rationale"]
 
 
 def test_recommendation_refresh_after_extraction_update_replaces_results(
@@ -222,7 +274,7 @@ def test_recommendation_refresh_after_extraction_update_replaces_results(
         description="Build user interfaces with React, TypeScript, accessibility, and frontend testing.",
         category="Frontend Engineering",
     )
-    login(client, email=user.email)
+    login(client, email=user.email, db_session=db_session)
 
     first_refresh = client.post("/recommendations/refresh")
 
@@ -302,15 +354,15 @@ def test_recommendations_are_user_owned_and_do_not_leak_between_users(
         description="Build interfaces with React.",
     )
 
-    login(client, email=owner.email)
+    login(client, email=owner.email, db_session=db_session)
     assert client.post("/recommendations/refresh").status_code == 200
-    login(client, email=other.email)
+    login(client, email=other.email, db_session=db_session)
     assert client.post("/recommendations/refresh").status_code == 200
 
     other_body = client.get("/recommendations").json()
     assert [item["job"]["id"] for item in other_body["items"]] == [react_job.id]
 
-    login(client, email=owner.email)
+    login(client, email=owner.email, db_session=db_session)
     owner_body = client.get("/recommendations").json()
     assert [item["job"]["id"] for item in owner_body["items"]] == [python_job.id]
 
@@ -332,7 +384,7 @@ def test_refresh_audit_log_is_created_without_sensitive_resume_or_job_text(
         title="Python Developer",
         description="confidential job description payload",
     )
-    login(client, email=user.email)
+    login(client, email=user.email, db_session=db_session)
 
     response = client.post("/recommendations/refresh")
 
@@ -357,7 +409,7 @@ def test_refresh_rate_limiting_applies(client: TestClient, db_session: Session) 
     user = create_user(db_session, email="limited@example.com")
     create_completed_extraction(db_session, user, skills=["Python"])
     create_job(db_session, source, title="Python Developer", description="Build Python systems.")
-    login(client, email=user.email)
+    login(client, email=user.email, db_session=db_session)
 
     statuses = [client.post("/recommendations/refresh").status_code for _ in range(6)]
 
@@ -369,7 +421,7 @@ def test_refresh_without_completed_extraction_fails_safely_and_audits(
     client: TestClient, db_session: Session
 ) -> None:
     user = create_user(db_session, email="missing@example.com")
-    login(client, email=user.email)
+    login(client, email=user.email, db_session=db_session)
 
     response = client.post("/recommendations/refresh")
 

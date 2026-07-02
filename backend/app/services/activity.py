@@ -20,13 +20,12 @@ from app.schemas.activity import (
     RecommendationListResponse,
     RecommendationResponse,
 )
-from app.schemas.auth import validate_optional_text
 from app.security.auth import assert_owner_or_admin
+from app.security.text import sanitize_required_text, sanitize_text
 from app.services.application_history import APPLICATION_HISTORY_ACTION_TYPES, add_application_history
 from app.services.audit import create_audit_log
 from app.services.jobs import DEFAULT_PAGE_SIZE, JobNotFoundError, clean_text, get_saveable_job, job_to_summary_response
 from app.services.resumes import parse_gemini_json_response
-
 
 class ActivityNotFoundError(ValueError):
     pass
@@ -185,10 +184,17 @@ def cover_letter_prompt_context(*, extraction: ResumeExtraction, job: JobPosting
 
 
 def normalize_generated_cover_letter(text: str) -> str:
-    cleaned = validate_optional_text(text, field_name="generated_text")
-    if cleaned is None:
-        raise ValueError("empty_cover_letter_response")
-    return cleaned[:MAX_DRAFT_TEXT_LENGTH]
+    try:
+        return sanitize_required_text(
+            text,
+            field_name="generated_text",
+            max_length=MAX_DRAFT_TEXT_LENGTH,
+            html_policy="strip",
+            overflow="truncate",
+            control_policy="strip",
+        )
+    except ValueError as exc:
+        raise ValueError("empty_cover_letter_response") from exc
 
 
 def generate_cover_letter_with_gemini(
@@ -274,6 +280,9 @@ def safe_generation_failure_reason(exc: Exception) -> str:
 INTERVIEW_QUESTIONS_SCHEMA = {
     "type": "object",
     "properties": {
+        "job_id": {"type": "integer"},
+        "resume_id": {"type": "integer"},
+        "generated_by": {"type": "string"},
         "items": {
             "type": "array",
             "minItems": 1,
@@ -300,16 +309,19 @@ INTERVIEW_QUESTIONS_SCHEMA = {
 
 def build_interview_resume_context(extraction: ResumeExtraction) -> str:
     skills = safe_profile_items(extraction.skills_json, limit=15)
+
     experience = safe_profile_dict_items(
         extraction.experience_json,
         keys=("title", "company"),
         limit=5,
     )
+
     education = safe_profile_dict_items(
         extraction.education_json,
         keys=("credential", "field", "institution"),
         limit=3,
     )
+
     years = float(extraction.years_experience) if extraction.years_experience is not None else None
 
     return (
@@ -359,6 +371,7 @@ def generate_interview_questions_with_gemini(
         "Generate realistic AI interview practice questions for a job applicant. "
         "Use only the resume profile and job information provided below. "
         "Return JSON only and match the provided schema exactly.\n\n"
+
         "Important rules:\n"
         "- These are practice questions, not verified past company interview questions.\n"
         "- Do not claim that the questions came from the employer or from a real previous interview.\n"
@@ -371,17 +384,20 @@ def generate_interview_questions_with_gemini(
         "- Generate exactly 10 questions if possible.\n"
         "- Include a balanced mix of Technical, Behavioral, Situational, and Resume-based questions.\n"
         "- Difficulty must be Easy, Medium, or Hard.\n\n"
+
         "Categories:\n"
         "- Technical: questions about tools, systems, programming, workflows, or role-specific knowledge.\n"
         "- Behavioral: questions about teamwork, communication, conflict, leadership, mistakes, or deadlines.\n"
         "- Situational: questions about what the candidate would do in a realistic workplace scenario.\n"
         "- Resume-based: questions about a specific skill, education item, or actual work experience from the resume.\n\n"
+
         "Output JSON shape:\n"
         "{\n"
         '  "items": [\n'
         '    {"category": "Technical", "question": "Question text here", "difficulty": "Medium"}\n'
         "  ]\n"
         "}\n\n"
+
         f"{build_interview_resume_context(extraction)}\n"
         "Job information:\n"
         f"Job title: {title}\n"
@@ -405,6 +421,7 @@ def generate_interview_questions_with_gemini(
     )
 
     payload = parse_gemini_json_response(response.text or "")
+
     return validate_interview_questions_payload(
         payload=payload,
         job_id=job.id,
@@ -438,6 +455,7 @@ def create_interview_questions_for_job(
         raise CoverLetterGenerationJobUnavailableError("Resource not found.") from exc
 
     extraction = latest_completed_extraction(db, user_id=current_user.id)
+
     if extraction is None:
         create_audit_log(
             db,
@@ -453,11 +471,12 @@ def create_interview_questions_for_job(
         raise CoverLetterGenerationInputMissingError("No completed resume extraction is available.")
 
     try:
-        questions = generate_interview_questions_with_gemini(
+        raw_questions = generate_interview_questions_with_gemini(
             extraction=extraction,
             job=job,
             settings=settings,
         )
+        questions = InterviewQuestionsResponse.model_validate(raw_questions)
     except Exception as exc:
         create_audit_log(
             db,
@@ -489,9 +508,10 @@ def create_interview_questions_for_job(
             "generated_by": questions.generated_by,
         },
     )
-    db.commit()
-    return questions
 
+    db.commit()
+
+    return questions
 
 def create_cover_letter_for_job(
     db: Session,
@@ -582,10 +602,33 @@ def recommendation_to_response(recommendation: Recommendation) -> Recommendation
         resume_id=recommendation.resume_id,
         match_score=float(recommendation.match_score),
         rank=recommendation.rank,
-        rationale=recommendation.rationale,
+        rationale=sanitize_text(
+            recommendation.rationale or "",
+            field_name="rationale",
+            max_length=2000,
+            empty_to_none=True,
+            html_policy="strip",
+            overflow="truncate",
+            control_policy="strip",
+        ),
         metadata=recommendation.metadata_json,
         generated_at=recommendation.generated_at,
     )
+
+
+def safe_cover_letter_response_text(value: str | None, *, required: bool) -> str | None:
+    cleaned = sanitize_text(
+        value or "",
+        field_name="cover_letter_text",
+        max_length=MAX_DRAFT_TEXT_LENGTH if required else 20_000,
+        empty_to_none=True,
+        html_policy="strip",
+        overflow="truncate",
+        control_policy="strip",
+    )
+    if required and cleaned is None:
+        return ""
+    return cleaned
 
 
 def cover_letter_to_response(cover_letter: CoverLetter) -> CoverLetterResponse:
@@ -593,8 +636,8 @@ def cover_letter_to_response(cover_letter: CoverLetter) -> CoverLetterResponse:
         id=cover_letter.id,
         job=job_to_summary_response(cover_letter.job),
         resume_id=cover_letter.resume_id,
-        generated_text=cover_letter.generated_text,
-        edited_text=cover_letter.edited_text,
+        generated_text=safe_cover_letter_response_text(cover_letter.generated_text, required=True) or "",
+        edited_text=safe_cover_letter_response_text(cover_letter.edited_text, required=False),
         version_no=cover_letter.version_no,
         created_at=cover_letter.created_at,
         updated_at=cover_letter.updated_at,

@@ -44,7 +44,7 @@ The system allows job seekers to:
 The system allows administrators to:
 - Manage users.
 - Review scraping outcomes.
-- Disable invalid, duplicate, malformed, or suspicious jobs.
+- Disable or delete invalid, duplicate, malformed, or suspicious jobs.
 - Monitor scraping tasks.
 - View platform activity and audit logs.
 
@@ -52,6 +52,7 @@ The system integrates with:
 - Approved external job sources.
 - An AI service for recommendation and cover letter support.
 - An email service for password reset.
+- An embedded authentication risk engine for login scoring, trusted device cookies, and a separate risk-admin dashboard.
 - GitHub and CI security tools for secure development checks.
 
 ---
@@ -77,6 +78,7 @@ The system integrates with:
 | Frontend | Next.js + React + TypeScript + Tailwind CSS | Login/register UI, job browsing, resume upload, recommendation and cover letter pages, admin dashboard | Input constraints, safe display, secure cookie handling |
 | Reverse Proxy | Nginx on AWS VM | HTTPS termination, routing to frontend/backend | TLS, security headers, request size limits |
 | Backend API | FastAPI + Python | Auth, authorization, jobs API, resume API, AI orchestration, admin API | RBAC, validation, audit logging, rate limiting |
+| Authentication Risk Engine | Embedded FastAPI package | Login risk scoring, device-cookie continuity, separate `/risk-engine/admin` dashboard | Risk-based login blocking/challenge signals and risk audit trail |
 | Database | PostgreSQL | Users, jobs, profiles, recommendations, cover letters, audit logs | Relational integrity, least privilege access |
 | Queue / Cache | Redis | Background job queue and temporary caching | Decouples long-running jobs from web requests |
 | Background Worker | Celery or RQ | Scraping, resume parsing, recommendation refresh, cover letter generation | Isolates expensive/untrusted processing |
@@ -364,7 +366,7 @@ Security controls:
 
 1. Authenticated user uploads resume.
 2. Backend validates ownership/session.
-3. Backend checks extension, MIME type, size, and content signature.
+3. Backend checks extension, declared MIME type, content-derived file type, size, file signature, and DOCX archive safety.
 4. Backend stores file outside public web root using randomized filename.
 5. Resume metadata and file hash are stored in PostgreSQL.
 6. Backend enqueues parsing job in Redis.
@@ -374,7 +376,8 @@ Security controls:
 
 Security controls:
 - File allowlist.
-- MIME/content validation.
+- MIME/content validation using declared MIME, content signatures, and content-derived type checks.
+- DOCX archive limits for file count, total uncompressed size, and compression ratio.
 - Randomized filenames.
 - Protected storage.
 - Worker isolation.
@@ -454,18 +457,18 @@ Security controls:
 |---|---|---|---|
 | Registration page | Entry point | Fake accounts, enumeration, automated abuse | Rate limiting, generic messages, validation |
 | Login page | Entry point | Brute force, credential stuffing | Password hashing, rate limiting, account lockout/progressive delay |
-| Password reset page | Entry point | Token abuse, account takeover | Time-limited single-use hashed tokens, generic messages |
+| Password reset page | Entry point | Token abuse, account takeover | Time-limited single-use hashed tokens, strict token format validation, generic messages |
 | Profile update endpoint | Entry point | XSS, unauthorized data update | Ownership checks, validation, output encoding |
-| Resume upload endpoint | Entry point | Malicious file, parser exploit, DoS | File allowlist, MIME/content checks, size limit, worker isolation |
+| Resume upload endpoint | Entry point | Malicious file, parser exploit, archive bomb, DoS | File allowlist, declared and content-derived MIME checks, signature checks, DOCX archive limits, size limit, worker isolation |
 | Resume extraction worker | Processing surface | Parser vulnerabilities, resource exhaustion | Timeouts, memory limits, dependency scanning |
-| Job search/filter API | Entry point | Injection, heavy queries | Parameterized queries, validation, pagination, query limits |
+| Job search/filter API | Entry point | Injection, heavy queries, unsafe exposure of moderated jobs | Parameterized queries, validation, pagination, query limits, admin-only suspicious/inactive job filters |
 | Job detail display | Exit point | Stored XSS, malicious content | Sanitization, output encoding, CSP |
-| External job redirect | Exit point | Phishing, malicious redirects | Approved source domain validation, external link warning |
+| External job redirect | Exit point | Phishing, malicious redirects | HTTPS-only approved source domain validation, rejection of credentialed or malformed URLs, external link warning |
 | Scheduled scraper | External integration | Data poisoning, malformed content | Source allowlist, normalization, suspicious job flagging |
-| AI recommendation/cover letter API | External integration | Prompt injection, data leakage | Prompt separation, data minimization, output review |
+| AI recommendation/cover letter/interview-question API | External integration | Prompt injection, data leakage, unsafe AI output shape | Prompt separation, data minimization, strict output schemas where structured output is returned, output review |
 | Saved jobs/history API | Data access surface | Broken access control | RBAC, ownership checks |
 | Admin dashboard | Privileged surface | Privilege escalation, repudiation | Admin RBAC, audit logging, stronger admin protection |
-| Audit logs | Operational data store | Sensitive log exposure, tampering | Redaction, access control, log integrity protection |
+| Audit logs | Operational data store | Sensitive log exposure, tampering, log bloat | Redaction, access control, bounded detail strings, log integrity protection |
 | PostgreSQL | Data store | Data leakage, tampering | Least privilege DB user, ORM/parameterized queries, backups |
 | Resume storage | Data store | Personal data leakage | Outside web root, randomized filenames, authorized download only |
 | Redis | Internal service | Queue tampering, sensitive data exposure | Internal-only binding, minimal sensitive data |
@@ -865,6 +868,7 @@ Do not store:
 - `PATCH /admin/users/{user_id}`
 - `GET /admin/jobs`
 - `PATCH /admin/jobs/{job_id}`
+- `DELETE /admin/jobs/{job_id}`
 - `GET /admin/scraping-runs`
 - `GET /admin/audit-logs`
 - `GET /admin/health`

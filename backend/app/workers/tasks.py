@@ -1,3 +1,5 @@
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 from sqlalchemy import select
 
 from app.workers.celery_app import celery_app
@@ -6,6 +8,9 @@ from app.core.database import SessionLocal
 from app.models.job import JobSource
 from app.services.resumes import run_resume_extraction
 from app.services.scraping import ScrapingError, run_scraper_for_source
+
+
+MAX_WEEKLY_SCRAPE_WORKERS = 3
 
 
 @celery_app.task(name="app.workers.tasks.healthcheck")
@@ -25,27 +30,45 @@ def run_mock_scraper(source_id: int) -> dict[str, int | str]:
 
 @celery_app.task(name="app.workers.tasks.run_weekly_scraping")
 def run_weekly_scraping() -> dict[str, int | list[dict[str, int | str]]]:
-    results: list[dict[str, int | str]] = []
     with SessionLocal() as db:
         sources = list(
             db.scalars(
                 select(JobSource)
                 .where(JobSource.is_enabled.is_(True))
-                .order_by(JobSource.id)
+                .order_by(JobSource.source_name)
             ).all()
         )
-        for source in sources:
+
+    def scrape_source(source_id: int) -> dict[str, int | str]:
+        with SessionLocal() as source_db:
+            source = source_db.get(JobSource, source_id)
+            if source is None:
+                return {"source_id": source_id, "status": "not_found"}
             try:
-                run = run_scraper_for_source(db, source=source)
-                results.append(
-                    {
-                        "source_id": source.id,
-                        "scraping_run_id": run.id,
-                        "status": run.status,
-                    }
-                )
+                run = run_scraper_for_source(source_db, source=source)
+                return {
+                    "source_id": source.id,
+                    "scraping_run_id": run.id,
+                    "status": run.status,
+                }
             except ScrapingError:
-                results.append({"source_id": source.id, "status": "skipped"})
+                return {"source_id": source.id, "status": "skipped"}
+
+    results: list[dict[str, int | str]] = []
+    if sources:
+        max_workers = min(MAX_WEEKLY_SCRAPE_WORKERS, len(sources))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_source_id = {
+                executor.submit(scrape_source, source.id): source.id for source in sources
+            }
+            for future in as_completed(future_to_source_id):
+                source_id = future_to_source_id[future]
+                try:
+                    results.append(future.result())
+                except Exception:
+                    results.append({"source_id": source_id, "status": "skipped"})
+
+    results.sort(key=lambda result: int(result["source_id"]))
     return {"sources_checked": len(results), "results": results}
 
 

@@ -3,6 +3,9 @@ import re
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.security.tokens import DEFAULT_TOKEN_URLSAFE_LENGTH, PASSWORD_RESET_TOKEN_PATTERN
+from app.security.text import sanitize_text
+
 
 EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
@@ -33,12 +36,13 @@ def validate_password_strength(value: str) -> str:
 def validate_optional_text(value: str | None, *, field_name: str) -> str | None:
     if value is None:
         return None
-    cleaned = value.strip()
-    if not cleaned:
-        return None
-    if any(ord(character) < 32 and character not in {"\t", "\n", "\r"} for character in cleaned):
-        raise ValueError(f"Invalid {field_name}.")
-    return cleaned
+    return sanitize_text(
+        value,
+        field_name=field_name,
+        max_length=2000,
+        empty_to_none=True,
+        html_policy="reject",
+    )
 
 
 PHONE_PATTERN = re.compile(r"^[+()0-9][+()0-9 .-]{2,49}$")
@@ -76,6 +80,7 @@ class LoginRequest(BaseModel):
 class LoginResponse(BaseModel):
     message: str
     requires_2fa: bool = False
+    requires_2fa_setup: bool = False
     challenge_token: str | None = None
 
     model_config = ConfigDict(extra="forbid")
@@ -125,10 +130,20 @@ class PasswordResetRequest(BaseModel):
 
 
 class PasswordResetConfirmRequest(BaseModel):
-    token: str = Field(min_length=32, max_length=256)
+    token: str = Field(
+        min_length=DEFAULT_TOKEN_URLSAFE_LENGTH,
+        max_length=DEFAULT_TOKEN_URLSAFE_LENGTH,
+    )
     new_password: str = Field(min_length=12, max_length=128)
 
     model_config = ConfigDict(extra="forbid")
+
+    @field_validator("token")
+    @classmethod
+    def token_has_generated_format(cls, value: str) -> str:
+        if not PASSWORD_RESET_TOKEN_PATTERN.fullmatch(value):
+            raise ValueError("Invalid password reset token.")
+        return value
 
     @field_validator("new_password")
     @classmethod

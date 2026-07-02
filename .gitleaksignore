@@ -1,0 +1,7 @@
+# This file suppresses known false-positive Gitleaks findings by fingerprint.
+# Each line is a fingerprint in the format: <commit>:<file>:<ruleID>:<line>
+#
+# STRONG_PASSWORD in test_two_factor.py is a hardcoded test-only password and
+# not a real credential. The inline `# gitleaks:allow` annotation was added in a
+# later commit; this entry suppresses the finding in the original commit.
+4872f71d5256a194c357aa2df783746cb51dd2bc:backend/app/tests/test_two_factor.py:generic-api-key:19

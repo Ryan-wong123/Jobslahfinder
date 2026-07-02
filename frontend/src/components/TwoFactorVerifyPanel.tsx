@@ -1,25 +1,19 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { apiFetch } from "@/lib/api";
 import { FormMessage, SubmitButton, TextField } from "./FormControls";
 
-type TwoFactorVerifyPanelProps = {
-  challengeToken: string;
-};
-
-export function TwoFactorVerifyPanel({ challengeToken }: TwoFactorVerifyPanelProps) {
+export function TwoFactorVerifyPanel() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const challenge = searchParams.get("challenge");
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!challengeToken) {
-      setError("Missing verification challenge. Sign in again.");
-      return;
-    }
     setPending(true);
     setError(null);
     const formData = new FormData(event.currentTarget);
@@ -27,7 +21,7 @@ export function TwoFactorVerifyPanel({ challengeToken }: TwoFactorVerifyPanelPro
       await apiFetch<{ message: string }>("/auth/2fa/verify", {
         method: "POST",
         body: JSON.stringify({
-          challenge_token: challengeToken,
+          challenge_token: challenge,
           code: formData.get("code")
         })
       });
@@ -43,18 +37,11 @@ export function TwoFactorVerifyPanel({ challengeToken }: TwoFactorVerifyPanelPro
   return (
     <div className="mx-auto max-w-md px-6 py-12">
       <h1 className="text-2xl font-semibold text-zinc-950">Two-factor verification</h1>
-      <p className="mt-3 text-sm text-zinc-700">Enter the six-digit code from your authenticator app.</p>
-      <FormMessage message={!challengeToken ? "Missing verification challenge. Sign in again." : error} tone="error" />
-      <form className="mt-6 space-y-4 rounded border border-zinc-200 bg-white p-5 shadow-sm" onSubmit={onSubmit}>
-        <TextField
-          label="Verification code"
-          name="code"
-          inputMode="numeric"
-          autoComplete="one-time-code"
-          minLength={6}
-          maxLength={8}
-        />
-        <SubmitButton pending={pending || !challengeToken}>Verify and continue</SubmitButton>
+      <p className="mt-3 text-sm text-zinc-700">Enter the six-digit code from Microsoft Authenticator.</p>
+      <FormMessage message={!challenge ? "Missing verification challenge. Sign in again." : error} tone="error" />
+      <form className="mt-6 space-y-4 rounded border border-zinc-200 bg-white p-5" onSubmit={onSubmit}>
+        <TextField label="Verification code" name="code" inputMode="numeric" autoComplete="one-time-code" />
+        <SubmitButton pending={pending || !challenge}>Verify and continue</SubmitButton>
       </form>
     </div>
   );

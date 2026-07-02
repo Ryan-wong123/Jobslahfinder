@@ -705,6 +705,7 @@ A feature is done only when:
 - Tests cover success and failure cases.
 - The frontend handles errors safely.
 - Documentation or task files are updated if architecture/behaviour changes.
+- Any matching item in `TASKS.md` is marked `[x]` only after the implementation is complete and verified; leave it `[ ]` or `[~]` if work remains or tests were not run.
 - No secrets are committed.
 - The implementation follows `PRD.md`, `ARCHITECTURE.md`, `TASKS.md`, and `CODING_GUIDELINES.md`.
 
@@ -728,7 +729,8 @@ When working on this repository:
 12. If a feature creates a new user-owned resource, add ownership checks.
 13. If a feature accepts files, apply upload validation.
 14. If a feature displays external or user-generated content, sanitize or encode it.
-15. If unsure, choose the safer fail-closed implementation.
+15. When completing a tracked task, update the corresponding checkbox in `TASKS.md` to `[x]` only after code, tests, and required documentation updates are done.
+16. If unsure, choose the safer fail-closed implementation.
 
 ---
 

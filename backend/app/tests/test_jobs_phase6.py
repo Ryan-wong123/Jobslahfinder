@@ -1,6 +1,7 @@
 from collections.abc import Generator
 from datetime import date
 
+import pyotp
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
@@ -71,6 +72,12 @@ def create_user(db_session: Session, *, email: str) -> User:
 def login(client: TestClient, *, email: str) -> None:
     response = client.post("/auth/login", json={"email": email, "password": USER_PASSWORD})
     assert response.status_code == 200
+    if response.json().get("requires_2fa_setup"):
+        setup_response = client.get("/auth/2fa/setup")
+        assert setup_response.status_code == 200
+        code = pyotp.TOTP(setup_response.json()["secret"]).now()
+        confirm_response = client.post("/auth/2fa/confirm", json={"code": code})
+        assert confirm_response.status_code == 200
 
 
 def create_source(db_session: Session, *, name: str = "JobStreet") -> JobSource:
@@ -127,7 +134,7 @@ def create_job(
     return job
 
 
-def test_job_search_filters_and_active_only_default(client: TestClient, db_session: Session) -> None:
+def test_job_search_filters_and_public_visibility(client: TestClient, db_session: Session) -> None:
     jobstreet = create_source(db_session)
     mcf = create_source(db_session, name="MyCareersFuture")
     create_job(
@@ -182,7 +189,7 @@ def test_job_search_filters_and_active_only_default(client: TestClient, db_sessi
     include_inactive_response = client.get("/jobs", params={"active_only": "false"})
     assert include_inactive_response.status_code == 200
     include_inactive_ids = {item["id"] for item in include_inactive_response.json()["items"]}
-    assert inactive.id in include_inactive_ids
+    assert inactive.id not in include_inactive_ids
 
 
 def test_pagination_limits_are_enforced(client: TestClient, db_session: Session) -> None:
@@ -225,15 +232,11 @@ def test_salary_trends_use_monthly_salary_samples(client: TestClient, db_session
 
     assert response.status_code == 200
     body = response.json()
-    assert body["role"] == "Software Engineer"
     assert body["sample_size"] == 2
     assert body["points"] == [{"period": "2026-04", "average_salary": 8000.0, "sample_count": 2}]
 
 
-def test_job_role_catalog_and_detail_are_derived_from_visible_jobs(
-    client: TestClient,
-    db_session: Session,
-) -> None:
+def test_job_role_catalog_and_detail_are_derived_from_visible_jobs(client: TestClient, db_session: Session) -> None:
     source = create_source(db_session)
     create_job(
         db_session,
@@ -262,7 +265,7 @@ def test_job_role_catalog_and_detail_are_derived_from_visible_jobs(
     assert body["latest_jobs"][0]["title"] == "Software Developer"
 
 
-def test_suspicious_jobs_are_excluded_by_default_and_marked_when_included(
+def test_public_jobs_never_include_suspicious_jobs_even_when_requested(
     client: TestClient,
     db_session: Session,
 ) -> None:
@@ -281,9 +284,42 @@ def test_suspicious_jobs_are_excluded_by_default_and_marked_when_included(
 
     included_response = client.get("/jobs", params={"include_suspicious": "true"})
     assert included_response.status_code == 200
-    included_item = included_response.json()["items"][0]
-    assert included_item["id"] == suspicious.id
-    assert included_item["is_suspicious"] is True
+    assert suspicious.id not in {item["id"] for item in included_response.json()["items"]}
+
+
+def test_public_jobs_never_include_inactive_or_suspicious_jobs_with_query_flags(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    source = create_source(db_session)
+    visible = create_job(db_session, source, title="Visible Security Job")
+    inactive = create_job(db_session, source, title="Inactive Security Job", is_active=False)
+    suspicious = create_job(db_session, source, title="Suspicious Security Job", is_suspicious=True)
+    inactive_suspicious = create_job(
+        db_session,
+        source,
+        title="Inactive Suspicious Security Job",
+        is_active=False,
+        is_suspicious=True,
+    )
+
+    response = client.get(
+        "/jobs",
+        params={
+            "keyword": "Security",
+            "active_only": "false",
+            "include_suspicious": "true",
+            "is_active": "false",
+            "is_suspicious": "true",
+        },
+    )
+
+    assert response.status_code == 200
+    ids = {item["id"] for item in response.json()["items"]}
+    assert visible.id in ids
+    assert inactive.id not in ids
+    assert suspicious.id not in ids
+    assert inactive_suspicious.id not in ids
 
 
 def test_job_detail_uses_safe_404_for_missing_inactive_suspicious_and_invalid_links(
@@ -395,3 +431,48 @@ def test_unauthenticated_saved_job_access_is_blocked(
     assert client.get("/saved-jobs").status_code == 401
     assert client.post(f"/jobs/{job.id}/save").status_code == 401
     assert client.delete(f"/jobs/{job.id}/save").status_code == 401
+
+def test_salary_trends_groups_active_safe_monthly_salary_data(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    source = create_source(db_session)
+
+    create_job(
+        db_session,
+        source,
+        title="Security Engineer",
+        company="Secure Co A",
+        salary_min=4000,
+        salary_max=6000,
+        salary_period="month",
+    )
+    create_job(
+        db_session,
+        source,
+        title="Security Engineer",
+        company="Secure Co B",
+        salary_min=5000,
+        salary_max=7000,
+        salary_period="month",
+    )
+    create_job(
+        db_session,
+        source,
+        title="Security Engineer",
+        company="Suspicious Co",
+        salary_min=9000,
+        salary_max=11000,
+        salary_period="month",
+        is_suspicious=True,
+    )
+
+    response = client.get("/salary-trends?role=Security%20Engineer&months=12")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["role"] == "Security Engineer"
+    assert body["currency"] == "SGD"
+    assert body["period"] == "month"
+    assert body["sample_size"] == 2
+    assert body["points"][0]["average_salary"] == 5500

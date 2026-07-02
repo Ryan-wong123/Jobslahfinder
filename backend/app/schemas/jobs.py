@@ -9,6 +9,7 @@ class JobSourceResponse(BaseModel):
     base_url: str
     is_enabled: bool
     created_at: datetime
+    job_count: int = 0
 
     model_config = ConfigDict(extra="forbid", from_attributes=True)
 

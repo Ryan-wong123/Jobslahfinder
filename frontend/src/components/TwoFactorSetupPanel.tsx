@@ -14,27 +14,17 @@ export function TwoFactorSetupPanel() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    let active = true;
     apiFetch<TwoFactorSetup>("/auth/2fa/setup")
-      .then(async (currentSetup) => {
-        const qrCode = await QRCode.toDataURL(currentSetup.provisioning_uri, {
+      .then((currentSetup) => {
+        setSetup(currentSetup);
+        return QRCode.toDataURL(currentSetup.provisioning_uri, {
           errorCorrectionLevel: "M",
           margin: 2,
           scale: 6
         });
-        if (active) {
-          setSetup(currentSetup);
-          setQrCodeUrl(qrCode);
-        }
       })
-      .catch((caught) => {
-        if (active) {
-          setError(caught instanceof Error ? caught.message : "Unable to start setup.");
-        }
-      });
-    return () => {
-      active = false;
-    };
+      .then(setQrCodeUrl)
+      .catch((caught) => setError(caught instanceof Error ? caught.message : "Unable to start setup."));
   }, []);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -60,16 +50,16 @@ export function TwoFactorSetupPanel() {
     <div className="mx-auto max-w-xl px-6 py-12">
       <h1 className="text-2xl font-semibold text-zinc-950">Set up two-factor authentication</h1>
       <p className="mt-3 text-sm text-zinc-700">
-        Add this account to your authenticator app, then enter the six-digit code.
+        Add this account to Microsoft Authenticator, then enter the six-digit code.
       </p>
       <FormMessage message={error} tone="error" />
       {setup ? (
-        <div className="mt-6 space-y-4 rounded border border-zinc-200 bg-white p-5 shadow-sm">
+        <div className="mt-6 space-y-4 rounded border border-zinc-200 bg-white p-5">
           {qrCodeUrl ? (
             <div className="flex flex-col items-center rounded border border-zinc-200 bg-white p-4">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                alt="QR code for authenticator app setup"
+                alt="QR code for Microsoft Authenticator setup"
                 className="h-56 w-56"
                 height={224}
                 src={qrCodeUrl}
@@ -84,14 +74,7 @@ export function TwoFactorSetupPanel() {
             </p>
           </div>
           <form className="space-y-4" onSubmit={onSubmit}>
-            <TextField
-              label="Verification code"
-              name="code"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              minLength={6}
-              maxLength={8}
-            />
+            <TextField label="Verification code" name="code" inputMode="numeric" autoComplete="one-time-code" />
             <SubmitButton pending={pending}>Enable two-factor authentication</SubmitButton>
           </form>
         </div>

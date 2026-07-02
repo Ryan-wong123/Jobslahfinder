@@ -3,7 +3,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status
 from redis import Redis
-from sqlalchemy import desc, func, or_, select
+from sqlalchemy import delete, desc, func, or_, select, update
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import Settings, get_settings
@@ -25,6 +25,7 @@ from app.schemas.admin import (
     AdminUserResponse,
     AdminUserUpdateRequest,
 )
+from app.schemas.auth import MessageResponse
 from app.schemas.jobs import (
     JobListResponse,
     JobSourceResponse,
@@ -56,7 +57,7 @@ SearchText = Annotated[str | None, Query(min_length=1, max_length=100, pattern=r
 AuditEventType = Annotated[str | None, Query(min_length=1, max_length=100, pattern=r"^[a-zA-Z0-9_.:-]+$")]
 AuditOutcomeFilter = Literal["SUCCESS", "FAILURE", "DENIED"]
 RunStatusFilter = Literal["PENDING", "RUNNING", "SUCCESS", "FAILED"]
-ApprovedSource = Literal["JobStreet", "MyCareersFuture"]
+ApprovedSource = Literal["JobStreet", "MyCareersFuture", "JobsLah", "FastJobs"]
 AuditDateTime = Annotated[datetime | None, Query()]
 ADMIN_AUDIT_DETAIL_BLOCKLIST = SENSITIVE_DETAIL_KEYS | {
     "prompt",
@@ -352,12 +353,88 @@ def update_admin_job(
     return job_to_summary_response(job)
 
 
+@router.delete("/jobs/{job_id}", response_model=MessageResponse)
+def delete_admin_job(
+    job_id: PositiveId,
+    request: Request,
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> MessageResponse:
+    job = db.scalar(select(JobPosting).where(JobPosting.id == job_id))
+    if job is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resource not found.")
+
+    saved_job_count = db.scalar(select(func.count()).select_from(SavedJob).where(SavedJob.job_id == job.id)) or 0
+    recommendation_count = (
+        db.scalar(select(func.count()).select_from(Recommendation).where(Recommendation.job_id == job.id)) or 0
+    )
+    cover_letter_ids = list(db.scalars(select(CoverLetter.id).where(CoverLetter.job_id == job.id)).all())
+    cover_letter_count = len(cover_letter_ids)
+    history_filters = [ApplicationHistory.job_id == job.id]
+    if cover_letter_ids:
+        history_filters.append(ApplicationHistory.cover_letter_id.in_(cover_letter_ids))
+    history_unlinked_count = (
+        db.scalar(select(func.count()).select_from(ApplicationHistory).where(or_(*history_filters))) or 0
+    )
+
+    if cover_letter_ids:
+        db.execute(
+            update(ApplicationHistory)
+            .where(ApplicationHistory.cover_letter_id.in_(cover_letter_ids))
+            .values(cover_letter_id=None)
+        )
+    db.execute(update(ApplicationHistory).where(ApplicationHistory.job_id == job.id).values(job_id=None))
+    db.execute(delete(SavedJob).where(SavedJob.job_id == job.id))
+    db.execute(delete(Recommendation).where(Recommendation.job_id == job.id))
+    db.execute(delete(CoverLetter).where(CoverLetter.job_id == job.id))
+    db.delete(job)
+    create_audit_log(
+        db,
+        event_type="admin.job.delete",
+        outcome=AuditOutcome.SUCCESS,
+        request=request,
+        user_id=current_admin.id,
+        target_type="job_posting",
+        target_id=job_id,
+        details={
+            "saved_jobs_deleted": saved_job_count,
+            "recommendations_deleted": recommendation_count,
+            "cover_letters_deleted": cover_letter_count,
+            "application_history_unlinked": history_unlinked_count,
+        },
+    )
+    db.commit()
+    return MessageResponse(message="Job deleted.")
+
+
 @router.get("/job-sources", response_model=list[JobSourceResponse])
 def list_job_sources(
     _current_admin: User = Depends(require_admin),
     db: Session = Depends(get_db),
-) -> list[JobSource]:
-    return list(db.scalars(select(JobSource).order_by(JobSource.source_name)).all())
+) -> list[JobSourceResponse]:
+    rows = db.execute(
+        select(JobSource, func.count(JobPosting.id))
+        .outerjoin(JobPosting, JobPosting.source_id == JobSource.id)
+        .group_by(
+            JobSource.id,
+            JobSource.source_name,
+            JobSource.base_url,
+            JobSource.is_enabled,
+            JobSource.created_at,
+        )
+        .order_by(JobSource.source_name)
+    ).all()
+    return [
+        JobSourceResponse(
+            id=source.id,
+            source_name=source.source_name,
+            base_url=source.base_url,
+            is_enabled=source.is_enabled,
+            created_at=source.created_at,
+            job_count=job_count,
+        )
+        for source, job_count in rows
+    ]
 
 
 @router.post("/job-sources/seed", response_model=list[JobSourceResponse])
@@ -377,7 +454,7 @@ def seed_job_sources(
 
 @router.patch("/job-sources/{source_id}", response_model=JobSourceResponse)
 def update_job_source(
-    source_id: int,
+    source_id: PositiveId,
     payload: JobSourceUpdateRequest,
     request: Request,
     current_admin: User = Depends(require_admin),

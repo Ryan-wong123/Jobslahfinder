@@ -1,28 +1,29 @@
 from datetime import datetime
-import re
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-
-CONTROL_CHAR_PATTERN = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+from app.security.text import sanitize_required_text, sanitize_text
 
 
 def clean_optional_text(value: str | None, *, max_length: int, field_name: str) -> str | None:
     if value is None:
         return None
-    cleaned = value.strip()
-    if not cleaned:
-        return None
-    if len(cleaned) > max_length or CONTROL_CHAR_PATTERN.search(cleaned):
-        raise ValueError(f"Invalid {field_name}.")
-    return cleaned
+    return sanitize_text(
+        value,
+        field_name=field_name,
+        max_length=max_length,
+        empty_to_none=True,
+        html_policy="reject",
+    )
 
 
 def clean_required_text(value: str, *, max_length: int, field_name: str) -> str:
-    cleaned = clean_optional_text(value, max_length=max_length, field_name=field_name)
-    if cleaned is None:
-        raise ValueError(f"Invalid {field_name}.")
-    return cleaned
+    return sanitize_required_text(
+        value,
+        field_name=field_name,
+        max_length=max_length,
+        html_policy="reject",
+    )
 
 
 class ResumeResponse(BaseModel):

@@ -1,9 +1,12 @@
-import secrets
+import random
 from concurrent.futures import ThreadPoolExecutor
 import time
 import threading
 import os
 import csv
+from pathlib import Path
+import re
+from urllib.parse import unquote, urlparse
 from typing import Any
 
 try:
@@ -36,24 +39,14 @@ except ImportError:  # pragma: no cover - optional scraper dependencies
     ChromeDriverManager = None
 
 scrapeCSV = "mcf_Scraped.csv"
-_jitter_random = secrets.SystemRandom()
+MYCAREERSFUTURE_PAGE_COUNT = 3
+MYCAREERSFUTURE_JOBS_PER_PAGE = 2
+MYCAREERSFUTURE_MIN_TIMEOUT_SECONDS = 300
 
 
 def fetch_mycareersfuture_jobs(*, timeout_seconds: int) -> list[dict[str, Any]]:
-    """Coursework-safe MyCareersFuture adapter with the production data shape."""
-    _ = timeout_seconds
-    return [
-        {
-            "external_job_id": "mcf-demo-1",
-            "title": "Software Engineer",
-            "company": "GovTech Partner",
-            "location": "Singapore",
-            "category": "Engineering",
-            "description": "Develop secure web services and collaborate with product teams.",
-            "job_url": "https://www.mycareersfuture.gov.sg/job/software-engineer-demo",
-            "posting_date": "2026-04-28",
-        },
-    ]
+    """Fetch live MyCareersFuture postings and return raw job dicts."""
+    return scrape_mycareersfuture_jobs(timeout_seconds=timeout_seconds)
 
 
 def ensure_scraper_dependencies():
@@ -83,9 +76,20 @@ def create_driver():
     user_agent = UserAgent().random
     options.add_argument(f'user-agent={user_agent}')
 
-    # Initialize the WebDriver with the specified options
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+    driver_path = chrome_driver_path()
+    service = Service(driver_path) if driver_path else Service(ChromeDriverManager().install())
+    driver = webdriver.Chrome(service=service, options=options)
     return driver
+
+
+def chrome_driver_path() -> str | None:
+    configured_path = os.getenv("CHROMEDRIVER_PATH")
+    if configured_path and Path(configured_path).exists():
+        return configured_path
+    for candidate in ("/usr/bin/chromedriver", "/usr/local/bin/chromedriver"):
+        if Path(candidate).exists():
+            return candidate
+    return None
 
 # Function to wait for an element to be present
 def wait_for_element(driver, by, value, timeout=15):
@@ -96,22 +100,80 @@ def exponential_backoff(retries, base_delay=2, max_delay=120):
     #Increases delay time through exponential grrowth based on number of current retries
     delay = min(base_delay * (2 ** retries), max_delay)
     # Random value chosen forr jitter that is between 0 and Half of the delay count
-    jitter = _jitter_random.uniform(0, delay / 2)
+    jitter = random.uniform(0, delay / 2) 
     return delay + jitter
 
 # Function to scrape job information from a specific element on the page
 def scrape_job_info(driver, selector):
-    retries = 0
-    max_retries = 1
-    while retries < max_retries:
-        try:
-            element = driver.find_element(By.CSS_SELECTOR, selector)
-            return element.text
-        except (NoSuchElementException, StaleElementReferenceException, TimeoutException) as e:
-            delay = exponential_backoff(retries)
-            print(f"[{threading.current_thread().name}] Exception: {e}. Retrying in {delay:.2f} seconds... (Attempt {retries + 1}/{max_retries})")
-            time.sleep(delay)
-            retries += 1
+    try:
+        element = driver.find_element(By.CSS_SELECTOR, selector)
+        return element.text
+    except (NoSuchElementException, StaleElementReferenceException, TimeoutException):
+        return "-"
+    return "-"
+
+
+def first_non_blank(*values):
+    for value in values:
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text and text != "-":
+            return text
+    return "-"
+
+
+def scrape_first_job_info(driver, selectors):
+    for selector in selectors:
+        value = scrape_job_info(driver, selector)
+        if value != "-":
+            return value
+    return "-"
+
+
+def safe_card_text(card):
+    try:
+        return card.text.strip()
+    except Exception:
+        return ""
+
+
+def extract_category_from_url(job_url):
+    try:
+        parts = [unquote(part) for part in urlparse(job_url).path.split("/") if part]
+    except Exception:
+        return "-"
+    if len(parts) < 2 or parts[0] != "job":
+        return "-"
+    return parts[1].replace("-", " ").title()
+
+
+def extract_title_from_url(job_url):
+    try:
+        parts = [unquote(part) for part in urlparse(job_url).path.split("/") if part]
+    except Exception:
+        return "-"
+    if len(parts) < 3 or parts[0] != "job":
+        return "-"
+    return parts[2].replace("-", " ").title()
+
+
+def extract_title_from_card_text(card_text):
+    lines = [line.strip() for line in card_text.splitlines() if line.strip()]
+    for line in lines:
+        if line.lower() not in {"new", "hot", "closing soon"}:
+            return line
+    return "-"
+
+
+def extract_location_from_card_text(card_text):
+    lines = [line.strip() for line in card_text.splitlines() if line.strip()]
+    postal_pattern = re.compile(r"\b\d{6}\b")
+    location_keywords = ("singapore", "road", "street", "avenue", "region", "central", "east", "west", "north")
+    for line in lines:
+        lowered = line.lower()
+        if postal_pattern.search(line) or any(keyword in lowered for keyword in location_keywords):
+            return line
     return "-"
 
 # Function to write job listings to a CSV file
@@ -134,24 +196,20 @@ def write_jobs_to_csv(job_list, csv_file):
             writer.writerows(job_list)
 
 # Function to scrape a single page
-def scrape_page(page):
-    # Create a new WebDriver instance with a random user-agent
+def scrape_page(page, *, max_jobs=8, deadline=None):
     driver = create_driver()
-    driver.implicitly_wait(10)  # Set to 10 seconds
+    driver.implicitly_wait(10)
 
     #Take in user input for industry and create query_final based on industry input
     query_initial = "https://www.mycareersfuture.gov.sg/search?sortBy=relevancy&page="
     query_final = query_initial + str(page)
 
-    #Fetch page with driver
-    driver.get(query_final)
-
-    # Wait for the card container to be present on the page
-    wait_for_element(driver, By.CSS_SELECTOR, "div[data-testid='card-list']", 15)
     try:
+        driver.get(query_final)
+        wait_for_element(driver, By.CSS_SELECTOR, "div[data-testid='card-list']", 15)
         card_container = driver.find_element(By.CSS_SELECTOR, "div[data-testid='card-list']")
         print(f"[{threading.current_thread().name}] Card container found.")
-    except NoSuchElementException:
+    except (NoSuchElementException, TimeoutException):
         print(f"[{threading.current_thread().name}] Card container not found.")
         driver.quit()
         return []
@@ -171,7 +229,9 @@ def scrape_page(page):
             print(f"[{threading.current_thread().name}] Finished searching. Total job listings found: {job_count}")
             break
 
-    for counter in range(0, job_count):
+    for counter in range(0, min(job_count, max_jobs)):
+        if deadline is not None and time.monotonic() >= deadline:
+            break
         try:
             driver.refresh()
             job_card_id = f"job-card-{counter}"
@@ -182,6 +242,7 @@ def scrape_page(page):
                 try:
                     card_container = driver.find_element(By.CSS_SELECTOR, "div[data-testid='card-list']")
                     job_card = card_container.find_element(By.ID, job_card_id)
+                    card_text = safe_card_text(job_card)
 
                     try:
                         job_card.click()
@@ -199,10 +260,41 @@ def scrape_page(page):
                     # Add in scrape_job_info
                     job_id = scrape_job_info(driver, "span[data-testid='job-details-info-job-post-id']")
                     job_url = driver.current_url
-                    job_title = scrape_job_info(driver, "h1[data-testid='job-details-info-job-title']")
+                    job_title = first_non_blank(
+                        scrape_first_job_info(
+                            driver,
+                            [
+                                "h1[data-testid='job-details-info-job-title']",
+                                "h1[data-testid='job-details-info-title']",
+                                "h1",
+                            ],
+                        ),
+                        extract_title_from_card_text(card_text),
+                        extract_title_from_url(job_url),
+                    )
                     job_company = scrape_job_info(driver, "p[data-testid='company-hire-info']")
-                    job_location = scrape_job_info(driver, "a[data-testid='job-details-info-location-map']")
-                    job_industry = scrape_job_info(driver, "p[data-testid='job-details-info-job-categories']")
+                    job_location = first_non_blank(
+                        scrape_first_job_info(
+                            driver,
+                            [
+                                "a[data-testid='job-details-info-location-map']",
+                                "p[data-testid='job-details-info-location']",
+                                "[data-testid='job-details-info-location-map']",
+                            ],
+                        ),
+                        extract_location_from_card_text(card_text),
+                        "Singapore",
+                    )
+                    job_industry = first_non_blank(
+                        scrape_first_job_info(
+                            driver,
+                            [
+                                "p[data-testid='job-details-info-job-categories']",
+                                "[data-testid='job-details-info-job-categories']",
+                            ],
+                        ),
+                        extract_category_from_url(job_url),
+                    )
                     job_desc = scrape_job_info(driver, "div[data-testid='description-content']")
                     job_employment_type = scrape_job_info(driver, "p[data-testid='job-details-info-employment-type']")
                     job_min_exp = scrape_job_info(driver, "p[data-testid='job-details-info-min-experience']")
@@ -257,7 +349,7 @@ def scrape_page(page):
                             # Special handling for StaleElementReferenceException, if needed
                             pass
                         else:
-                            time.sleep(_jitter_random.uniform(5, 10))
+                            time.sleep(random.uniform(1, 2))
 
                         delay = exponential_backoff(retries)
                         print(f"[{threading.current_thread().name}] Retries: {retries}. Delay: {delay}")
@@ -268,9 +360,29 @@ def scrape_page(page):
             print(f"[{threading.current_thread().name}] Job card {counter} not found. Exception: {e}")
             driver.back()
 
-        time.sleep(_jitter_random.uniform(2, 5))
+        time.sleep(random.uniform(0.5, 1.5))
 
     driver.quit()
+    return all_jobs
+
+
+def scrape_mycareersfuture_jobs(*, timeout_seconds: int) -> list[dict[str, Any]]:
+    ensure_scraper_dependencies()
+    deadline = time.monotonic() + max(timeout_seconds - 10, MYCAREERSFUTURE_MIN_TIMEOUT_SECONDS)
+    all_jobs: list[dict[str, Any]] = []
+    for page in range(MYCAREERSFUTURE_PAGE_COUNT):
+        if time.monotonic() >= deadline:
+            break
+        all_jobs.extend(
+            scrape_page(
+                page,
+                max_jobs=MYCAREERSFUTURE_JOBS_PER_PAGE,
+                deadline=deadline,
+            )
+        )
+
+    if not all_jobs:
+        raise RuntimeError("No MyCareersFuture jobs were scraped.")
     return all_jobs
 
 # Main function to run the scraper in parallel
@@ -285,16 +397,14 @@ def main():
             for future in futures:
                 all_jobs.extend(future.result())  # Collect results from each thread
 
-        # Write accumulated job data to CSV (append mode)
         write_jobs_to_csv(all_jobs, scrapeCSV)
 
     except TimeoutException:
-        # In case of a timeout, write the job data (if any) to CSV
         write_jobs_to_csv(all_jobs, scrapeCSV)
 
     finally:
-        # Ensure job data is written to CSV even if an exception occurs
         write_jobs_to_csv(all_jobs, scrapeCSV)
+    return all_jobs
 
 if __name__ == "__main__":
     main()

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 import hashlib
 import re
 from typing import Any
@@ -26,7 +26,7 @@ from app.schemas.jobs import (
     SavedJobListResponse,
     SavedJobResponse,
 )
-from app.security.text import sanitize_text
+from app.security.text import HTML_TAG_PATTERN, sanitize_text
 from app.services.application_history import add_application_history
 from app.services.audit import create_audit_log
 
@@ -34,6 +34,7 @@ from app.services.audit import create_audit_log
 MAX_TEXT_LENGTH = 20_000
 MAX_JOB_DESCRIPTION_RESPONSE_LENGTH = 20_000
 MAX_JOB_FIELD_RESPONSE_LENGTH = 255
+MAX_EXTERNAL_JOB_URL_LENGTH = 2048
 MAX_SEARCH_TERM_LENGTH = 100
 DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 50
@@ -48,7 +49,7 @@ APPROVED_JOB_SOURCES = {
         "domains": ("www.mycareersfuture.gov.sg",),
     },
     "JobsLah": {
-        "base_url": "https://www.jobslah.com",
+        "base_url": "https://www.jobslah.com/sg",
         "domains": ("www.jobslah.com",),
     },
     "FastJobs": {
@@ -56,9 +57,6 @@ APPROVED_JOB_SOURCES = {
         "domains": ("www.fastjobs.sg",),
     },
 }
-
-TAG_PATTERN = re.compile(r"<[^>]+>")
-SALARY_NUMBER_PATTERN = re.compile(r"(?i)(\d+(?:,\d{3})*(?:\.\d+)?|\d+(?:\.\d+)?)\s*(k)?")
 SALARY_ROLE_KEYWORD_EXPANSIONS: dict[str, tuple[str, ...]] = {
     "software engineer": ("software engineer", "software developer", "programmer", "full stack", "full-stack"),
     "backend developer": ("backend developer", "backend engineer", "back-end", "api developer", "server engineer"),
@@ -76,6 +74,8 @@ SALARY_ROLE_KEYWORD_EXPANSIONS: dict[str, tuple[str, ...]] = {
     "finance executive": ("finance executive", "accounting", "accounts executive", "audit"),
     "operations executive": ("operations executive", "admin executive", "administrator"),
 }
+
+SALARY_NUMBER_PATTERN = re.compile(r"(?i)(\d+(?:,\d{3})*(?:\.\d+)?|\d+(?:\.\d+)?)\s*(k)?")
 
 
 class JobSourceValidationError(ValueError):
@@ -128,10 +128,22 @@ def source_allowed_domains(source_name: str) -> tuple[str, ...]:
 
 
 def validate_https_url(url: str) -> str:
-    cleaned = url.strip()
-    parsed = urlsplit(cleaned)
+    cleaned = str(url).strip()
+    if not cleaned or len(cleaned) > MAX_EXTERNAL_JOB_URL_LENGTH:
+        raise JobSourceValidationError("Job URL length is not allowed.")
+    if "\\" in cleaned or any(character.isspace() or ord(character) < 32 or ord(character) == 127 for character in cleaned):
+        raise JobSourceValidationError("Job URL is malformed.")
+    try:
+        parsed = urlsplit(cleaned)
+        hostname = normalize_hostname(parsed.hostname)
+        _ = parsed.port
+    except ValueError as exc:
+        raise JobSourceValidationError("Job URL is malformed.") from exc
+
+    if parsed.username is not None or parsed.password is not None:
+        raise JobSourceValidationError("Job URL credentials are not allowed.")
     hostname = normalize_hostname(parsed.hostname)
-    if parsed.scheme != "https" or not hostname:
+    if parsed.scheme.lower() != "https" or not hostname:
         raise JobSourceValidationError("Only HTTPS URLs with a valid host are allowed.")
     return cleaned
 
@@ -161,7 +173,10 @@ def validate_source_base_url(source_name: str, base_url: str, settings: Settings
 
 
 def validate_job_url_for_source(job_url: str, source: JobSource) -> str:
-    cleaned = validate_https_url(job_url)
+    try:
+        cleaned = validate_https_url(job_url)
+    except JobSourceValidationError as exc:
+        raise JobValidationError("Job URL is not approved for the source.") from exc
     hostname = normalize_hostname(urlsplit(cleaned).hostname)
     if hostname is None or not is_domain_allowed(hostname, source_allowed_domains(source.source_name)):
         raise JobValidationError("Job URL domain is not approved for the source.")
@@ -179,19 +194,37 @@ def is_job_url_valid_for_source(job: JobPosting) -> bool:
 def clean_text(value: Any, *, max_length: int) -> str:
     if value is None:
         return ""
-    return (
-        sanitize_text(
-            value,
-            field_name="job text",
-            max_length=max_length,
-            html_policy="strip",
-            overflow="truncate",
-            control_policy="strip",
-            collapse_whitespace=True,
-            empty_to_none=True,
-        )
-        or ""
+    cleaned = sanitize_text(
+        value,
+        field_name="text",
+        max_length=max_length,
+        empty_to_none=True,
+        html_policy="strip",
+        overflow="truncate",
+        control_policy="strip",
+        collapse_whitespace=True,
+        reject_placeholders=True,
     )
+    return cleaned or ""
+
+
+def clean_job_url(value: Any) -> str:
+    try:
+        cleaned = sanitize_text(
+            value,
+            field_name="job URL",
+            max_length=MAX_EXTERNAL_JOB_URL_LENGTH,
+            empty_to_none=True,
+            html_policy="reject",
+            overflow="error",
+            control_policy="reject",
+            collapse_whitespace=False,
+            allow_multiline=False,
+            reject_placeholders=True,
+        )
+    except ValueError as exc:
+        raise JobValidationError("Job posting has an invalid application link.") from exc
+    return cleaned or ""
 
 
 def safe_response_text(value: Any, *, max_length: int = MAX_JOB_FIELD_RESPONSE_LENGTH) -> str | None:
@@ -213,9 +246,29 @@ def parse_posting_date(value: Any) -> date | None:
         return value
     if isinstance(value, datetime):
         return value.date()
-    text = str(value).strip()
+    text = clean_text(value, max_length=100)
+    if not text:
+        return None
+
+    relative_match = re.search(r"(?i)(?:posted\s*)?(\d+)\s*(day|days|d|hour|hours|h|minute|minutes|min|m)\s*ago", text)
+    if relative_match:
+        amount = int(relative_match.group(1))
+        unit = relative_match.group(2).lower()
+        now = datetime.utcnow()
+        if unit in {"day", "days", "d"}:
+            return (now - timedelta(days=amount)).date()
+        if unit in {"hour", "hours", "h"}:
+            return (now - timedelta(hours=amount)).date()
+        return now.date()
+
+    cleaned = re.sub(r"(?i)^posted\s+", "", text).strip()
+    for fmt in ("%Y-%m-%d", "%d %b %Y", "%d %B %Y", "%b %d, %Y", "%B %d, %Y"):
+        try:
+            return datetime.strptime(cleaned[:32], fmt).date()
+        except ValueError:
+            continue
     try:
-        return date.fromisoformat(text[:10])
+        return date.fromisoformat(cleaned[:10])
     except ValueError:
         return None
 
@@ -254,8 +307,6 @@ def parse_salary_range(value: Any) -> tuple[float | None, float | None, str | No
     if salary_max < 1000 and "k" not in text and period in {"month", "year"}:
         return None, None, currency, period
     return salary_min, salary_max, currency, period
-
-
 def compute_content_hash(*parts: str | None) -> str:
     normalized = "\n".join((part or "").strip().lower() for part in parts)
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
@@ -264,7 +315,7 @@ def compute_content_hash(*parts: str | None) -> str:
 def normalize_job(raw_job: dict[str, Any], source: JobSource) -> NormalizedJob:
     suspicious_reasons: list[str] = []
     raw_description = raw_value(raw_job, "description", "Job Description")
-    if raw_description is not None and TAG_PATTERN.search(str(raw_description)):
+    if raw_description is not None and HTML_TAG_PATTERN.search(str(raw_description)):
         suspicious_reasons.append("html_stripped")
 
     external_job_id = clean_text(
@@ -276,7 +327,7 @@ def normalize_job(raw_job: dict[str, Any], source: JobSource) -> NormalizedJob:
     location = clean_text(raw_value(raw_job, "location", "Job Location"), max_length=255) or None
     category = clean_text(raw_value(raw_job, "category", "Job Industry"), max_length=100) or None
     description = clean_text(raw_description, max_length=MAX_TEXT_LENGTH) or None
-    job_url = clean_text(raw_value(raw_job, "job_url", "Job URL", "application_link"), max_length=2048)
+    job_url = clean_job_url(raw_value(raw_job, "job_url", "Job URL", "application_link"))
     posting_date = parse_posting_date(raw_value(raw_job, "posting_date", "Job Posting Date"))
     salary_min, salary_max, salary_currency, salary_period = parse_salary_range(
         raw_value(raw_job, "salary", "Job Salary Range", "salary_range")
@@ -462,13 +513,13 @@ def job_to_summary_response(job: JobPosting) -> JobSummaryResponse:
         company=safe_response_text(job.company) or "Unknown company",
         location=safe_response_text(job.location),
         category=safe_response_text(job.category, max_length=100),
+        source=JobSourcePublicResponse(id=job.source.id, source_name=job.source.source_name),
+        posting_date=job.posting_date,
         salary_min=float(job.salary_min) if job.salary_min is not None else None,
         salary_max=float(job.salary_max) if job.salary_max is not None else None,
         salary_currency=safe_response_text(job.salary_currency, max_length=10),
         salary_period=safe_response_text(job.salary_period, max_length=20),
         minimum_experience=safe_response_text(job.minimum_experience, max_length=100),
-        source=JobSourcePublicResponse(id=job.source.id, source_name=job.source.source_name),
-        posting_date=job.posting_date,
         scraped_at=job.scraped_at,
         is_active=job.is_active,
         is_suspicious=job.is_suspicious,
@@ -551,13 +602,14 @@ def get_salary_trend(
         bucket = bucket_date.strftime("%Y-%m")
         buckets.setdefault(bucket, []).append(midpoint)
 
+    sorted_buckets = sorted(buckets.items())[-months:]
     points = [
         SalaryTrendPointResponse(
             period=period,
             average_salary=round(sum(values) / len(values), 2),
             sample_count=len(values),
         )
-        for period, values in sorted(buckets.items())[-months:]
+        for period, values in sorted_buckets
     ]
     return SalaryTrendResponse(
         role=cleaned_role,

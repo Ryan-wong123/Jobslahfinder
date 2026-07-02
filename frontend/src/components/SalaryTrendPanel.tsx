@@ -37,7 +37,7 @@ export function SalaryTrendPanel() {
     const formData = new FormData(event.currentTarget);
     const selectedRole = String(formData.get("role") ?? "").trim();
     const months = String(formData.get("months") ?? "12");
-    if (!/^[\p{L}\p{N}_\s.,&()+#/'-]{2,100}$/u.test(selectedRole)) {
+    if (!/^[\p{L}\p{N}_\s.,&()+#\/'-]{2,100}$/u.test(selectedRole)) {
       setError("Enter a valid role using letters, numbers, spaces, and common punctuation.");
       setLoading(false);
       return;
@@ -63,7 +63,7 @@ export function SalaryTrendPanel() {
   return (
     <section className="grid gap-6 lg:grid-cols-[340px_1fr]">
       <form className="rounded border border-zinc-200 bg-white p-5 shadow-sm" onSubmit={onSubmit}>
-        <h1 className="text-xl font-semibold text-zinc-950">Salary trend chart</h1>
+        <h1 className="text-xl font-semibold text-zinc-950">Salary Trend Chart</h1>
         <p className="mt-1 text-sm leading-6 text-zinc-600">
           Compare monthly average salary from stored job postings that include salary ranges.
         </p>

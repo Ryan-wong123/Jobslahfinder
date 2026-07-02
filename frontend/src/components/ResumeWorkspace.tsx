@@ -12,6 +12,13 @@ import {
 } from "@/lib/api";
 import { FormMessage } from "./FormControls";
 
+const maxResumeBytes = 5 * 1024 * 1024;
+const allowedResumeTypes = new Set([
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+]);
+const allowedResumeExtensions = new Set([".pdf", ".docx"]);
+
 function StatusBadge({ status }: { status: string }) {
   const classes =
     status === "STORED"
@@ -119,6 +126,17 @@ export function ResumeWorkspace() {
       setUploading(false);
       return;
     }
+    const extension = selectedFile.name.slice(selectedFile.name.lastIndexOf(".")).toLowerCase();
+    if (!allowedResumeExtensions.has(extension) || !allowedResumeTypes.has(selectedFile.type)) {
+      setError("Upload a valid PDF or DOCX resume.");
+      setUploading(false);
+      return;
+    }
+    if (selectedFile.size <= 0 || selectedFile.size > maxResumeBytes) {
+      setError(`Resume must be larger than 0 bytes and no more than ${formatBytes(maxResumeBytes)}.`);
+      setUploading(false);
+      return;
+    }
 
     const formData = new FormData();
     formData.set("file", selectedFile);
@@ -160,6 +178,7 @@ export function ResumeWorkspace() {
               accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
               required
             />
+            <span className="mt-2 block text-xs text-zinc-500">PDF or DOCX, up to {formatBytes(maxResumeBytes)}.</span>
           </label>
           <button
             className="w-full rounded bg-zinc-950 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-400"

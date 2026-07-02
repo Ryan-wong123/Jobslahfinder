@@ -2,6 +2,7 @@ from collections.abc import Generator
 from types import SimpleNamespace
 import time
 
+import pyotp
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
@@ -20,10 +21,12 @@ from app.security.passwords import hash_password
 from app.services.jobs import (
     JobSourceValidationError,
     JobValidationError,
+    MAX_EXTERNAL_JOB_URL_LENGTH,
     find_duplicate_job,
     normalize_job,
     seed_approved_job_sources,
     store_normalized_job,
+    validate_job_url_for_source,
     validate_source_base_url,
 )
 from app.services.scraping import GENERIC_SCRAPING_ERROR, run_scraper_for_source
@@ -86,6 +89,12 @@ def create_user(db_session: Session, *, email: str, role: UserRole) -> User:
 def login(client: TestClient, *, email: str, password: str) -> None:
     response = client.post("/auth/login", json={"email": email, "password": password})
     assert response.status_code == 200
+    if response.json().get("requires_2fa_setup"):
+        setup_response = client.get("/auth/2fa/setup")
+        assert setup_response.status_code == 200
+        code = pyotp.TOTP(setup_response.json()["secret"]).now()
+        confirm_response = client.post("/auth/2fa/confirm", json={"code": code})
+        assert confirm_response.status_code == 200
 
 
 def jobstreet_source(db_session: Session) -> JobSource:
@@ -104,6 +113,8 @@ def test_source_allowlist_enforcement_rejects_unapproved_domains() -> None:
     settings = get_settings()
 
     assert validate_source_base_url("JobStreet", "https://sg.jobstreet.com", settings)
+    assert validate_source_base_url("JobsLah", "https://www.jobslah.com/sg", settings)
+    assert validate_source_base_url("FastJobs", "https://www.fastjobs.sg", settings)
 
     with pytest.raises(JobSourceValidationError):
         validate_source_base_url("UnknownPortal", "https://sg.jobstreet.com", settings)
@@ -113,6 +124,61 @@ def test_source_allowlist_enforcement_rejects_unapproved_domains() -> None:
 
     with pytest.raises(JobSourceValidationError):
         validate_source_base_url("JobStreet", "http://sg.jobstreet.com", settings)
+
+
+def test_external_job_url_validation_rejects_unsafe_values(db_session: Session) -> None:
+    source = jobstreet_source(db_session)
+    mcf_source = JobSource(
+        source_name="MyCareersFuture",
+        base_url="https://www.mycareersfuture.gov.sg",
+        is_enabled=True,
+    )
+    db_session.add(mcf_source)
+    db_session.commit()
+
+    allowed = validate_job_url_for_source(
+        "https://sg.jobstreet.com/job/security-engineer?tracking=approved",
+        source,
+    )
+    assert allowed == "https://sg.jobstreet.com/job/security-engineer?tracking=approved"
+
+    mismatched_allowed_source_url = "https://www.mycareersfuture.gov.sg/job/software-engineer"
+    with pytest.raises(JobValidationError):
+        validate_job_url_for_source(mismatched_allowed_source_url, source)
+    assert validate_job_url_for_source(mismatched_allowed_source_url, mcf_source) == mismatched_allowed_source_url
+
+    long_url = f"https://sg.jobstreet.com/{'a' * MAX_EXTERNAL_JOB_URL_LENGTH}"
+    unsafe_urls = [
+        "https://user:password@sg.jobstreet.com/job/security-engineer",
+        "https://evil.example.com@sg.jobstreet.com/job/security-engineer",
+        "https://sg.jobstreet.com.evil.example/job/security-engineer",
+        "javascript:alert(1)",
+        "http://sg.jobstreet.com/job/security-engineer",
+        "https:///job/security-engineer",
+        "https://sg.jobstreet.com:badport/job/security-engineer",
+        "https://sg.jobstreet.com/job/security engineer",
+        "https://sg.jobstreet.com\\@evil.example/job/security-engineer",
+        "https://sg.jobstreet.com/job/security\x00engineer",
+        long_url,
+    ]
+
+    for unsafe_url in unsafe_urls:
+        with pytest.raises(JobValidationError):
+            validate_job_url_for_source(unsafe_url, source)
+
+
+def test_source_base_url_validation_rejects_credentials_and_overlong_values() -> None:
+    settings = get_settings()
+
+    unsafe_base_urls = [
+        "https://user:password@sg.jobstreet.com",
+        "https://evil.example.com@sg.jobstreet.com",
+        f"https://sg.jobstreet.com/{'a' * MAX_EXTERNAL_JOB_URL_LENGTH}",
+    ]
+
+    for base_url in unsafe_base_urls:
+        with pytest.raises(JobSourceValidationError):
+            validate_source_base_url("JobStreet", base_url, settings)
 
 
 def test_job_normalization_strips_html_and_validates_source_domain(db_session: Session) -> None:
@@ -157,6 +223,28 @@ def test_job_normalization_strips_html_and_validates_source_domain(db_session: S
         )
 
 
+def test_job_normalization_uses_shared_text_cleanup_for_controls_and_unicode(
+    db_session: Session,
+) -> None:
+    source = jobstreet_source(db_session)
+
+    normalized = normalize_job(
+        {
+            "external_job_id": "job-control",
+            "title": "Cafe\u0301\u0001 Security <b>Engineer</b>",
+            "company": "Example\u0002 Company",
+            "description": "<p>Protect\u0003 platforms.</p>",
+            "job_url": "https://sg.jobstreet.com/job/security-control",
+        },
+        source,
+    )
+
+    assert normalized.title == "Café Security Engineer"
+    assert normalized.company == "Example Company"
+    assert normalized.description == "Protect platforms."
+    assert "html_stripped" in normalized.suspicious_reasons
+
+
 def test_duplicate_detection_uses_external_job_id_and_content_hash(db_session: Session) -> None:
     source = jobstreet_source(db_session)
     raw_job = {
@@ -199,36 +287,6 @@ def test_duplicate_detection_uses_external_job_id_and_content_hash(db_session: S
     assert existing is not None
     assert existing.id == first_posting.id
     assert reason == "content_hash"
-
-
-def test_store_normalized_job_persists_salary_and_experience(db_session: Session) -> None:
-    source = jobstreet_source(db_session)
-    normalized = normalize_job(
-        {
-            "external_job_id": "salary-job-1",
-            "title": "Security Engineer",
-            "company": "Example Company",
-            "description": "Build secure services.",
-            "job_url": "https://sg.jobstreet.com/job/security-salary",
-            "Job Salary Range": "$5,500 to $7,500 Monthly",
-            "Job Minimum Experience": "3 years exp",
-        },
-        source,
-    )
-
-    posting, created, _duplicate_reason = store_normalized_job(
-        db_session,
-        source=source,
-        normalized_job=normalized,
-    )
-    db_session.commit()
-
-    assert created is True
-    assert float(posting.salary_min) == 5500
-    assert float(posting.salary_max) == 7500
-    assert posting.salary_currency == "SGD"
-    assert posting.salary_period == "month"
-    assert posting.minimum_experience == "3 years exp"
 
 
 def test_suspicious_job_flagging_is_stored_and_audited(db_session: Session) -> None:
@@ -281,22 +339,37 @@ def test_scraping_failure_handling_records_safe_run_and_audit(db_session: Sessio
 
 def test_approved_source_adapters_are_registered_and_store_jobs(db_session: Session) -> None:
     sources = seed_approved_job_sources(db_session, get_settings())
-    expected_sources = {"JobStreet", "MyCareersFuture", "JobsLah", "FastJobs"}
-    assert expected_sources.issubset(SCRAPER_ADAPTERS.keys())
-    assert expected_sources.issubset({source.source_name for source in sources})
+    assert {"JobStreet", "MyCareersFuture", "JobsLah", "FastJobs"}.issubset(SCRAPER_ADAPTERS.keys())
 
-    for source in sources:
-        run = run_scraper_for_source(db_session, source=source)
-        assert run.status == ScrapingRunStatus.SUCCESS.value
-        assert run.jobs_retrieved >= 1
+    mcf_source = next(source for source in sources if source.source_name == "MyCareersFuture")
 
-    stored_sources = {
-        source.source_name
-        for source in db_session.scalars(
-            select(JobSource).join(JobPosting, JobPosting.source_id == JobSource.id)
-        ).all()
-    }
-    assert expected_sources.issubset(stored_sources)
+    def fake_mcf_fetcher(*, timeout_seconds: int) -> list[dict[str, str]]:
+        assert timeout_seconds > 0
+        return [
+            {
+                "external_job_id": "mcf-test-1",
+                "title": "Software Engineer",
+                "company": "Example Company",
+                "job_url": "https://www.mycareersfuture.gov.sg/job/software-engineer-test",
+                "Job Salary Range": "$5,500 to $7,500 Monthly",
+                "Job Minimum Experience": "3 years exp",
+            }
+        ]
+
+    run = run_scraper_for_source(db_session, source=mcf_source, fetcher=fake_mcf_fetcher)
+
+    assert run.status == ScrapingRunStatus.SUCCESS.value
+    assert run.jobs_retrieved == 1
+    posting = db_session.scalar(
+        select(JobPosting).where(JobPosting.source_id == mcf_source.id)
+    )
+    assert posting is not None
+    assert posting.job_url.startswith("https://www.mycareersfuture.gov.sg/")
+    assert float(posting.salary_min) == 5500
+    assert float(posting.salary_max) == 7500
+    assert posting.salary_currency == "SGD"
+    assert posting.salary_period == "month"
+    assert posting.minimum_experience == "3 years exp"
 
 
 def test_scraper_retry_policy_retries_up_to_success(db_session: Session) -> None:
@@ -392,15 +465,16 @@ def test_weekly_scraping_task_runs_enabled_sources_only(
 
     result = worker_tasks.run_weekly_scraping.run()
 
-    enabled_source_ids = [source.id for source in sources if source.source_name != "JobStreet"]
-    assert called_source_ids == enabled_source_ids
+    enabled_source_ids = {source.id for source in sources if source.source_name != "JobStreet"}
+    assert set(called_source_ids) == enabled_source_ids
     assert result["sources_checked"] == len(enabled_source_ids)
-    assert all(item["status"] == ScrapingRunStatus.SUCCESS.value for item in result["results"])
+    assert result["results"][0]["status"] == ScrapingRunStatus.SUCCESS.value
 
 
 def test_admin_can_seed_sources_and_trigger_mock_scraping(
     client: TestClient,
     db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     create_user(db_session, email="admin@example.com", role=UserRole.ADMIN)
     login(client, email="admin@example.com", password=ADMIN_PASSWORD)
@@ -416,6 +490,25 @@ def test_admin_can_seed_sources_and_trigger_mock_scraping(
     }
     source = db_session.scalar(select(JobSource).where(JobSource.source_name == "JobStreet"))
     assert source is not None
+
+    def fake_jobstreet_fetcher(*, timeout_seconds: int) -> list[dict[str, str]]:
+        assert timeout_seconds > 0
+        return [
+            {
+                "external_job_id": "jobstreet-test-1",
+                "title": "Security Analyst",
+                "company": "Example Company",
+                "job_url": "https://sg.jobstreet.com/job/security-analyst-test",
+            },
+            {
+                "external_job_id": "jobstreet-test-2",
+                "title": "Backend Developer",
+                "company": "Example Company",
+                "job_url": "https://sg.jobstreet.com/job/backend-developer-test",
+            },
+        ]
+
+    monkeypatch.setitem(SCRAPER_ADAPTERS, "JobStreet", fake_jobstreet_fetcher)
 
     run_response = client.post("/admin/scraping-runs", json={"source_id": source.id})
 

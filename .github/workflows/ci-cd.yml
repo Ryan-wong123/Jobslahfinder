@@ -7,6 +7,8 @@ on:
   pull_request:
     branches:
       - main
+  schedule:
+    - cron: "17 2 * * 1"
   workflow_dispatch:
 
 permissions:
@@ -72,7 +74,7 @@ jobs:
           ALLOWED_JOB_SOURCE_DOMAINS: sg.jobstreet.com,www.mycareersfuture.gov.sg,www.jobslah.com,www.fastjobs.sg
           RESUME_EXTRACTION_PROVIDER: local
           COVER_LETTER_GENERATION_PROVIDER: local
-        run: python -m pytest
+        run: python -m pytest --cov=app --cov-report=term-missing
 
   migrations:
     name: Database Migration Check
@@ -167,8 +169,16 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
+      - name: Set up Python for Selenium
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
       - name: Install frontend dependencies
         run: npm ci
+
+      - name: Install Selenium
+        run: python -m pip install "selenium>=4.23.0"
 
       - name: Run frontend lint
         run: npm run lint
@@ -176,30 +186,97 @@ jobs:
       - name: Run frontend typecheck
         run: npm run typecheck
 
+      - name: Run frontend auth page tests
+        run: npm run test:auth-pages
+
+      - name: Run frontend flow tests
+        run: npm run test:frontend-flows
+
       - name: Build frontend
         run: npm run build
+
+      - name: Start frontend server
+        run: |
+          npm start > next.log 2>&1 &
+          echo $! > next.pid
+
+      - name: Run Selenium smoke tests
+        env:
+          SELENIUM_BASE_URL: http://127.0.0.1:3000
+          SELENIUM_REQUIRE_BROWSER: "1"
+          SELENIUM_REQUIRE_SERVER: "1"
+        run: |
+          for i in {1..30}; do
+            if curl -fsS "$SELENIUM_BASE_URL" >/dev/null; then
+              break
+            fi
+            sleep 2
+          done
+          curl -fsS "$SELENIUM_BASE_URL" >/dev/null
+          npm run test:selenium
+
+      - name: Stop frontend server
+        if: always()
+        run: |
+          if [ -f next.pid ]; then
+            kill "$(cat next.pid)" || true
+          fi
 
   security:
     name: Security Checks
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
+          cache-dependency-path: backend/pyproject.toml
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
 
       - name: Install security scanners
-        run: python -m pip install --upgrade pip && python -m pip install bandit[toml]
+        run: python -m pip install --upgrade pip && python -m pip install bandit pip-audit
 
       - name: Run Bandit
-        run: bandit -r backend/app -x backend/app/tests
+        run: bandit -r backend/app -x backend/app/tests --severity-level high
+
+      - name: Run Python dependency audit
+        run: pip-audit backend --strict
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run npm audit
+        working-directory: frontend
+        run: npm audit --audit-level=high
 
       - name: Run Gitleaks
         run: docker run --rm -v "${{ github.workspace }}:/repo" zricethezav/gitleaks:latest detect --source=/repo --config=/repo/.gitleaks.toml --redact --no-banner --verbose --no-git
+
+      - name: Run Trivy vulnerability, secret, and config scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,config
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          ignore-unfixed: true
 
   docker:
     name: Docker Build

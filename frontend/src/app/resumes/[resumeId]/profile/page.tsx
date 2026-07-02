@@ -15,7 +15,7 @@ export default async function ExtractedProfilePage({ params }: { params: Promise
             Resume
           </Link>
           <Link className="rounded px-3 py-2 text-zinc-700 hover:bg-zinc-100" href="/resumes">
-            Resumes
+            Manage Resumes
           </Link>
         </nav>
       </header>

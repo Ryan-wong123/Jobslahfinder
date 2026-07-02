@@ -1,11 +1,8 @@
-node_modules/
-.next/
-out/
-dist/
-coverage/
+node_modules
+.next
+out
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
-.env
-.env.*
+tsconfig.tsbuildinfo

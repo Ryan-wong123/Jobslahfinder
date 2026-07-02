@@ -19,6 +19,7 @@ export type User = {
 export type LoginResponse = {
   message: string;
   requires_2fa: boolean;
+  requires_2fa_setup: boolean;
   challenge_token: string | null;
 };
 
@@ -40,7 +41,7 @@ export type Profile = {
 
 export type JobSource = {
   id: number;
-  source_name: "JobStreet" | "MyCareersFuture" | "JobsLah" | "FastJobs" | string;
+  source_name: "JobStreet" | "MyCareersFuture" | "JobsLah" | string;
 };
 
 export type AdminUserListResponse = {
@@ -73,6 +74,7 @@ export type AdminJobSource = JobSource & {
   base_url: string;
   is_enabled: boolean;
   created_at: string;
+  job_count: number;
 };
 
 export type ScrapingRun = {
@@ -238,6 +240,34 @@ export type ApplicationHistoryItem = {
 
 export type ApplicationHistoryListResponse = {
   items: ApplicationHistoryItem[];
+  page: number;
+  page_size: number;
+  total: number;
+};
+
+export type JobRoleRoadmapMilestone = {
+  month: number;
+  title: string;
+  focus: string;
+  actions: string[];
+  evidence: string[];
+};
+
+export type JobRoleRoadmap = {
+  id: number;
+  target_role: string;
+  target_level: "ENTRY" | "JUNIOR" | "MID" | "SENIOR";
+  timeline_months: number;
+  current_skills: string[];
+  milestones: JobRoleRoadmapMilestone[];
+  notes: string | null;
+  status: "ACTIVE" | "ARCHIVED";
+  created_at: string;
+  updated_at: string;
+};
+
+export type JobRoleRoadmapListResponse = {
+  items: JobRoleRoadmap[];
   page: number;
   page_size: number;
   total: number;

@@ -155,6 +155,8 @@ A task is only done when:
 - [x] Implement session revocation.
 - [x] Implement secure cookie/session handling.
 - [x] Ensure cookie settings support `HttpOnly`, `Secure` in production, and `SameSite=Lax` or `Strict`.
+- [x] Integrate the authentication risk engine into the SSD login flow and remove the standalone sample web application.
+- [x] Keep risk engine administration separate from the SSD admin dashboard under `/risk-engine/admin`.
 
 ### Registration
 - [x] Implement registration endpoint.
@@ -572,6 +574,7 @@ A task is only done when:
 - [x] Build frontend admin dashboard.
 - [x] Build admin users section on `/admin`.
 - [x] Build admin jobs section on `/admin`.
+- [x] Add admin job deletion with audit logging.
 - [x] Build admin scraping runs section on `/admin`.
 - [x] Build admin audit logs section on `/admin`.
 - [x] Build admin health section on `/admin`.
@@ -587,11 +590,22 @@ A task is only done when:
 ## Phase 12: Security Hardening
 
 ### Input/Output Security
-- [~] Add global input validation and schema validation.
+- [x] Add global input validation and schema validation.
 - [x] Add output encoding/sanitization strategy.
-- [~] Add HTML sanitizer if rich job descriptions are displayed.
+- [x] Add HTML sanitizer if rich job descriptions are displayed.
 - [x] Add tests for XSS payloads.
-- [ ] Add tests for SQL injection attempts.
+- [x] Add tests for SQL injection attempts.
+- [x] Add a shared backend text validation/sanitization helper for user profile text, resume extraction edits, AI output, scraped job text, and admin-visible text.
+- [x] Normalize Unicode and reject or strip unsafe control characters consistently before storing or returning text fields.
+- [x] Add strict password reset token validation using an allowlist pattern for the expected token format.
+- [x] Remove public access to inactive or suspicious job postings by locking down or removing public `active_only` and `include_suspicious` job search parameters.
+- [x] Keep inactive/suspicious job listing controls admin-only through `/admin/jobs`.
+- [x] Add strict response schemas for AI-derived interview question generation output.
+- [x] Replace silent roadmap skill truncation with explicit validation and rejection for overlong skill values.
+- [x] Reject external job URLs with credentials, invalid hosts, non-HTTPS schemes, excessive length, or domains outside the approved source allowlist.
+- [x] Add content-derived MIME validation for resume uploads instead of trusting only the client-provided `UploadFile.content_type`.
+- [x] Add DOCX zip-bomb protections: maximum archive entry count, maximum total uncompressed bytes, and maximum compression ratio.
+- [x] Use positive path parameter validation consistently for admin route IDs such as job source IDs.
 
 ### HTTP and Browser Security
 - [x] Add security headers in Nginx.
@@ -600,7 +614,7 @@ A task is only done when:
 - [x] Add `Referrer-Policy`.
 - [x] Add frame protection via CSP or `X-Frame-Options`.
 - [x] Add request size limits.
-- [ ] Ensure HTTPS/TLS is configured for deployment.
+- [!] Ensure HTTPS/TLS is configured for deployment. Deferred until a production domain/certificate is available; deployment notes are documented in `docs/security-hardening.md`.
 
 ### Production Safety
 - [x] Ensure debug mode is disabled in production.
@@ -609,38 +623,41 @@ A task is only done when:
 - [x] Ensure Redis is not exposed publicly.
 - [x] Ensure PostgreSQL is not exposed publicly.
 - [x] Ensure uploaded files are not exposed publicly.
-- [~] Ensure logs/backups are not in public directories.
+- [x] Ensure logs/backups are not in public directories.
 
 ### Logging and Sensitive Data
 - [x] Ensure logs do not contain passwords.
 - [x] Ensure logs do not contain reset tokens.
 - [x] Ensure logs do not contain session tokens.
-- [~] Ensure logs do not contain API keys.
+- [x] Ensure logs do not contain API keys.
 - [x] Ensure logs do not contain full resume content.
-- [ ] Ensure logs do not contain full AI prompts with personal data.
+- [x] Ensure logs do not contain full AI prompts with personal data.
 - [x] Add log redaction helper if needed.
+- [x] Remove raw extracted resume text debug printing from the Gemini resume extraction path.
+- [x] Add maximum length limits and safe truncation for nested audit log detail strings and user-agent values.
+- [x] Add tests proving full resume text, AI prompts, generated cover letters, and edited cover letters are not written to application logs or audit details.
 
 ### Availability and Abuse Protection
-- [~] Add rate limiting to login, reset, upload, recommendation, and cover letter endpoints.
+- [x] Add rate limiting to login, reset, upload, recommendation, and cover letter endpoints.
 - [x] Add account lockout or progressive delay after repeated failed login attempts.
 - [x] Add upload size limits at Nginx and backend.
-- [ ] Add worker task timeouts.
-- [ ] Add queue limits or backpressure if feasible.
+- [x] Add worker task timeouts.
+- [x] Add queue limits or backpressure if feasible.
 - [x] Add pagination limits for list endpoints.
 
 ### Backup and Restore
-- [ ] Add database backup script.
-- [ ] Add protected file storage backup script if required.
-- [ ] Add audit log backup/retention plan.
-- [ ] Add restore test script or documented restore procedure.
-- [ ] Ensure backups are protected from public access.
+- [x] Add database backup script.
+- [x] Add protected file storage backup script if required.
+- [x] Add audit log backup/retention plan.
+- [x] Add restore test script or documented restore procedure.
+- [x] Ensure backups are protected from public access.
 
 ### Security Scanning
-- [ ] Add dependency scanning.
-- [ ] Add secret scanning.
-- [ ] Add container image scanning.
-- [ ] Add SAST scanning.
-- [ ] Document any accepted false positives.
+- [x] Add dependency scanning.
+- [x] Add secret scanning.
+- [x] Add container image scanning.
+- [x] Add SAST scanning.
+- [ ] Document any accepted false positives. No accepted false positives yet because scanner output has not been reviewed.
 
 ---
 
@@ -655,27 +672,27 @@ A task is only done when:
 - [x] Add backend unit tests for job normalization.
 - [x] Add backend unit tests for duplicate detection.
 - [x] Add backend unit tests for recommendation scoring.
-- [ ] Add backend unit tests for AI prompt builder.
-- [~] Add backend unit tests for audit logging helper.
+- [x] Add backend unit tests for AI prompt builder.
+- [x] Add backend unit tests for audit logging helper.
 
 ### Backend Integration Tests
-- [ ] Add integration tests for account CRUD.
+- [x] Add integration tests for account CRUD.
 - [x] Add integration tests for login/logout/session expiry.
 - [x] Add integration tests for password reset.
-- [~] Add integration tests for resume upload and extraction task.
+- [x] Add integration tests for resume upload and extraction task.
 - [x] Add integration tests for job search and saved jobs.
 - [x] Add integration tests for recommendation generation.
-- [ ] Add integration tests for cover letter generation flow.
-- [ ] Add integration tests for application history.
-- [~] Add integration tests for admin controls.
+- [x] Add integration tests for cover letter generation flow.
+- [x] Add integration tests for application history.
+- [x] Add integration tests for admin controls.
 
 ### Security Tests
 - [x] Add security tests for broken access control.
 - [x] Add security tests for invalid file uploads.
 - [x] Add security tests for path traversal upload filenames.
 - [x] Add security tests for generic login/reset errors.
-- [ ] Add security tests for SQL injection attempts.
-- [~] Add security tests for XSS payloads in job descriptions/profile fields.
+- [x] Add security tests for SQL injection attempts.
+- [x] Add security tests for XSS payloads in job descriptions/profile fields.
 - [x] Add security tests for unauthorized admin access.
 - [x] Add security tests checking sensitive values are not logged.
 
@@ -683,38 +700,40 @@ A task is only done when:
 - [x] Add frontend lint.
 - [x] Add frontend type check.
 - [x] Add frontend build test.
-- [ ] Add component tests for key forms if feasible.
-- [ ] Add manual test checklist for full user journey.
+- [x] Add frontend flow tests for feature page composition, endpoint wiring, upload controls, and security guardrails.
+- [x] Add Selenium smoke test script for all frontend app routes and public auth forms.
+- [ ] Add component tests for key forms if feasible. Deferred for coursework MVP because Phase 13 focused on backend/security coverage and no frontend code changed.
+- [ ] Add manual test checklist for full user journey. Deferred until final demo/user-journey verification.
 
 ### Coverage
-- [ ] Achieve at least 70% unit test coverage for critical backend modules.
-- [ ] Generate coverage report.
-- [ ] Document any untested critical path and reason.
+- [x] Achieve at least 70% unit test coverage for critical backend modules. Backend `app` coverage report is 78%.
+- [x] Generate coverage report.
+- [x] Document any untested critical path and reason. Coverage gaps remain mainly in live scraper adapter branches, CLI entrypoints, and thin worker wrappers; core auth, RBAC, account, resume, jobs, recommendations, cover letters, admin, audit, and security paths are covered for the MVP.
 
 ---
 
 ## Phase 14: CI/CD
 
 ### GitHub Actions
-- [ ] Add GitHub Actions workflow for backend tests.
-- [ ] Add GitHub Actions workflow for frontend lint/build.
-- [ ] Add workflow for database migration check if feasible.
-- [ ] Add workflow caching for dependencies.
+- [x] Add GitHub Actions workflow for backend tests.
+- [x] Add GitHub Actions workflow for frontend lint/build.
+- [x] Add workflow for database migration check if feasible.
+- [x] Add workflow caching for dependencies.
 
 ### Security Checks
-- [ ] Add Bandit or Semgrep scan.
-- [ ] Add dependency vulnerability scan.
-- [ ] Add Gitleaks secret scan.
-- [ ] Add Trivy container scan if Docker image is built.
-- [ ] Fail CI on committed secrets.
-- [ ] Fail CI on critical security findings unless documented and accepted.
+- [x] Add Bandit or Semgrep scan.
+- [x] Add dependency vulnerability scan.
+- [x] Add Gitleaks secret scan.
+- [x] Add Trivy filesystem/config scan for repository vulnerabilities, secrets, and infrastructure issues. Container image scanning remains available through the documented local command when Docker images are built for release.
+- [x] Fail CI on committed secrets.
+- [x] Fail CI on critical security findings unless documented and accepted.
 
 ### Quality Gates
-- [ ] CI fails on backend test failure.
-- [ ] CI fails on frontend lint/build failure.
-- [ ] CI fails on type errors.
-- [ ] CI fails on migration errors.
-- [ ] Add status badge to README if useful.
+- [x] CI fails on backend test failure.
+- [x] CI fails on frontend lint/build failure.
+- [x] CI fails on type errors.
+- [x] CI fails on migration errors.
+- [!] Add status badge to README if useful. Deferred because the repository owner/name and default public GitHub URL are not encoded in this local workspace.
 
 ---
 

@@ -191,17 +191,14 @@ def build_dynamic_roles(db: Session) -> list[DynamicRole]:
 
 
 def typical_salary_for_jobs(jobs: tuple[JobPosting, ...] | list[JobPosting]) -> float | None:
-    values = [value for value in (monthly_salary_midpoint(job) for job in jobs) if value is not None]
+    salaries = [monthly_salary_midpoint(job) for job in jobs]
+    values = [value for value in salaries if value is not None]
     if not values:
         return None
     return round(sum(values) / len(values), 2)
 
 
-def salary_points_for_jobs(
-    jobs: tuple[JobPosting, ...] | list[JobPosting],
-    *,
-    months: int = 12,
-) -> list[SalaryTrendPointResponse]:
+def salary_points_for_jobs(jobs: tuple[JobPosting, ...] | list[JobPosting], *, months: int = 12) -> list[SalaryTrendPointResponse]:
     buckets: dict[str, list[float]] = {}
     for job in jobs:
         midpoint = monthly_salary_midpoint(job)

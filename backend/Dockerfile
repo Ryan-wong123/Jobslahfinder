@@ -6,17 +6,21 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 COPY pyproject.toml ./
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends chromium chromium-driver \
+    && rm -rf /var/lib/apt/lists/* \
+    && python -m pip install --no-cache-dir --upgrade pip \
+    && python -m pip install --no-cache-dir ".[scrapers]"
+
 COPY app ./app
 COPY risk_engine ./risk_engine
 COPY alembic.ini ./alembic.ini
 COPY alembic ./alembic
 
-RUN python -m pip install --no-cache-dir --upgrade pip \
-    && python -m pip install --no-cache-dir .
-
 RUN adduser --disabled-password --gecos "" appuser \
     && mkdir -p /var/lib/jobapp/uploads \
-    && chown -R appuser:appuser /var/lib/jobapp /app
+    && mkdir -p /var/lib/jobapp/risk-engine \
+    && chown -R appuser:appuser /var/lib/jobapp
 
 USER appuser
 
