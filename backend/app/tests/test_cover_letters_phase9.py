@@ -591,7 +591,7 @@ def test_interview_question_generation_failure_is_audited_without_sensitive_cont
     )
     assert audit is not None
     assert audit.outcome == "SUCCESS"
-    assert audit.details_json["reason"] == "ai_response_invalid"
+    assert audit.details_json["fallback_reason"] == "ai_response_invalid"
     assert audit.details_json["resume_id"] == extraction.resume_id
     assert audit.details_json["generated_by"] == "local_fallback"
     assert audit.details_json["question_count"] == len(body["items"])
