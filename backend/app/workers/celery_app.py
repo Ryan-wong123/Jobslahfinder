@@ -26,9 +26,9 @@ celery_app.conf.update(
     result_expires=settings.celery_result_expires_seconds,
     broker_transport_options={"visibility_timeout": 3600},
     beat_schedule={
-        "daily-approved-source-scraping": {
+        "weekly-approved-source-scraping": {
             "task": "app.workers.tasks.run_weekly_scraping",
-            "schedule": crontab(minute=0, hour=18),
+            "schedule": crontab(minute=0, hour=18, day_of_week="sun"),
         },
     },
 )
