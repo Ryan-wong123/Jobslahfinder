@@ -550,10 +550,11 @@ def test_malformed_interview_question_generation_does_not_return_arbitrary_json(
 
     response = client.post(f"/jobs/{job.id}/interview-questions")
 
-    assert response.status_code == 503
-    assert response.json() == {
-        "detail": "Unable to generate interview questions right now. Please try again later."
-    }
+    assert response.status_code == 201
+    body = response.json()
+    assert body["generated_by"] == "local_fallback"
+    assert len(body["items"]) > 0
+    assert "arbitrary" not in body
 
 
 def test_interview_question_generation_failure_is_audited_without_sensitive_content(
@@ -578,18 +579,22 @@ def test_interview_question_generation_failure_is_audited_without_sensitive_cont
 
     response = client.post(f"/jobs/{job.id}/interview-questions")
 
-    assert response.status_code == 503
+    assert response.status_code == 201
+    body = response.json()
+    assert body["generated_by"] == "local_fallback"
+    assert len(body["items"]) > 0
+
     audit = db_session.scalar(
         select(AuditLog)
         .where(AuditLog.event_type == "interview_questions.generate")
         .order_by(AuditLog.id.desc())
     )
     assert audit is not None
-    assert audit.outcome == "FAILURE"
-    assert audit.details_json == {
-        "reason": "ai_response_invalid",
-        "resume_id": extraction.resume_id,
-    }
+    assert audit.outcome == "SUCCESS"
+    assert audit.details_json["reason"] == "ai_response_invalid"
+    assert audit.details_json["resume_id"] == extraction.resume_id
+    assert audit.details_json["generated_by"] == "local_fallback"
+    assert audit.details_json["question_count"] == len(body["items"])
     assert "private resume text sentinel" not in str(audit.details_json)
     assert "ignore previous instructions" not in str(audit.details_json)
 
@@ -865,8 +870,8 @@ def test_interview_questions_provider_failure_returns_safe_error(
 
     response = client.post(f"/jobs/{job.id}/interview-questions")
 
-    assert response.status_code == 503
-    assert response.json() == {
-        "detail": "Unable to generate interview questions right now. Please try again later."
-    }
-    assert "private resume text" not in str(response.json())
+    assert response.status_code == 201
+    body = response.json()
+    assert body["generated_by"] == "local_fallback"
+    assert len(body["items"]) > 0
+    assert "private resume text" not in str(body)
