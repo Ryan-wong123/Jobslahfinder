@@ -429,6 +429,75 @@ def generate_interview_questions_with_gemini(
         generated_by="gemini",
     )
 
+def build_fallback_interview_questions(
+    *,
+    extraction: ResumeExtraction,
+    job: JobPosting,
+) -> InterviewQuestionsResponse:
+    title = clean_text(job.title, max_length=120) or "this role"
+    company = clean_text(job.company, max_length=120) or "the company"
+
+    payload = {
+        "items": [
+            {
+                "category": "Technical",
+                "difficulty": "Medium",
+                "question": f"What technical skills would you apply first when working as a {title}?",
+            },
+            {
+                "category": "Technical",
+                "difficulty": "Medium",
+                "question": f"How would you troubleshoot a work-related problem in this {title} role?",
+            },
+            {
+                "category": "Behavioral",
+                "difficulty": "Easy",
+                "question": "Tell me about a time you worked with others to complete a task under time pressure.",
+            },
+            {
+                "category": "Behavioral",
+                "difficulty": "Medium",
+                "question": "Describe a mistake you made in a previous project or task and how you handled it.",
+            },
+            {
+                "category": "Situational",
+                "difficulty": "Medium",
+                "question": f"If you joined {company}, how would you learn the team's workflow during your first week?",
+            },
+            {
+                "category": "Situational",
+                "difficulty": "Hard",
+                "question": "What would you do if you were assigned an urgent task but the requirements were unclear?",
+            },
+            {
+                "category": "Resume-based",
+                "difficulty": "Easy",
+                "question": "Which skill from your resume is most relevant to this role, and how have you used it?",
+            },
+            {
+                "category": "Resume-based",
+                "difficulty": "Medium",
+                "question": "Choose one experience from your resume and explain how it prepared you for this job.",
+            },
+            {
+                "category": "Technical",
+                "difficulty": "Hard",
+                "question": f"What would you improve in a system or process related to the {title} position?",
+            },
+            {
+                "category": "Behavioral",
+                "difficulty": "Medium",
+                "question": "How do you communicate progress or blockers when working on a task?",
+            },
+        ]
+    }
+
+    return validate_interview_questions_payload(
+        payload=payload,
+        job_id=job.id,
+        resume_id=extraction.resume_id,
+        generated_by="local_fallback",
+    )
 
 def create_interview_questions_for_job(
     db: Session,
@@ -478,21 +547,29 @@ def create_interview_questions_for_job(
         )
         questions = InterviewQuestionsResponse.model_validate(raw_questions)
     except Exception as exc:
+        questions = build_fallback_interview_questions(
+            extraction=extraction,
+            job=job,
+        )
+
         create_audit_log(
             db,
             event_type="interview_questions.generate",
-            outcome=AuditOutcome.FAILURE,
+            outcome=AuditOutcome.SUCCESS,
             request=request,
             user_id=current_user.id,
             target_type="job_posting",
             target_id=job.id,
             details={
-                "reason": safe_generation_failure_reason(exc),
                 "resume_id": extraction.resume_id,
+                "question_count": len(questions.items),
+                "generated_by": questions.generated_by,
+                "fallback_reason": safe_generation_failure_reason(exc),
             },
         )
+
         db.commit()
-        raise
+        return questions
 
     create_audit_log(
         db,
