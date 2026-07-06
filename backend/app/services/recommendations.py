@@ -15,6 +15,7 @@ from app.models.resume import Resume, ResumeExtraction
 from app.security.text import sanitize_text
 from app.services.application_history import add_application_history
 from app.services.audit import create_audit_log
+from app.services.resumes import looks_like_prompt_instruction
 
 
 MAX_RECOMMENDATIONS = 25
@@ -93,6 +94,8 @@ def text_terms(*values: object) -> frozenset[str]:
     terms: set[str] = set()
     for value in values:
         if isinstance(value, str):
+            if looks_like_prompt_instruction(value):
+                continue
             cleaned = sanitize_text(
                 value,
                 field_name="recommendation text",
@@ -133,16 +136,12 @@ def latest_completed_profile(db: Session, *, user_id: int) -> ProfileSignals | N
     experience_terms: set[str] = set()
     for item in json_items(extraction.experience_json):
         if isinstance(item, dict):
-            experience_terms.update(
-                text_terms(item.get("title"), item.get("description"), item.get("company"))
-            )
+            experience_terms.update(text_terms(item.get("title"), item.get("company")))
 
     education_terms: set[str] = set()
     for item in json_items(extraction.education_json):
         if isinstance(item, dict):
-            education_terms.update(
-                text_terms(item.get("credential"), item.get("field"), item.get("description"))
-            )
+            education_terms.update(text_terms(item.get("credential"), item.get("field"), item.get("institution")))
 
     return ProfileSignals(
         resume_id=extraction.resume_id,
