@@ -196,7 +196,7 @@ Expected results:
 
 ## Resume Extraction
 
-Resume skill, education, and experience extraction uses Gemini by default. Configure these backend and worker environment variables in `.env`:
+Resume skill, education, and experience extraction uses Gemini suggestions plus deterministic backend verification. Raw Gemini output is never stored directly: suggested skills must match the local JSON skill taxonomy in `backend/app/data/skills.json` or its aliases and be grounded in the uploaded resume text before they are saved.
 
 ```text
 RESUME_EXTRACTION_PROVIDER=gemini
@@ -204,7 +204,7 @@ GEMINI_RESUME_MODEL=gemini-2.5-flash-lite
 GEMINI_API_KEY=replace-with-your-google-ai-api-key
 ```
 
-For offline development or tests, set `RESUME_EXTRACTION_PROVIDER=local` to use the built-in deterministic parser. The worker sends only bounded extracted resume text to Gemini and stores the validated structured fields, not the full prompt or raw resume text.
+For offline development or tests, set `RESUME_EXTRACTION_PROVIDER=local` to use the built-in deterministic parser only. The user can still review and edit extracted fields before recommendations or cover-letter generation use them.
 
 ## Cover Letter Generation
 

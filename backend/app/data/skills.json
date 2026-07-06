@@ -1,0 +1,65 @@
+{
+  "industries": [
+    {
+      "name": "Software Engineering",
+      "skills": [
+        { "name": "python", "aliases": ["py"] },
+        { "name": "java", "aliases": [] },
+        { "name": "javascript", "aliases": ["js"] },
+        { "name": "typescript", "aliases": ["ts"] },
+        { "name": "react", "aliases": ["react.js", "reactjs"] },
+        { "name": "next.js", "aliases": ["nextjs", "next js"] },
+        { "name": "fastapi", "aliases": ["fast api"] },
+        { "name": "sql", "aliases": ["structured query language"] },
+        { "name": "postgresql", "aliases": ["postgres", "psql"] },
+        { "name": "redis", "aliases": [] },
+        { "name": "docker", "aliases": [] },
+        { "name": "kubernetes", "aliases": ["k8s"] },
+        { "name": "linux", "aliases": [] }
+      ]
+    },
+    {
+      "name": "Cloud And Infrastructure",
+      "skills": [
+        { "name": "aws", "aliases": ["amazon web services"] },
+        { "name": "azure", "aliases": ["microsoft azure"] },
+        { "name": "google cloud", "aliases": ["gcp", "google cloud platform"] },
+        { "name": "terraform", "aliases": [] },
+        { "name": "nginx", "aliases": [] },
+        { "name": "ci/cd", "aliases": ["continuous integration", "continuous deployment"] }
+      ]
+    },
+    {
+      "name": "Cybersecurity",
+      "skills": [
+        { "name": "cybersecurity", "aliases": ["cyber security", "information security", "infosec"] },
+        { "name": "security", "aliases": [] },
+        { "name": "penetration testing", "aliases": ["pentest", "pentesting"] },
+        { "name": "threat modeling", "aliases": ["threat modelling"] },
+        { "name": "vulnerability assessment", "aliases": ["vulnerability scanning"] },
+        { "name": "owasp", "aliases": [] }
+      ]
+    },
+    {
+      "name": "Data And AI",
+      "skills": [
+        { "name": "machine learning", "aliases": ["ml"] },
+        { "name": "data analysis", "aliases": ["data analytics"] },
+        { "name": "pandas", "aliases": [] },
+        { "name": "numpy", "aliases": [] },
+        { "name": "tableau", "aliases": [] },
+        { "name": "power bi", "aliases": ["powerbi"] }
+      ]
+    },
+    {
+      "name": "Product And Operations",
+      "skills": [
+        { "name": "project management", "aliases": ["project manager"] },
+        { "name": "agile", "aliases": [] },
+        { "name": "scrum", "aliases": [] },
+        { "name": "jira", "aliases": [] },
+        { "name": "figma", "aliases": [] }
+      ]
+    }
+  ]
+}
