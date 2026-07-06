@@ -200,7 +200,7 @@ def test_cover_letter_prompt_context_delimits_untrusted_data_and_minimizes_resum
     assert "<script>" not in context
     assert "<p>" not in context
     assert "Security Engineer" in context
-    assert "IGNORE PREVIOUS INSTRUCTIONS" in context
+    assert "IGNORE PREVIOUS INSTRUCTIONS" not in context
 
     description_line = next(line for line in context.splitlines() if line.startswith("description_excerpt: "))
     assert len(description_line.removeprefix("description_excerpt: ")) <= MAX_JOB_CONTEXT_LENGTH
