@@ -753,8 +753,11 @@ def parse_resume_content(content: bytes, extension: str, *, max_text_chars: int)
     else:
         raise ResumeValidationError("unsupported_extension")
 
-    folded = text.casefold()
-    skills = sorted(skill for skill in COMMON_SKILLS if skill in folded)
+    skills = sorted(
+        skill
+        for skill in COMMON_SKILLS
+        if any(resume_contains_skill_alias(text, alias) for alias in skill_aliases_for(skill))
+    )
     years = [float(match.group(1)) for match in YEAR_EXPERIENCE_PATTERN.finditer(text)]
     lines = [line.strip(" -:\t") for line in re.split(r"[\r\n.]", text) if line.strip()]
     education = [
@@ -896,6 +899,19 @@ def raw_skill_name(value: object) -> str | None:
     return None
 
 
+def raw_skill_evidence(value: object) -> str | None:
+    if not isinstance(value, dict):
+        return None
+    evidence = value.get("evidence")
+    return evidence if isinstance(evidence, str) else None
+
+
+def evidence_supports_skill(*, evidence: str | None, resume_text: str, canonical_skill: str) -> bool:
+    if not evidence or not text_value_is_grounded(evidence, resume_text=resume_text):
+        return False
+    return any(resume_contains_skill_alias(evidence, alias) for alias in skill_aliases_for(canonical_skill))
+
+
 def verified_skills_from_candidates(raw_skills: object, *, resume_text: str | None) -> list[str]:
     if not isinstance(raw_skills, list):
         return []
@@ -905,11 +921,18 @@ def verified_skills_from_candidates(raw_skills: object, *, resume_text: str | No
         canonical_skill = canonicalize_skill(raw_skill_name(raw_item))
         if canonical_skill is None or canonical_skill in seen:
             continue
-        if resume_text is not None and not any(
-            resume_contains_skill_alias(resume_text, alias)
-            for alias in skill_aliases_for(canonical_skill)
-        ):
-            continue
+        if resume_text is not None:
+            alias_is_grounded = any(
+                resume_contains_skill_alias(resume_text, alias)
+                for alias in skill_aliases_for(canonical_skill)
+            )
+            evidence_is_grounded = evidence_supports_skill(
+                evidence=raw_skill_evidence(raw_item),
+                resume_text=resume_text,
+                canonical_skill=canonical_skill,
+            )
+            if not alias_is_grounded and not evidence_is_grounded:
+                continue
         seen.add(canonical_skill)
         verified.append(canonical_skill)
     return verified[:50]
