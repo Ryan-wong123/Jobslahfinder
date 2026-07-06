@@ -221,7 +221,13 @@ def score_job(job: JobPosting, profile: ProfileSignals) -> ScoredJob:
     return ScoredJob(job=job, score=score, rationale=" ".join(rationale_parts)[:1000], metadata=metadata)
 
 
-def score_active_jobs(db: Session, profile: ProfileSignals) -> list[ScoredJob]:
+def score_active_jobs(
+    db: Session,
+    profile: ProfileSignals,
+    *,
+    fallback_job_ids: set[int] | None = None,
+) -> list[ScoredJob]:
+    fallback_job_ids = fallback_job_ids or set()
     jobs = list(
         db.scalars(
             select(JobPosting)
@@ -230,8 +236,8 @@ def score_active_jobs(db: Session, profile: ProfileSignals) -> list[ScoredJob]:
         ).all()
     )
     scored = [score_job(job, profile) for job in jobs]
-    positive_matches = [item for item in scored if item.score > 0]
-    return sorted(positive_matches, key=lambda item: (-item.score, item.job.id))[:MAX_RECOMMENDATIONS]
+    candidates = [item for item in scored if item.score > 0 or item.job.id in fallback_job_ids]
+    return sorted(candidates, key=lambda item: (-item.score, item.job.id))[:MAX_RECOMMENDATIONS]
 
 
 def refresh_recommendations_for_user(
@@ -254,7 +260,10 @@ def refresh_recommendations_for_user(
         db.commit()
         raise RecommendationInputMissingError("No completed resume extraction is available.")
 
-    scored_jobs = score_active_jobs(db, profile)
+    previous_job_ids = set(
+        db.scalars(select(Recommendation.job_id).where(Recommendation.user_id == current_user.id)).all()
+    )
+    scored_jobs = score_active_jobs(db, profile, fallback_job_ids=previous_job_ids)
     db.execute(delete(Recommendation).where(Recommendation.user_id == current_user.id))
 
     generated_at = utc_now()
