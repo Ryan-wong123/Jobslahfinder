@@ -173,7 +173,7 @@ def login(
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> LoginResponse:
-    rate_limit_auth(request, "login", limit=100, window_seconds=30)
+    rate_limit_auth(request, "login", limit=10, window_seconds=60)
     risk = evaluate_login_risk(
         request,
         username=payload.email,

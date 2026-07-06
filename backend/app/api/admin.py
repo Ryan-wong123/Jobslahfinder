@@ -3,7 +3,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status
 from redis import Redis
-from sqlalchemy import delete, desc, func, or_, select, update
+from sqlalchemy import delete, desc, func, not_, or_, select, update
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import Settings, get_settings
@@ -551,7 +551,10 @@ def list_admin_audit_logs(
     _current_admin: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> AdminAuditLogListResponse:
-    filters = []
+    filters = [
+        not_(AuditLog.event_type.like("risk_engine.%")),
+        AuditLog.event_type != "auth.risk_engine_assessment",
+    ]
     if event_type:
         filters.append(AuditLog.event_type == event_type)
     if outcome:

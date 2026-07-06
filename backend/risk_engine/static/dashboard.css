@@ -111,6 +111,12 @@ h1, h2, h3, h4 {
   font-weight: 600;
 }
 
+.section-note {
+  margin: -10px 0 18px;
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
 /* Dashboard Status Colors & Badges */
 .allow { 
   background-color: rgba(76, 175, 80, 0.1) !important;
@@ -223,6 +229,44 @@ tbody tr:last-child td {
   font-size: 13px;
   max-width: 300px;
   word-wrap: break-word;
+}
+
+.audit-code {
+  margin-top: 4px;
+  color: #7a7163;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+}
+
+.audit-details summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--ink-1);
+}
+
+.audit-detail-list {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.audit-detail-list li {
+  margin: 3px 0;
+  line-height: 1.35;
+}
+
+.pagination-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+  color: var(--ink-2);
+  font-size: 14px;
+}
+
+.pagination-bar p {
+  margin: 0;
 }
 
 /* Button Styles */

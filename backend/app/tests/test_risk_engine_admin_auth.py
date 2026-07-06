@@ -1,10 +1,11 @@
 from collections.abc import Generator
-import re
+from datetime import datetime
+import json
 
 import pyotp
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -17,7 +18,9 @@ from app.models.enums import UserRole
 from app.security.passwords import hash_password
 from risk_engine import config as risk_config
 from risk_engine.api import app as risk_engine_app
-from risk_engine.dependancy import get_app_db
+from risk_engine.db.audit_model import AuditLog as RiskAuditLog
+from risk_engine.db.db_setup import AuditBase
+from risk_engine.dependancy import get_app_db, get_audit_db
 
 USER_PASSWORD = "StrongPass123"  # gitleaks:allow
 ADMIN_PASSWORD = "AdminPass123"  # gitleaks:allow
@@ -42,14 +45,44 @@ def db_session() -> Generator[Session, None, None]:
 
 
 @pytest.fixture()
-def client(db_session: Session) -> Generator[TestClient, None, None]:
+def risk_audit_session_factory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> Generator[sessionmaker[Session], None, None]:
+    engine = create_engine(
+        "sqlite+pysqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    AuditBase.metadata.create_all(bind=engine)
+    TestingAuditSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    monkeypatch.setattr("risk_engine.component.audit_utils.AuditSessionLocal", TestingAuditSessionLocal)
+    try:
+        yield TestingAuditSessionLocal
+    finally:
+        AuditBase.metadata.drop_all(bind=engine)
+        engine.dispose()
+
+
+@pytest.fixture()
+def client(
+    db_session: Session,
+    risk_audit_session_factory: sessionmaker[Session],
+) -> Generator[TestClient, None, None]:
     AUTH_RATE_LIMITER.clear()
 
     def override_get_db() -> Generator[Session, None, None]:
         yield db_session
 
+    def override_get_audit_db() -> Generator[Session, None, None]:
+        audit_session = risk_audit_session_factory()
+        try:
+            yield audit_session
+        finally:
+            audit_session.close()
+
     app.dependency_overrides[get_db] = override_get_db
     risk_engine_app.dependency_overrides[get_app_db] = override_get_db
+    risk_engine_app.dependency_overrides[get_audit_db] = override_get_audit_db
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
@@ -122,6 +155,7 @@ def test_risk_admin_dashboard_rejects_normal_users_and_audits(
 def test_risk_admin_dashboard_allows_main_app_admin_session(
     client: TestClient,
     db_session: Session,
+    risk_audit_session_factory: sessionmaker[Session],
 ) -> None:
     admin = create_user(db_session, email="admin@example.com", role=UserRole.ADMIN)
     login(client, email=admin.email, password=ADMIN_PASSWORD)
@@ -130,6 +164,28 @@ def test_risk_admin_dashboard_allows_main_app_admin_session(
 
     assert response.status_code == 200
     assert "Risk Engine" in response.text
+    with risk_audit_session_factory() as audit_db:
+        audit = audit_db.scalar(
+            select(RiskAuditLog).where(RiskAuditLog.action == "risk_engine.admin_access")
+        )
+    assert audit is not None
+    assert audit.resource == "risk_dashboard"
+    details = json.loads(audit.details or "{}")
+    assert details["admin_user_id"] == admin.id
+    assert details["admin_email"] == admin.email
+    assert details["admin_role"] == UserRole.ADMIN.value
+    assert details["auth_source"] == "main_app_admin_session"
+    assert details["page"] == "dashboard"
+    assert "ip_address" in details
+    assert "user_agent" in details
+    assert "admin_login" not in audit.action
+    second_response = client.get("/risk-engine/admin/dashboard")
+    assert second_response.status_code == 200
+    with risk_audit_session_factory() as audit_db:
+        access_count = audit_db.scalar(
+            select(func.count(RiskAuditLog.id)).where(RiskAuditLog.action == "risk_engine.admin_access")
+        )
+    assert access_count == 1
 
 
 def test_risk_admin_config_rejects_api_key_without_admin_session(
@@ -192,17 +248,11 @@ def test_risk_api_key_allows_machine_api_but_not_dashboard(
     assert "Please sign in with an administrator account" in dashboard_response.text
 
 
-def csrf_token_from(html: str) -> str:
-    match = re.search(r'name="csrf_token" value="([^"]+)"', html)
-    assert match is not None
-    return match.group(1)
-
-
-def test_risk_admin_logout_revokes_app_session_and_clears_cookies(
+def test_risk_admin_logout_endpoint_is_not_exposed(
     client: TestClient,
     db_session: Session,
 ) -> None:
-    admin = create_user(db_session, email="admin-logout@example.com", role=UserRole.ADMIN)
+    admin = create_user(db_session, email="admin-no-risk-logout@example.com", role=UserRole.ADMIN)
     login(client, email=admin.email, password=ADMIN_PASSWORD)
     dashboard_response = client.get("/risk-engine/admin/dashboard")
     assert dashboard_response.status_code == 200
@@ -210,14 +260,102 @@ def test_risk_admin_logout_revokes_app_session_and_clears_cookies(
 
     response = client.post(
         "/risk-engine/admin/logout",
-        data={"csrf_token": csrf_token_from(dashboard_response.text)},
         follow_redirects=False,
     )
 
-    assert response.status_code == 303
-    assert response.headers["location"] == "/login"
-    set_cookie = response.headers.get("set-cookie", "")
-    assert "job_platform_session=" in set_cookie
-    assert "risk_engine_admin_session=" in set_cookie
-    assert "Max-Age=0" in set_cookie
-    assert client.get("/risk-engine/admin/dashboard").status_code == 401
+    assert response.status_code == 404
+    assert client.get("/risk-engine/admin/dashboard").status_code == 200
+
+
+def test_risk_admin_navigation_only_dashboard_links_to_main_admin(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    admin = create_user(db_session, email="admin-nav@example.com", role=UserRole.ADMIN)
+    login(client, email=admin.email, password=ADMIN_PASSWORD)
+
+    dashboard_response = client.get("/risk-engine/admin/dashboard")
+    config_response = client.get("/risk-engine/admin/config-page")
+    audit_response = client.get("/risk-engine/admin/audit-logs")
+
+    assert dashboard_response.status_code == 200
+    assert config_response.status_code == 200
+    assert audit_response.status_code == 200
+    assert 'href="/admin"' in dashboard_response.text
+    assert 'href="/admin"' not in config_response.text
+    assert 'href="/admin"' not in audit_response.text
+
+
+def test_risk_audit_logs_render_friendly_details_and_support_filters(
+    client: TestClient,
+    db_session: Session,
+    risk_audit_session_factory: sessionmaker[Session],
+) -> None:
+    admin = create_user(db_session, email="admin-audit@example.com", role=UserRole.ADMIN)
+    login(client, email=admin.email, password=ADMIN_PASSWORD)
+
+    with risk_audit_session_factory() as audit_db:
+        for index in range(6):
+            audit_db.add(
+                RiskAuditLog(
+                    timestamp=datetime.utcnow(),
+                    action="risk_engine.admin_access",
+                    resource="risk_dashboard",
+                    status="success",
+                    details=json.dumps(
+                        {
+                            "admin_user_id": admin.id,
+                            "admin_email": admin.email,
+                            "admin_role": UserRole.ADMIN.value,
+                            "page": "dashboard",
+                        }
+                    ),
+                )
+            )
+        audit_db.add(
+            RiskAuditLog(
+                timestamp=datetime(2026, 1, 1, 0, 0, 0),
+                action="risk_engine.config_update",
+                resource="risk_config",
+                status="success",
+                details=json.dumps(
+                    {
+                        "admin_user_id": admin.id,
+                        "admin_email": admin.email,
+                        "admin_role": UserRole.ADMIN.value,
+                        "change_count": 1,
+                        "changes": [
+                            {
+                                "setting": "Block threshold",
+                                "old_value": 60,
+                                "new_value": 70,
+                                "summary": "Block threshold changed from 60 to 70",
+                            }
+                        ],
+                    }
+                ),
+            )
+        )
+        audit_db.commit()
+
+    response = client.get(
+        "/risk-engine/admin/audit-logs",
+        params={"action": "risk_engine.config_update", "page_size": 5},
+    )
+
+    assert response.status_code == 200
+    assert "Time (SGT)" in response.text
+    assert "2026-01-01 08:00:00" in response.text
+    assert "2026-01-01 08:00:00 SGT" not in response.text
+    assert "Risk configuration changed" in response.text
+    assert "Block threshold changed from 60 to 70" in response.text
+    assert admin.email in response.text
+    assert "<td>risk_dashboard</td>" not in response.text
+    assert "<pre" not in response.text
+    assert '"changes"' not in response.text
+    assert "{&quot;" not in response.text
+
+    page_one = client.get("/risk-engine/admin/audit-logs", params={"page_size": 5})
+    assert page_one.status_code == 200
+    assert "Showing page 1 of 2" in page_one.text
+    assert "Next" in page_one.text

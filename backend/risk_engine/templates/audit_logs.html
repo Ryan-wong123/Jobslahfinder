@@ -16,50 +16,83 @@
     <div class="controls">
       <a href="{{ admin_base_path }}/dashboard" class="btn">Back to Dashboard</a>
       <a href="{{ admin_base_path }}/config-page" class="btn btn-primary">Configure Risk Scoring</a>
-      <form action="{{ admin_base_path }}/logout" method="post" style="display:inline;" onsubmit="return confirm('Logging out here will also sign you out of the main app. Continue?');">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <button class="btn btn-ghost" type="submit">Logout</button>
-      </form>
     </div>
   </header>
 
   <section class="dashboard-section">
     <h3 class="section-title">Recent Admin Activity</h3>
+    <form class="filter-container" method="get" action="{{ admin_base_path }}/audit-logs">
+      <div class="filter-group">
+        <select class="filter-select" name="action">
+          <option value="">All Actions</option>
+          {% for option in action_options %}
+            <option value="{{ option.value }}" {% if selected_action == option.value %}selected{% endif %}>{{ option.label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="filter-group">
+        <select class="filter-select" name="status">
+          <option value="">All Statuses</option>
+          <option value="success" {% if selected_status == "success" %}selected{% endif %}>Success</option>
+          <option value="failure" {% if selected_status == "failure" %}selected{% endif %}>Failure</option>
+          <option value="error" {% if selected_status == "error" %}selected{% endif %}>Error</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <input class="filter-input" name="actor" type="search" maxlength="255" placeholder="Search actor..." value="{{ actor_filter }}">
+      </div>
+      <div class="filter-group">
+        <button class="btn btn-primary btn-small" type="submit">Filter</button>
+        <a class="btn btn-secondary btn-small" href="{{ admin_base_path }}/audit-logs">Clear</a>
+      </div>
+    </form>
     
     <div class="table-container">
       <table>
         <thead>
           <tr>
-            <th>Timestamp (UTC)</th>
+            <th>Time (SGT)</th>
             <th>Action</th>
             <th>Resource</th>
             <th>Status</th>
+            <th>Actor</th>
             <th>Details</th>
           </tr>
         </thead>
         <tbody>
           {% for log in logs %}
           <tr>
-            <td>{{ log.timestamp }}</td>
-            <td><strong>{{ log.action }}</strong></td>
+            <td>{{ log.timestamp_sgt }}</td>
+            <td>
+              <strong>{{ log.action_label }}</strong>
+              <div class="audit-code">{{ log.action }}</div>
+            </td>
             <td>{{ log.resource or "-" }}</td>
             <td>
               <span class="badge badge-{% if log.status == 'success' %}allow{% elif log.status == 'failure' %}challenge{% else %}block{% endif %}">
-                {{ log.status }}
+                {{ log.status_label }}
               </span>
             </td>
+            <td>{{ log.actor }}</td>
             <td class="reasons-cell">
               {% if log.error_message %}
                 <strong style="color: #c73e1d;">Error:</strong> {{ log.error_message }}
-              {% elif log.details %}
-                {% set details_obj = log.details | safe %}
-                {% if 'changes' in details_obj %}
-                  <details>
-                    <summary style="cursor: pointer; font-weight: 500;">View Changes</summary>
-                    <pre style="margin-top: 8px; padding: 8px; background: #f4f1ea; border-radius: 4px; font-size: 12px; overflow-x: auto;">{{ log.details | safe }}</pre>
+              {% elif log.detail_lines %}
+                {% if log.detail_lines | length > 3 %}
+                  <details class="audit-details">
+                    <summary>View {{ log.detail_lines | length }} detail(s)</summary>
+                    <ul class="audit-detail-list">
+                      {% for detail in log.detail_lines %}
+                        <li>{{ detail }}</li>
+                      {% endfor %}
+                    </ul>
                   </details>
                 {% else %}
-                  <pre style="font-size: 12px; margin: 0;">{{ log.details | safe }}</pre>
+                  <ul class="audit-detail-list">
+                    {% for detail in log.detail_lines %}
+                      <li>{{ detail }}</li>
+                    {% endfor %}
+                  </ul>
                 {% endif %}
               {% else %}
                 -
@@ -69,6 +102,20 @@
           {% endfor %}
         </tbody>
       </table>
+    </div>
+    <div class="pagination-bar">
+      <p>
+        Showing page {{ pagination.page }} of {{ pagination.total_pages }}
+        ({{ pagination.total }} log{% if pagination.total != 1 %}s{% endif %})
+      </p>
+      <div class="controls">
+        {% if pagination.has_previous %}
+          <a class="btn btn-secondary btn-small" href="{{ pagination.previous_url }}">Previous</a>
+        {% endif %}
+        {% if pagination.has_next %}
+          <a class="btn btn-secondary btn-small" href="{{ pagination.next_url }}">Next</a>
+        {% endif %}
+      </div>
     </div>
   </section>
 </div>

@@ -211,9 +211,15 @@ test("admin dashboard flows call admin-only endpoints and include moderation/aud
   assert.match(adminPanel, /user\?\.role !== "ADMIN"/);
   assert.match(adminPanel, /Access denied\./);
   assert.match(adminPanel, /\/admin\/audit-logs\?\$\{query\.toString\(\)\}/);
-  assert.match(adminPanel, /auditEventPattern/);
+  assert.match(adminPanel, /auditEventOptions/);
+  assert.match(adminPanel, /Choose a valid audit event\./);
   assert.match(adminPanel, /Start date must be before end date\./);
-  assert.match(adminPanel, /JSON\.stringify\(log\.details_json\)/);
+  assert.match(adminPanel, /formatAuditAction/);
+  assert.match(adminPanel, /formatAuditActor/);
+  assert.match(adminPanel, /formatAuditTargetType/);
+  assert.doesNotMatch(adminPanel, /risk_engine\.config_update/);
+  assert.doesNotMatch(adminPanel, /risk_engine\.admin_access/);
+  assert.match(adminPanel, /View Details/);
 
   assert.match(adminUserDetailPanel, /apiFetch<AdminUserDetail>\(`\/admin\/users\/\$\{params\.userId\}`\)/);
   assert.match(adminRunDetailPanel, /apiFetch<ScrapingRun>\(`\/admin\/scraping-runs\/\$\{params\.runId\}`\)/);

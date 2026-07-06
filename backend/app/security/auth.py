@@ -137,25 +137,3 @@ def assert_owner_or_admin(
         reason="owner_or_admin_required",
     )
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resource not found.")
-
-def assert_owner_or_admin(
-    db: Session,
-    request: Request | None,
-    *,
-    current_user: User,
-    owner_user_id: int,
-    target_type: str,
-    target_id: int | None = None,
-) -> None:
-    if current_user.role == UserRole.ADMIN.value or current_user.id == owner_user_id:
-        return
-
-    log_authorization_denied(
-        db,
-        request,
-        user=current_user,
-        target_type=target_type,
-        target_id=target_id,
-        reason="owner_or_admin_required",
-    )
-    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resource not found.")

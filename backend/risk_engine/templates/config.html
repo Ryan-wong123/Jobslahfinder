@@ -16,10 +16,6 @@
     <div class="controls">
       <a href="{{ admin_base_path }}/audit-logs" class="btn">Audit Logs</a>
       <a href="{{ admin_base_path }}/dashboard" class="btn">Back to Dashboard</a>
-      <form action="{{ admin_base_path }}/logout" method="post" style="display:inline;" onsubmit="return confirm('Logging out here will also sign you out of the main app. Continue?');">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <button class="btn btn-ghost" type="submit">Logout</button>
-      </form>
     </div>
   </header>
 

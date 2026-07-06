@@ -23,8 +23,8 @@ GENERIC_RESET_MESSAGE = "If the account exists, a reset link has been sent."
 GENERIC_RESET_ERROR = "Unable to reset password."
 TOO_MANY_LOGIN_ATTEMPTS_ERROR = "Too many login attempts. Please try again later."
 
-MAX_FAILED_LOGINS = 25
-LOCKOUT_MINUTES = 1
+MAX_FAILED_LOGINS = 5
+LOCKOUT_MINUTES = 15
 
 
 class AccountLockedError(ValueError):

@@ -1,24 +1,26 @@
-from fastapi import APIRouter, Request, Depends, Form, HTTPException
+from fastapi import APIRouter, Request, Depends, HTTPException, Query
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import JSONResponse, RedirectResponse
-from sqlalchemy import select
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from pydantic import BaseModel
 from typing import Dict, Any
 import json
 from datetime import datetime
+from zoneinfo import ZoneInfo
+from urllib.parse import urlencode
 
 from app.core.config import Settings, get_settings
-from app.models.account import Session as AppUserSession
 from app.models.account import User
-from app.security.auth import get_session_cookie_name
-from app.security.tokens import hash_token
-from app.services.auth import revoke_session
+from risk_engine.db.audit_model import AuditLog
 from risk_engine.db.risk_model import LoginEvent
 from risk_engine.dependancy import get_db, get_audit_db, get_app_db, require_admin, require_app_admin
 from risk_engine.component.risk_utils import load_risk_config, reload_risk_config
 from risk_engine.component.csrf_utils import get_csrf_token, verify_csrf_token
-from risk_engine.component.audit_utils import log_config_change
+from risk_engine.component.audit_utils import (
+    log_admin_access,
+    log_config_change,
+)
 from risk_engine.component.validation_utils import (
     validate_risk_score,
     validate_threshold,
@@ -32,6 +34,7 @@ dashboard_router = APIRouter(
 )
 
 templates = Jinja2Templates(directory=str(config.BASE_DIR / "templates"))
+SGT = ZoneInfo("Asia/Singapore")
 
 
 def _device_token_display(value: str | None) -> str | None:
@@ -40,6 +43,12 @@ def _device_token_display(value: str | None) -> str | None:
     if value.startswith("sha256:"):
         return value.removeprefix("sha256:")[:12]
     return value[:8]
+
+
+def _format_sgt(value: datetime) -> str:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=ZoneInfo("UTC"))
+    return value.astimezone(SGT).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _template_context(request: Request, **values: Any) -> dict[str, Any]:
@@ -62,6 +71,135 @@ def _auth_error_page(request: Request, exc: HTTPException):
     )
 
 
+def _display_name(value: str) -> str:
+    return value.replace("_", " ").replace(".", " ").title()
+
+
+def _audit_value_to_text(value: Any) -> str:
+    if value is None or value == "":
+        return "None"
+    if isinstance(value, bool):
+        return "Yes" if value else "No"
+    if isinstance(value, list):
+        return ", ".join(_audit_value_to_text(item) for item in value)
+    if isinstance(value, dict):
+        return ", ".join(f"{_display_name(str(key))}: {_audit_value_to_text(item)}" for key, item in value.items())
+    return str(value)
+
+
+def _audit_action_label(action: str) -> str:
+    labels = {
+        "risk_engine.admin_access": "Risk dashboard opened",
+        "risk_engine.config_update": "Risk configuration changed",
+        "authorization.denied": "Access denied",
+    }
+    return labels.get(action, _display_name(action))
+
+
+def _audit_status_label(status: str) -> str:
+    labels = {
+        "success": "Success",
+        "failure": "Failure",
+        "error": "Error",
+    }
+    return labels.get(status, _display_name(status))
+
+
+def _audit_details_from_json(raw_details: str | None) -> dict[str, Any]:
+    if not raw_details:
+        return {}
+    try:
+        parsed = json.loads(raw_details)
+    except json.JSONDecodeError:
+        return {"note": raw_details}
+    return parsed if isinstance(parsed, dict) else {"details": parsed}
+
+
+def _audit_detail_lines(details: dict[str, Any]) -> list[str]:
+    changes = details.get("changes")
+    if isinstance(changes, list):
+        lines = []
+        for change in changes:
+            if isinstance(change, dict) and isinstance(change.get("summary"), str):
+                lines.append(change["summary"])
+            else:
+                lines.append(_audit_value_to_text(change))
+        return lines
+
+    hidden_keys = {"admin_email", "admin_role", "auth_source", "change_count", "changes"}
+    lines = []
+    for key, value in details.items():
+        if key in hidden_keys or value in (None, ""):
+            continue
+        lines.append(f"{_display_name(str(key))}: {_audit_value_to_text(value)}")
+    return lines
+
+
+def _audit_actor(details: dict[str, Any]) -> str:
+    admin_email = details.get("admin_email")
+    if isinstance(admin_email, str) and admin_email:
+        return admin_email
+    admin_user_id = details.get("admin_user_id")
+    if admin_user_id:
+        return f"Admin user {admin_user_id}"
+    return "System"
+
+
+def _audit_action_options(audit_db: Session) -> list[dict[str, str]]:
+    actions = audit_db.query(AuditLog.action).distinct().order_by(AuditLog.action.asc()).all()
+    return [{"value": action, "label": _audit_action_label(action)} for (action,) in actions]
+
+
+def _audit_page_url(*, page: int, page_size: int, action: str | None, status_filter: str | None, actor: str | None) -> str:
+    query = {
+        "page": page,
+        "page_size": page_size,
+    }
+    if action:
+        query["action"] = action
+    if status_filter:
+        query["status"] = status_filter
+    if actor:
+        query["actor"] = actor
+    return f"{config.admin_path('/audit-logs')}?{urlencode(query)}"
+
+
+def _pagination_window(
+    page: int,
+    page_size: int,
+    total: int,
+    *,
+    action: str | None,
+    status_filter: str | None,
+    actor: str | None,
+) -> dict[str, int | bool | str]:
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    previous_page = max(1, page - 1)
+    next_page = min(total_pages, page + 1)
+    return {
+        "page": page,
+        "page_size": page_size,
+        "total": total,
+        "total_pages": total_pages,
+        "has_previous": page > 1,
+        "has_next": page < total_pages,
+        "previous_url": _audit_page_url(
+            page=previous_page,
+            page_size=page_size,
+            action=action,
+            status_filter=status_filter,
+            actor=actor,
+        ),
+        "next_url": _audit_page_url(
+            page=next_page,
+            page_size=page_size,
+            action=action,
+            status_filter=status_filter,
+            actor=actor,
+        ),
+    }
+
+
 @dashboard_router.get("")
 def admin_root():
     return RedirectResponse(url=config.admin_path("/login"), status_code=302)
@@ -76,51 +214,6 @@ def admin_login(request: Request):
     return RedirectResponse(url="/login", status_code=303)
 
 
-@dashboard_router.post("/logout")
-def admin_logout(
-    request: Request,
-    csrf_token: str = Form(...),
-    app_db: Session = Depends(get_app_db),
-    settings: Settings = Depends(get_settings),
-):
-    try:
-        verify_csrf_token(request, csrf_token)
-    except HTTPException:
-        raise HTTPException(status_code=403, detail="Invalid CSRF token")
-
-    session_cookie_name = get_session_cookie_name(settings)
-    app_session_token = request.cookies.get(session_cookie_name)
-    if app_session_token:
-        app_session = app_db.scalar(
-            select(AppUserSession).where(
-                AppUserSession.session_token_hash == hash_token(
-                    app_session_token,
-                    settings.session_secret,
-                )
-            )
-        )
-        if app_session is not None:
-            revoke_session(app_db, request, session=app_session, user=app_session.user)
-
-    request.session.clear()
-    response = RedirectResponse(url="/login", status_code=303)
-    response.delete_cookie(
-        key=session_cookie_name,
-        httponly=True,
-        secure=settings.secure_cookies,
-        samesite="lax",
-        path="/",
-    )
-    response.delete_cookie(
-        key="risk_engine_admin_session",
-        httponly=True,
-        secure=request.url.scheme == "https",
-        samesite="strict",
-        path="/",
-    )
-    return response
-
-
 @dashboard_router.get("/dashboard")
 def dashboard(
     request: Request,
@@ -129,9 +222,12 @@ def dashboard(
     settings: Settings = Depends(get_settings),
 ):
     try:
-        require_app_admin(request, app_db, settings)
+        admin_user = require_app_admin(request, app_db, settings)
     except HTTPException as exc:
         return _auth_error_page(request, exc)
+    if request.session.get("risk_dashboard_access_logged_for_user") != admin_user.id:
+        log_admin_access(request, admin_user=admin_user, page="dashboard")
+        request.session["risk_dashboard_access_logged_for_user"] = admin_user.id
 
     raw_events = (
     db.query(LoginEvent)
@@ -143,7 +239,7 @@ def dashboard(
     events = [
         {
             "username": e.username,
-            "event_time_utc": e.event_time_utc.isoformat(),
+            "event_time_sgt": _format_sgt(e.event_time_utc),
             "ip": e.ip,
             "ip_prefix": e.ip_prefix,
             "user_agent": e.user_agent,
@@ -169,7 +265,7 @@ def dashboard(
                     oldest_event = raw_events[-1]
                     if oldest_event.event_time_utc < config_change_dt:
                         show_config_warning = True
-                        config_change_date = config_change_dt.strftime('%Y-%m-%d %H:%M UTC')
+                        config_change_date = _format_sgt(config_change_dt)
     except Exception:
         pass
 
@@ -235,7 +331,12 @@ def get_risk_config(request: Request, db: Session = Depends(get_db), _=Depends(r
 
 
 @dashboard_router.post("/config")
-def update_risk_config(request: Request, config_update: RiskConfigUpdate, db: Session = Depends(get_db), _=Depends(require_admin)):
+def update_risk_config(
+    request: Request,
+    config_update: RiskConfigUpdate,
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(require_admin),
+):
     """Update risk scoring configuration."""
     # Verify CSRF token from header
     csrf_token = request.headers.get("X-CSRF-Token")
@@ -341,7 +442,7 @@ def update_risk_config(request: Request, config_update: RiskConfigUpdate, db: Se
         reload_risk_config()
         
         # Log the config change
-        log_config_change(request, old_config, new_config, success=True)
+        log_config_change(request, admin_user, old_config, new_config, success=True)
         
         return JSONResponse(content={
             "status": "success",
@@ -355,7 +456,14 @@ def update_risk_config(request: Request, config_update: RiskConfigUpdate, db: Se
         try:
             old_config = load_risk_config()
             new_config = config_update.model_dump()
-            log_config_change(request, old_config, new_config, success=False, error_message=str(e))
+            log_config_change(
+                request,
+                admin_user,
+                old_config,
+                new_config,
+                success=False,
+                error_message="configuration_update_failed",
+            )
         except Exception:
             pass  # Don't let audit logging break error handling
         raise HTTPException(status_code=500, detail="Failed to update configuration.")
@@ -366,37 +474,67 @@ def audit_logs_page(
     request: Request,
     audit_db: Session = Depends(get_audit_db),
     admin_user: User = Depends(require_app_admin),
+    action: str | None = Query(default=None, min_length=1, max_length=100),
+    status_filter: str | None = Query(default=None, alias="status", pattern="^(success|failure|error)$"),
+    actor: str | None = Query(default=None, min_length=1, max_length=255),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=5, le=100),
 ):
     """View audit logs."""
-    from risk_engine.db.audit_model import AuditLog
-    
-    # Get recent audit logs
+    filters = []
+    if action:
+        filters.append(AuditLog.action == action)
+    if status_filter:
+        filters.append(AuditLog.status == status_filter)
+    if actor:
+        filters.append(AuditLog.details.ilike(f"%{actor}%"))
+
+    base_query = audit_db.query(AuditLog)
+    if filters:
+        base_query = base_query.filter(*filters)
+
+    total = base_query.with_entities(func.count(AuditLog.id)).scalar() or 0
     logs = (
-        audit_db.query(AuditLog)
+        base_query
         .order_by(AuditLog.timestamp.desc())
-        .limit(500)
+        .offset((page - 1) * page_size)
+        .limit(page_size)
         .all()
     )
     
     log_entries = [
         {
             "id": log.id,
-            "timestamp": log.timestamp.isoformat(),
+            "timestamp_sgt": _format_sgt(log.timestamp),
             "action": log.action,
+            "action_label": _audit_action_label(log.action),
             "resource": log.resource,
             "status": log.status,
-            "details": log.details,
-            "error_message": log.error_message
+            "status_label": _audit_status_label(log.status),
+            "actor": _audit_actor(_audit_details_from_json(log.details)),
+            "detail_lines": _audit_detail_lines(_audit_details_from_json(log.details)),
+            "error_message": log.error_message,
         }
         for log in logs
     ]
-    
     return templates.TemplateResponse(
         request,
         "audit_logs.html",
         context={
             **_template_context(request),
             "logs": log_entries,
+            "action_options": _audit_action_options(audit_db),
+            "selected_action": action or "",
+            "selected_status": status_filter or "",
+            "actor_filter": actor or "",
+            "pagination": _pagination_window(
+                page,
+                page_size,
+                total,
+                action=action,
+                status_filter=status_filter,
+                actor=actor,
+            ),
             "csrf_token": get_csrf_token(request)
         }
     )

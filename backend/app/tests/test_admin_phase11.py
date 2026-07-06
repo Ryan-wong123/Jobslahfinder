@@ -634,6 +634,50 @@ def test_admin_can_list_audit_logs_with_safe_metadata_only(
     assert_no_sensitive_fields(body)
 
 
+def test_admin_audit_logs_exclude_risk_engine_admin_events(
+    client: TestClient, db_session: Session
+) -> None:
+    admin = create_user(db_session, email="admin@example.com", role=UserRole.ADMIN)
+    app_log = AuditLog(
+        event_type="admin.user.update",
+        outcome=AuditOutcome.SUCCESS.value,
+        user_id=admin.id,
+        target_type="user",
+        target_id=admin.id,
+    )
+    risk_log = AuditLog(
+        event_type="risk_engine.config_update",
+        outcome=AuditOutcome.SUCCESS.value,
+        user_id=admin.id,
+        target_type="risk_config",
+    )
+    risk_assessment_log = AuditLog(
+        event_type="auth.risk_engine_assessment",
+        outcome=AuditOutcome.SUCCESS.value,
+        user_id=admin.id,
+        target_type="user",
+        target_id=admin.id,
+    )
+    db_session.add_all([app_log, risk_log, risk_assessment_log])
+    db_session.commit()
+    login(client, email=admin.email, password=ADMIN_PASSWORD)
+
+    response = client.get("/admin/audit-logs?event_type=admin.user.update")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 1
+    assert [item["event_type"] for item in body["items"]] == ["admin.user.update"]
+
+    risk_response = client.get("/admin/audit-logs?event_type=risk_engine.config_update")
+    assert risk_response.status_code == 200
+    assert risk_response.json()["total"] == 0
+
+    risk_assessment_response = client.get("/admin/audit-logs?event_type=auth.risk_engine_assessment")
+    assert risk_assessment_response.status_code == 200
+    assert risk_assessment_response.json()["total"] == 0
+
+
 def test_admin_audit_log_date_filters(client: TestClient, db_session: Session) -> None:
     admin = create_user(db_session, email="admin@example.com", role=UserRole.ADMIN)
     old_log = AuditLog(

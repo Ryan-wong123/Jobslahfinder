@@ -6,6 +6,7 @@ import {
   apiFetch,
   formatDate,
   formatDateTime,
+  type AdminAuditLog,
   type AdminAuditLogListResponse,
   type AdminHealth,
   type AdminJobSource,
@@ -23,7 +24,25 @@ type UserActionState = Record<number, boolean>;
 type JobActionState = Record<number, boolean>;
 const adminJobPageSize = 8;
 const trackedPortalNames = ["JobStreet", "MyCareersFuture", "JobsLah", "FastJobs"] as const;
-const auditEventPattern = /^[a-zA-Z0-9_.:-]{1,100}$/;
+const auditEventOptions = [
+  { value: "auth.2fa_setup", label: "2FA setup" },
+  { value: "auth.2fa_verify", label: "2FA verification" },
+  { value: "auth.login", label: "Login" },
+  { value: "auth.logout", label: "Logout" },
+  { value: "auth.password_change", label: "Password change" },
+  { value: "auth.password_reset_request", label: "Password reset request" },
+  { value: "auth.password_reset_confirm", label: "Password reset complete" },
+  { value: "account.update", label: "Account update" },
+  { value: "account.profile_update", label: "Profile update" },
+  { value: "account.deletion_request", label: "Account deletion request" },
+  { value: "account.deletion", label: "Account deletion" },
+  { value: "authorization.denied", label: "Access denied" },
+  { value: "admin.user.update", label: "Admin user update" },
+  { value: "admin.job.update", label: "Admin job update" },
+  { value: "admin.job.delete", label: "Admin job delete" },
+  { value: "admin.scraping_run.trigger", label: "Scraping run triggered" }
+] as const;
+const auditEventValues = new Set<string>(auditEventOptions.map((option) => option.value));
 
 function statusClass(status: string): string {
   if (status === "SUCCESS" || status === "ok") {
@@ -37,6 +56,154 @@ function statusClass(status: string): string {
 
 function pill(label: string, tone: string) {
   return <span className={`rounded border px-2 py-1 text-xs font-medium ${statusClass(tone)}`}>{label}</span>;
+}
+
+function formatAuditEventLabel(eventType: string): string {
+  return eventType
+    .split(".")
+    .map((part) => part.replace(/_/g, " "))
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function formatAuditDetailKey(key: string): string {
+  return key
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function formatAuditTargetType(targetType: string): string {
+  return targetType.replace(/_/g, " ").replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function isAuditDetailObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function auditValueToText(value: unknown): string {
+  if (value === null || value === undefined || value === "") {
+    return "None";
+  }
+  if (typeof value === "boolean") {
+    return value ? "Yes" : "No";
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => auditValueToText(item)).join(", ");
+  }
+  if (isAuditDetailObject(value)) {
+    return Object.entries(value)
+      .map(([key, nestedValue]) => `${formatAuditDetailKey(key)}: ${auditValueToText(nestedValue)}`)
+      .join(", ");
+  }
+  return String(value);
+}
+
+function formatAuditActor(log: AdminAuditLog): string {
+  const adminEmail = log.details_json?.admin_email;
+  if (typeof adminEmail === "string" && adminEmail) {
+    return adminEmail;
+  }
+  if (log.user_id) {
+    return `User ${log.user_id}`;
+  }
+  return "System";
+}
+
+function formatAuditTarget(log: AdminAuditLog): string {
+  if (!log.target_type) {
+    return "Platform";
+  }
+  const targetType = formatAuditTargetType(log.target_type);
+  return log.target_id ? `${targetType} #${log.target_id}` : targetType;
+}
+
+function formatAuditAction(log: AdminAuditLog): string {
+  if (log.event_type === "authorization.denied") {
+    return "Access denied";
+  }
+  if (log.event_type === "account.update") {
+    return "Account updated";
+  }
+  if (log.event_type === "account.profile_update") {
+    return "Profile updated";
+  }
+  if (log.event_type.startsWith("auth.")) {
+    return formatAuditEventLabel(log.event_type.replace("auth.", ""));
+  }
+  if (log.event_type.startsWith("admin.")) {
+    return formatAuditEventLabel(log.event_type.replace("admin.", ""));
+  }
+  return formatAuditEventLabel(log.event_type);
+}
+
+function auditContextItems(log: AdminAuditLog): Array<{ label: string; value: string }> {
+  const details = log.details_json ?? {};
+  const hiddenKeys = new Set(["admin_email", "admin_role", "auth_source", "change_count", "changes"]);
+  const items = Object.entries(details)
+    .filter(([key, value]) => !hiddenKeys.has(key) && value !== null && value !== undefined && value !== "")
+    .map(([key, value]) => ({ label: formatAuditDetailKey(key), value: auditValueToText(value) }));
+
+  if (log.details_json?.admin_role && typeof log.details_json.admin_role === "string") {
+    items.unshift({ label: "Role", value: log.details_json.admin_role });
+  }
+  return items;
+}
+
+function auditChangeSummaries(details: Record<string, unknown> | null): string[] {
+  const changes = details?.changes;
+  if (!Array.isArray(changes)) {
+    return [];
+  }
+  return changes
+    .map((change) => {
+      if (isAuditDetailObject(change) && typeof change.summary === "string") {
+        return change.summary;
+      }
+      return auditValueToText(change);
+    })
+    .filter(Boolean)
+    .slice(0, 5);
+}
+
+function AuditDetails({ log }: { log: AdminAuditLog }) {
+  const contextItems = auditContextItems(log);
+  const changeSummaries = auditChangeSummaries(log.details_json);
+  if (contextItems.length === 0 && changeSummaries.length === 0) {
+    return null;
+  }
+
+  return (
+    <details className="group rounded border border-zinc-200 bg-white">
+      <summary className="cursor-pointer list-none px-3 py-2 text-xs font-medium text-zinc-700 transition hover:bg-zinc-50">
+        <span className="inline-flex items-center gap-2">
+          <span className="text-zinc-950">View Details</span>
+          <span className="text-zinc-400 group-open:hidden">+</span>
+          <span className="hidden text-zinc-400 group-open:inline">-</span>
+        </span>
+      </summary>
+      <div className="grid gap-3 border-t border-zinc-200 bg-zinc-50 p-3">
+        {changeSummaries.length ? (
+          <ul className="grid gap-1 text-xs text-zinc-700">
+            {changeSummaries.map((summary, index) => (
+              <li key={`${summary}-${index}`} className="rounded border border-zinc-200 bg-white px-2 py-1">
+                {summary}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        {contextItems.length ? (
+          <dl className="grid gap-2 sm:grid-cols-2">
+            {contextItems.slice(0, 6).map((item) => (
+              <div key={item.label} className="min-w-0">
+                <dt className="text-[11px] font-medium uppercase text-zinc-500">{item.label}</dt>
+                <dd className="mt-0.5 truncate text-xs text-zinc-800" title={item.value}>{item.value}</dd>
+              </div>
+            ))}
+          </dl>
+        ) : null}
+      </div>
+    </details>
+  );
 }
 
 async function fetchJobsThroughPage(page: number) {
@@ -289,8 +456,8 @@ export function AdminScrapingPanel() {
     setMessage(null);
     setError(null);
     const eventFilter = auditEventFilter.trim();
-    if (eventFilter && !auditEventPattern.test(eventFilter)) {
-      setError("Audit event filters can use letters, numbers, underscore, dot, colon, and hyphen only.");
+    if (eventFilter && !auditEventValues.has(eventFilter)) {
+      setError("Choose a valid audit event.");
       return;
     }
     if (auditOutcomeFilter && !["SUCCESS", "FAILURE", "DENIED"].includes(auditOutcomeFilter)) {
@@ -353,9 +520,14 @@ export function AdminScrapingPanel() {
             <h1 className="text-2xl font-semibold text-zinc-950">Admin Dashboard</h1>
             <p className="mt-1 text-sm text-zinc-600">Manage users, moderate jobs, inspect scraping runs, and review audit metadata.</p>
           </div>
-          <Link className="rounded border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-900 hover:bg-zinc-100" href="/jobs">
-            View jobs
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link className="rounded border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-900 hover:bg-zinc-100" href="/jobs">
+              View jobs
+            </Link>
+            <a className="rounded bg-zinc-950 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800" href="/risk-engine/admin/dashboard">
+              Risk Engine
+            </a>
+          </div>
         </div>
         <div className="mt-5 grid gap-3 md:grid-cols-5">
           <div className="rounded border border-zinc-200 p-4">
@@ -642,77 +814,112 @@ export function AdminScrapingPanel() {
       </section>
 
       <section className="rounded border border-zinc-200 bg-white p-6 shadow-sm">
-        <h2 className="text-lg font-semibold text-zinc-950">Audit Logs</h2>
-        <div className="mt-4 grid gap-3 md:grid-cols-5">
-          <input
-            className="rounded border border-zinc-300 px-3 py-2 text-sm"
-            maxLength={100}
-            onChange={(event) => setAuditEventFilter(event.target.value)}
-            pattern="[a-zA-Z0-9_.:-]{1,100}"
-            placeholder="event_type"
-            value={auditEventFilter}
-          />
-          <select
-            className="rounded border border-zinc-300 px-3 py-2 text-sm"
-            onChange={(event) => setAuditOutcomeFilter(event.target.value)}
-            value={auditOutcomeFilter}
-          >
-            <option value="">Any outcome</option>
-            <option value="SUCCESS">SUCCESS</option>
-            <option value="FAILURE">FAILURE</option>
-            <option value="DENIED">DENIED</option>
-          </select>
-          <input
-            className="rounded border border-zinc-300 px-3 py-2 text-sm"
-            onChange={(event) => setAuditFromFilter(event.target.value)}
-            type="datetime-local"
-            value={auditFromFilter}
-          />
-          <input
-            className="rounded border border-zinc-300 px-3 py-2 text-sm"
-            onChange={(event) => setAuditToFilter(event.target.value)}
-            type="datetime-local"
-            value={auditToFilter}
-          />
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-zinc-950">Audit Logs</h2>
+            <p className="mt-1 text-sm text-zinc-600">{auditLogs?.total ?? 0} security event(s) found.</p>
+          </div>
+          {auditLogs?.items.length ? (
+            <span className="rounded border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-medium text-zinc-600">
+              Latest {auditLogs.items.length}
+            </span>
+          ) : null}
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-[1.2fr_1fr_1fr_1fr_auto]">
+          <label className="grid gap-1 text-xs font-medium uppercase text-zinc-500">
+            Event
+            <select
+              className="rounded border border-zinc-300 px-3 py-2 text-sm font-normal normal-case text-zinc-950"
+              onChange={(event) => setAuditEventFilter(event.target.value)}
+              value={auditEventFilter}
+            >
+              <option value="">Any event</option>
+              {auditEventOptions.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </label>
+          <label className="grid gap-1 text-xs font-medium uppercase text-zinc-500">
+            Outcome
+            <select
+              className="rounded border border-zinc-300 px-3 py-2 text-sm font-normal normal-case text-zinc-950"
+              onChange={(event) => setAuditOutcomeFilter(event.target.value)}
+              value={auditOutcomeFilter}
+            >
+              <option value="">Any outcome</option>
+              <option value="SUCCESS">SUCCESS</option>
+              <option value="FAILURE">FAILURE</option>
+              <option value="DENIED">DENIED</option>
+            </select>
+          </label>
+          <label className="grid gap-1 text-xs font-medium uppercase text-zinc-500">
+            From
+            <input
+              className="rounded border border-zinc-300 px-3 py-2 text-sm font-normal normal-case text-zinc-950"
+              onChange={(event) => setAuditFromFilter(event.target.value)}
+              type="datetime-local"
+              value={auditFromFilter}
+            />
+          </label>
+          <label className="grid gap-1 text-xs font-medium uppercase text-zinc-500">
+            To
+            <input
+              className="rounded border border-zinc-300 px-3 py-2 text-sm font-normal normal-case text-zinc-950"
+              onChange={(event) => setAuditToFilter(event.target.value)}
+              type="datetime-local"
+              value={auditToFilter}
+            />
+          </label>
           <button
-            className="rounded bg-zinc-950 px-4 py-2 text-sm font-medium text-white"
+            className="self-end rounded bg-zinc-950 px-5 py-2 text-sm font-medium text-white transition hover:bg-zinc-800"
             onClick={applyAuditFilters}
             type="button"
           >
             Filter
           </button>
         </div>
-        <div className="mt-4 overflow-x-auto">
+        <div className="mt-5 overflow-x-auto rounded border border-zinc-200">
           <table className="w-full min-w-[760px] border-collapse text-left text-sm">
             <thead>
-              <tr className="border-b border-zinc-200 text-xs uppercase text-zinc-500">
-                <th className="py-3 pr-4 font-medium">Event</th>
-                <th className="py-3 pr-4 font-medium">Outcome</th>
-                <th className="py-3 pr-4 font-medium">User</th>
-                <th className="py-3 pr-4 font-medium">Target</th>
-                <th className="py-3 pr-4 font-medium">Details</th>
-                <th className="py-3 font-medium">Created</th>
+              <tr className="border-b border-zinc-200 bg-zinc-50 text-xs uppercase text-zinc-500">
+                <th className="px-4 py-3 font-medium">Action</th>
+                <th className="px-4 py-3 font-medium">Outcome</th>
+                <th className="px-4 py-3 font-medium">Actor</th>
+                <th className="px-4 py-3 font-medium">Target</th>
+                <th className="px-4 py-3 font-medium">When</th>
               </tr>
             </thead>
             <tbody>
               {auditLogs?.items.length ? (
                 auditLogs.items.map((log) => (
-                  <tr key={log.id} className="border-b border-zinc-100 align-top">
-                    <td className="py-3 pr-4 text-zinc-950">{log.event_type}</td>
-                    <td className="py-3 pr-4">{pill(log.outcome, log.outcome)}</td>
-                    <td className="py-3 pr-4 text-zinc-700">{log.user_id ?? "System"}</td>
-                    <td className="py-3 pr-4 text-zinc-700">
-                      {log.target_type ? `${log.target_type} ${log.target_id ?? ""}` : "None"}
+                  <tr key={log.id} className="border-b border-zinc-100 align-top last:border-b-0 hover:bg-zinc-50/70">
+                    <td className="px-4 py-4">
+                      <div className="min-w-0">
+                        <p className="font-medium text-zinc-950">{formatAuditAction(log)}</p>
+                        <p className="mt-1 break-words text-xs text-zinc-500">{log.event_type}</p>
+                        <div className="mt-3">
+                          <AuditDetails log={log} />
+                        </div>
+                      </div>
                     </td>
-                    <td className="max-w-xs py-3 pr-4 text-zinc-600">
-                      {log.details_json ? JSON.stringify(log.details_json) : "None"}
+                    <td className="px-4 py-4">{pill(log.outcome, log.outcome)}</td>
+                    <td className="px-4 py-4">
+                      <span className="block max-w-40 truncate text-zinc-800" title={formatAuditActor(log)}>
+                        {formatAuditActor(log)}
+                      </span>
                     </td>
-                    <td className="py-3 text-zinc-700">{formatDateTime(log.created_at)}</td>
+                    <td className="px-4 py-4">
+                      <span className="block max-w-36 truncate text-zinc-800" title={formatAuditTarget(log)}>
+                        {formatAuditTarget(log)}
+                      </span>
+                      <span className="mt-1 block text-xs text-zinc-500">Record #{log.id}</span>
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-4 text-zinc-700">{formatDateTime(log.created_at)}</td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td className="py-4 text-zinc-600" colSpan={6}>No audit logs found.</td>
+                  <td className="px-4 py-6 text-zinc-600" colSpan={5}>No audit logs found.</td>
                 </tr>
               )}
             </tbody>

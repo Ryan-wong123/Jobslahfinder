@@ -14,12 +14,9 @@
       <p class="subtitle">Monitor login events and risk decisions in real-time.</p>
     </div>
     <div class="controls">
+      <a href="/admin" class="btn btn-ghost">Back to Admin Dashboard</a>
       <a href="{{ admin_base_path }}/audit-logs" class="btn">Audit Logs</a>
       <a href="{{ admin_base_path }}/config-page" class="btn btn-primary">Configure Risk Scoring</a>
-      <form action="{{ admin_base_path }}/logout" method="post" style="display:inline;" onsubmit="return confirm('Logging out here will also sign you out of the main app. Continue?');">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <button class="btn btn-ghost" type="submit">Logout</button>
-      </form>
     </div>
   </header>
 
@@ -35,7 +32,7 @@
 
   <section class="dashboard-section">
     <h3 class="section-title">Recent Login Events</h3>
-    
+
     <div class="filter-container">
       <div class="filter-group">
         <input type="text" id="filterUsername" placeholder="Search username..." class="filter-input">
@@ -63,7 +60,7 @@
         <thead>
           <tr>
             <th>User</th>
-            <th>Time (UTC)</th>
+            <th>Time (SGT)</th>
             <th>IP</th>
             <th>Device</th>
             <th>Score</th>
@@ -75,7 +72,7 @@
           {% for e in events %}
           <tr class="{{ e.decision }}" data-username="{{ e.username }}" data-decision="{{ e.decision }}" data-score="{{ e.score }}">
             <td>{{ e.username }}</td>
-            <td>{{ e.event_time_utc }}</td>
+            <td>{{ e.event_time_sgt }}</td>
             <td>{{ e.ip_prefix or "-" }}</td>
             <td>{{ e.device_token or "-" }}</td>
             <td><strong>{{ e.score }}</strong></td>
