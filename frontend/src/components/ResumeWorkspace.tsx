@@ -165,7 +165,7 @@ export function ResumeWorkspace() {
     <div className="grid gap-6 lg:grid-cols-[340px_1fr]">
       <section className="h-fit rounded border border-zinc-200 bg-white p-5 shadow-sm">
         <h1 className="text-xl font-semibold text-zinc-950">Resumes</h1>
-        <form className="mt-5 space-y-4" onSubmit={onUpload}>
+        <form className="mt-5 space-y-4" method="post" onSubmit={onUpload}>
           <FormMessage message={message} tone="success" />
           <FormMessage message={error} tone="error" />
           <label className="block">

@@ -1,3 +1,5 @@
+from urllib.parse import urlsplit
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -37,6 +39,53 @@ app.include_router(roadmaps_router)
 app.include_router(activity_router)
 app.include_router(admin_router)
 app.mount("/risk-engine", risk_engine_app)
+
+
+SAFE_METHODS = {"GET", "HEAD", "OPTIONS", "TRACE"}
+
+
+def _origin_from_url(value: str) -> str | None:
+    try:
+        parsed = urlsplit(value)
+        _ = parsed.port
+    except ValueError:
+        return None
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return None
+    port = f":{parsed.port}" if parsed.port is not None else ""
+    return f"{parsed.scheme}://{parsed.hostname.lower()}{port}"
+
+
+def _allowed_csrf_origins(request: Request) -> set[str]:
+    request_origin = _origin_from_url(str(request.base_url))
+    configured_origin = _origin_from_url(settings.frontend_base_url)
+    return {origin for origin in {request_origin, configured_origin} if origin}
+
+
+@app.middleware("http")
+async def csrf_origin_middleware(request: Request, call_next):
+    if request.method.upper() in SAFE_METHODS:
+        return await call_next(request)
+
+    if settings.session_cookie_name not in request.cookies:
+        return await call_next(request)
+
+    origin = request.headers.get("origin")
+    referer = request.headers.get("referer")
+    supplied_origin = _origin_from_url(origin) if origin else _origin_from_url(referer or "")
+    allowed_origins = _allowed_csrf_origins(request)
+
+    if supplied_origin is None:
+        if settings.app_env.lower() == "production":
+            logger.warning("Rejected state-changing request without CSRF origin", extra={"path": request.url.path})
+            return JSONResponse(status_code=403, content={"detail": "Request origin not allowed."})
+        return await call_next(request)
+
+    if supplied_origin not in allowed_origins:
+        logger.warning("Rejected cross-site state-changing request", extra={"path": request.url.path})
+        return JSONResponse(status_code=403, content={"detail": "Request origin not allowed."})
+
+    return await call_next(request)
 
 
 @app.on_event("startup")

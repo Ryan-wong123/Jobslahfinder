@@ -39,7 +39,7 @@ export function TwoFactorVerifyPanel() {
       <h1 className="text-2xl font-semibold text-zinc-950">Two-factor verification</h1>
       <p className="mt-3 text-sm text-zinc-700">Enter the six-digit code from Microsoft Authenticator.</p>
       <FormMessage message={!challenge ? "Missing verification challenge. Sign in again." : error} tone="error" />
-      <form className="mt-6 space-y-4 rounded border border-zinc-200 bg-white p-5" onSubmit={onSubmit}>
+      <form className="mt-6 space-y-4 rounded border border-zinc-200 bg-white p-5" method="post" onSubmit={onSubmit}>
         <TextField label="Verification code" name="code" inputMode="numeric" autoComplete="one-time-code" />
         <SubmitButton pending={pending || !challenge}>Verify and continue</SubmitButton>
       </form>

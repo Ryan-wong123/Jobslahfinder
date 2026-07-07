@@ -117,6 +117,38 @@ def login(client: TestClient, *, email: str) -> None:
         assert confirm_response.status_code == 200
 
 
+def test_authenticated_unsafe_request_rejects_cross_site_origin(
+    client: TestClient, db_session: Session
+) -> None:
+    create_user(db_session, email="csrf@example.com")
+    login(client, email="csrf@example.com")
+
+    response = client.patch(
+        "/me",
+        json={"full_name": "Cross Site"},
+        headers={"Origin": "https://evil.example"},
+    )
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "Request origin not allowed."}
+
+
+def test_authenticated_unsafe_request_allows_same_origin(
+    client: TestClient, db_session: Session
+) -> None:
+    create_user(db_session, email="same-origin@example.com")
+    login(client, email="same-origin@example.com")
+
+    response = client.patch(
+        "/me",
+        json={"full_name": "Same Origin"},
+        headers={"Origin": "http://testserver"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["full_name"] == "Same Origin"
+
+
 def create_source(db_session: Session) -> JobSource:
     source = JobSource(
         source_name="JobStreet",
@@ -733,6 +765,21 @@ def test_frontend_sources_do_not_use_raw_html_rendering_for_untrusted_content() 
 
     assert "dangerouslySetInnerHTML" not in source_text
     assert ".innerHTML" not in source_text
+
+
+def test_nginx_security_headers_cover_zap_header_findings() -> None:
+    repo_root = Path(__file__).resolve().parents[3]
+    default_conf = (repo_root / "infra" / "nginx" / "default.conf").read_text(encoding="utf-8")
+    tls_conf = (repo_root / "infra" / "nginx" / "local-tls.conf").read_text(encoding="utf-8")
+    combined = f"{default_conf}\n{tls_conf}"
+
+    assert "server_tokens off;" in default_conf
+    assert "server_tokens off;" in tls_conf
+    assert "Strict-Transport-Security" in tls_conf
+    assert "Cache-Control \"no-store\"" in combined
+    assert "max-age=31536000, immutable" in combined
+    assert "'unsafe-eval'" not in combined
+    assert "connect-src 'self' ws: wss:" not in combined
 
 
 def test_shared_text_helper_rejects_or_strips_html_and_controls() -> None:

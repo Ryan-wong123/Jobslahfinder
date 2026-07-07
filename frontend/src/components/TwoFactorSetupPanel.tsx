@@ -73,7 +73,7 @@ export function TwoFactorSetupPanel() {
               {setup.secret}
             </p>
           </div>
-          <form className="space-y-4" onSubmit={onSubmit}>
+          <form className="space-y-4" method="post" onSubmit={onSubmit}>
             <TextField label="Verification code" name="code" inputMode="numeric" autoComplete="one-time-code" />
             <SubmitButton pending={pending}>Enable two-factor authentication</SubmitButton>
           </form>

@@ -51,7 +51,7 @@ export function PasswordResetConfirmForm({ initialToken = "" }: { initialToken?:
   }
 
   return (
-    <form className="space-y-4" onSubmit={onSubmit}>
+    <form className="space-y-4" method="post" onSubmit={onSubmit}>
       <FormMessage message={message} tone="success" />
       <FormMessage message={error} tone="error" />
 

@@ -208,7 +208,7 @@ export function ExtractedProfilePanel({ resumeId, editing }: { resumeId: number;
 
   if (editing) {
     return (
-      <form className="mx-auto max-w-3xl rounded border border-zinc-200 bg-white p-6 shadow-sm" onSubmit={onSubmit}>
+      <form className="mx-auto max-w-3xl rounded border border-zinc-200 bg-white p-6 shadow-sm" method="post" onSubmit={onSubmit}>
         <div className="mb-6">
           <p className="text-sm text-zinc-600">{resume.original_filename}</p>
           <h1 className="mt-1 text-2xl font-semibold text-zinc-950">Edit Extracted Profile</h1>

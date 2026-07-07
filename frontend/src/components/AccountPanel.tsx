@@ -181,7 +181,7 @@ export function AccountPanel() {
   return (
     <div className="space-y-6">
       <section className="rounded border border-zinc-200 bg-white p-6 shadow-sm">
-        <form onSubmit={onProfileUpdate}>
+        <form method="post" onSubmit={onProfileUpdate}>
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <h1 className="text-2xl font-semibold text-zinc-950">Account Profile</h1>
@@ -304,7 +304,7 @@ export function AccountPanel() {
       <div className="grid gap-6 lg:grid-cols-2">
         <section className="rounded border border-zinc-200 bg-white p-6 shadow-sm">
           <h2 className="text-lg font-semibold text-zinc-950">Password</h2>
-          <form className="mt-5 space-y-4" onSubmit={onPasswordChange}>
+          <form className="mt-5 space-y-4" method="post" onSubmit={onPasswordChange}>
             <FormMessage message={passwordMessage} tone="success" />
             <FormMessage message={passwordError} tone="error" />
             <TextField
@@ -341,7 +341,7 @@ export function AccountPanel() {
               Delete account
             </button>
           ) : (
-            <form className="mt-5 space-y-4" onSubmit={onDeleteAccount}>
+            <form className="mt-5 space-y-4" method="post" onSubmit={onDeleteAccount}>
               <FormMessage message={deleteError} tone="error" />
               <TextField
                 label="Confirm password"
