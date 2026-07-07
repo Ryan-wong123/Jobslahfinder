@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.services.email import send_password_reset_email
 
 from app.core.config import Settings
+from app.core.logging import get_logger
 from app.models.account import PasswordResetToken, Session as UserSession, User, UserProfile
 from app.models.enums import AuditOutcome, UserRole
 from app.security.passwords import hash_password, needs_rehash, verify_password
@@ -25,6 +26,7 @@ TOO_MANY_LOGIN_ATTEMPTS_ERROR = "Too many login attempts. Please try again later
 
 MAX_FAILED_LOGINS = 5
 LOCKOUT_MINUTES = 15
+logger = get_logger(__name__)
 
 
 class AccountLockedError(ValueError):
@@ -269,7 +271,7 @@ def request_password_reset(db: Session, request: Request, settings: Settings, *,
     except RuntimeError:
         delivery = "not_configured"
     except Exception as exc:
-        print(f"Password reset email delivery failed: {type(exc).__name__}: {exc}", flush=True)
+        logger.warning("Password reset email delivery failed", extra={"error_type": type(exc).__name__})
         delivery = "failed"
 
     create_audit_log(

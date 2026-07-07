@@ -387,6 +387,30 @@ def test_password_reset_request_is_generic_for_existing_and_missing_accounts(
     assert len(reset_tokens[0].token_hash) == 64
 
 
+def test_password_reset_request_does_not_print_raw_token_when_email_unconfigured(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    known_token = VALID_RESET_TOKEN
+    monkeypatch.setattr("app.services.auth.generate_token", lambda: known_token)
+    assert register(client).status_code == 201
+
+    response = client.post("/auth/password-reset/request", json={"email": "user@example.com"})
+
+    assert response.status_code == 200
+    stdio = capsys.readouterr()
+    audit = db_session.scalar(
+        select(AuditLog).where(AuditLog.event_type == "auth.password_reset_request")
+    )
+    assert audit is not None
+    combined = f"{stdio.out}\n{stdio.err}\n{audit.details_json}"
+    assert known_token not in combined
+    assert "/reset-password?token=" not in combined
+    assert audit.details_json == {"account_matched": True, "delivery": "not_configured"}
+
+
 @pytest.mark.parametrize(
     "token",
     [

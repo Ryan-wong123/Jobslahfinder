@@ -16,9 +16,6 @@ def send_password_reset_email(settings: Settings, *, to_email: str, token: str) 
     reset_url = build_password_reset_url(settings, token)
 
     if not settings.smtp_host or not settings.smtp_from_email:
-        if settings.app_env.lower() != "production":
-            print(f"\n\nPASSWORD RESET LINK FOR {to_email}:\n{reset_url}\n\n", flush=True)
-            return
         raise RuntimeError("Password reset email delivery is not configured.")
 
     message = EmailMessage()
