@@ -140,7 +140,7 @@ def test_authenticated_unsafe_request_allows_same_origin(
     login(client, email="same-origin@example.com")
 
     response = client.patch(
-        "/me",
+        "/me/profile",
         json={"full_name": "Same Origin"},
         headers={"Origin": "http://testserver"},
     )
