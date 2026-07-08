@@ -21,7 +21,7 @@
 
   <section class="dashboard-section">
     <h3 class="section-title">Recent Admin Activity</h3>
-    <form class="filter-container" method="get" action="{{ admin_base_path }}/audit-logs">
+    <form class="filter-container" method="get" action="{{ admin_base_path }}/audit-logs" id="auditLogFilters">
       <div class="filter-group">
         <select class="filter-select" name="action">
           <option value="">All Actions</option>
@@ -119,6 +119,16 @@
     </div>
   </section>
 </div>
+
+<script>
+  document.getElementById('auditLogFilters').addEventListener('submit', function () {
+    this.querySelectorAll('input, select').forEach(function (field) {
+      if (!field.value.trim()) {
+        field.disabled = true;
+      }
+    });
+  });
+</script>
 
 </body>
 </html>
