@@ -54,6 +54,7 @@
         <button id="clearFilters" type="button" class="btn btn-secondary btn-small">Clear Filters</button>
       </div>
     </div>
+    <p id="filterSummary" class="section-note"></p>
     
     <div class="table-container">
       <table>
@@ -70,7 +71,7 @@
         </thead>
         <tbody id="eventsTableBody">
           {% for e in events %}
-          <tr class="{{ e.decision }}" data-username="{{ e.username }}" data-decision="{{ e.decision }}" data-score="{{ e.score }}">
+          <tr class="{{ e.decision }}" data-filter-row="true" data-username="{{ e.username }}" data-decision="{{ e.decision }}" data-score="{{ e.score }}">
             <td>{{ e.username }}</td>
             <td>{{ e.event_time_sgt }}</td>
             <td>{{ e.ip_prefix or "-" }}</td>
@@ -80,6 +81,9 @@
             <td class="reasons-cell">{{ e.reasons }}</td>
           </tr>
           {% endfor %}
+          <tr id="noFilterResults" hidden>
+            <td colspan="7">No login events match the selected filters.</td>
+          </tr>
         </tbody>
       </table>
     </div>
@@ -87,59 +91,71 @@
 </div>
 
 <script>
-  // Filter functionality
-  function applyFilters() {
-    const usernameFilter = document.getElementById('filterUsername').value.toLowerCase();
-    const decisionFilter = document.getElementById('filterDecision').value.toLowerCase();
-    const minScore = document.getElementById('filterMinScore').value;
-    const maxScore = document.getElementById('filterMaxScore').value;
+  document.addEventListener('DOMContentLoaded', function () {
+    const usernameInput = document.getElementById('filterUsername');
+    const decisionInput = document.getElementById('filterDecision');
+    const minScoreInput = document.getElementById('filterMinScore');
+    const maxScoreInput = document.getElementById('filterMaxScore');
+    const clearButton = document.getElementById('clearFilters');
+    const summary = document.getElementById('filterSummary');
+    const noResultsRow = document.getElementById('noFilterResults');
+    const rows = Array.from(document.querySelectorAll('#eventsTableBody tr[data-filter-row="true"]'));
 
-    const rows = document.querySelectorAll('#eventsTableBody tr');
-    let visibleCount = 0;
+    function normalize(value) {
+      return (value || '').toString().trim().toLowerCase();
+    }
 
-    rows.forEach(row => {
-      const username = (row.getAttribute('data-username') || '').toLowerCase();
-      const decision = (row.getAttribute('data-decision') || '').toLowerCase();
-      const score = parseInt(row.getAttribute('data-score') || '0');
+    function rowDecision(row) {
+      return normalize(row.dataset.decision || row.cells[5]?.textContent);
+    }
 
-      let show = true;
+    function rowScore(row) {
+      const parsed = Number.parseInt(row.dataset.score || row.cells[4]?.textContent || '0', 10);
+      return Number.isNaN(parsed) ? 0 : parsed;
+    }
 
-      // Username filter
-      if (usernameFilter && !username.includes(usernameFilter)) {
-        show = false;
-      }
+    function applyFilters() {
+      const usernameFilter = normalize(usernameInput.value);
+      const decisionFilter = normalize(decisionInput.value);
+      const minScore = minScoreInput.value === '' ? null : Number.parseInt(minScoreInput.value, 10);
+      const maxScore = maxScoreInput.value === '' ? null : Number.parseInt(maxScoreInput.value, 10);
+      let visibleCount = 0;
 
-      // Decision filter
-      if (decisionFilter && decision !== decisionFilter) {
-        show = false;
-      }
+      rows.forEach(function (row) {
+        const username = normalize(row.dataset.username || row.cells[0]?.textContent);
+        const decision = rowDecision(row);
+        const score = rowScore(row);
+        const matches =
+          (!usernameFilter || username.includes(usernameFilter)) &&
+          (!decisionFilter || decision === decisionFilter) &&
+          (minScore === null || score >= minScore) &&
+          (maxScore === null || score <= maxScore);
 
-      // Min score filter
-      if (minScore && score < parseInt(minScore)) {
-        show = false;
-      }
+        row.hidden = !matches;
+        if (matches) {
+          visibleCount += 1;
+        }
+      });
 
-      // Max score filter
-      if (maxScore && score > parseInt(maxScore)) {
-        show = false;
-      }
+      noResultsRow.hidden = visibleCount > 0 || rows.length === 0;
+      summary.textContent = rows.length
+        ? `Showing ${visibleCount} of ${rows.length} login events`
+        : 'No login events available';
+    }
 
-      row.style.display = show ? '' : 'none';
-      if (show) visibleCount++;
+    usernameInput.addEventListener('input', applyFilters);
+    decisionInput.addEventListener('change', applyFilters);
+    minScoreInput.addEventListener('input', applyFilters);
+    maxScoreInput.addEventListener('input', applyFilters);
+
+    clearButton.addEventListener('click', function () {
+      usernameInput.value = '';
+      decisionInput.value = '';
+      minScoreInput.value = '';
+      maxScoreInput.value = '';
+      applyFilters();
     });
-  }
 
-  // Attach event listeners
-  document.getElementById('filterUsername').addEventListener('input', applyFilters);
-  document.getElementById('filterDecision').addEventListener('change', applyFilters);
-  document.getElementById('filterMinScore').addEventListener('input', applyFilters);
-  document.getElementById('filterMaxScore').addEventListener('input', applyFilters);
-
-  document.getElementById('clearFilters').addEventListener('click', function() {
-    document.getElementById('filterUsername').value = '';
-    document.getElementById('filterDecision').value = '';
-    document.getElementById('filterMinScore').value = '';
-    document.getElementById('filterMaxScore').value = '';
     applyFilters();
   });
 </script>
