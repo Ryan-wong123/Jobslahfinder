@@ -220,10 +220,6 @@ def dashboard(
     db: Session = Depends(get_db),
     app_db: Session = Depends(get_app_db),
     settings: Settings = Depends(get_settings),
-    username: str = Query("", max_length=254),
-    decision: str = Query("", max_length=20),
-    min_score: int | None = Query(None, ge=0, le=1000),
-    max_score: int | None = Query(None, ge=0, le=1000),
 ):
     try:
         admin_user = require_app_admin(request, app_db, settings)
@@ -233,22 +229,12 @@ def dashboard(
         log_admin_access(request, admin_user=admin_user, page="dashboard")
         request.session["risk_dashboard_access_logged_for_user"] = admin_user.id
 
-    username_filter = username.strip().lower()
-    decision_filter = decision.strip().lower()
-    if decision_filter not in {"", "allow", "challenge", "block"}:
-        decision_filter = ""
-
-    query = db.query(LoginEvent)
-    if username_filter:
-        query = query.filter(func.lower(LoginEvent.username).contains(username_filter))
-    if decision_filter:
-        query = query.filter(LoginEvent.decision == decision_filter)
-    if min_score is not None:
-        query = query.filter(LoginEvent.score >= min_score)
-    if max_score is not None:
-        query = query.filter(LoginEvent.score <= max_score)
-
-    raw_events = query.order_by(LoginEvent.event_time_utc.desc()).limit(500).all()
+    raw_events = (
+        db.query(LoginEvent)
+        .order_by(LoginEvent.event_time_utc.desc())
+        .limit(500)
+        .all()
+    )
 
     events = [
         {
@@ -289,12 +275,6 @@ def dashboard(
         context={
             **_template_context(request),
             "events": events,
-            "filters": {
-                "username": username.strip(),
-                "decision": decision_filter,
-                "min_score": "" if min_score is None else min_score,
-                "max_score": "" if max_score is None else max_score,
-            },
             "show_config_warning": show_config_warning,
             "config_change_date": config_change_date,
             "csrf_token": get_csrf_token(request)
@@ -494,13 +474,19 @@ def audit_logs_page(
     request: Request,
     audit_db: Session = Depends(get_audit_db),
     admin_user: User = Depends(require_app_admin),
-    action: str | None = Query(default=None, min_length=1, max_length=100),
-    status_filter: str | None = Query(default=None, alias="status", pattern="^(success|failure|error)$"),
-    actor: str | None = Query(default=None, min_length=1, max_length=255),
+    action: str = Query(default="", max_length=100),
+    status_filter: str = Query(default="", alias="status", max_length=20),
+    actor: str = Query(default="", max_length=255),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=5, le=100),
 ):
     """View audit logs."""
+    action = action.strip()
+    status_filter = status_filter.strip()
+    actor = actor.strip()
+    if status_filter not in {"", "success", "failure", "error"}:
+        status_filter = ""
+
     filters = []
     if action:
         filters.append(AuditLog.action == action)
