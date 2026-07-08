@@ -519,10 +519,13 @@ For container images, build first and then scan the produced images with Trivy.
 
 GitHub Actions workflows live under `.github/workflows/`:
 
-- `backend-tests.yml` installs the backend with dev dependencies, starts CI PostgreSQL and Redis services, and runs `pytest` with coverage.
-- `frontend-quality.yml` installs frontend dependencies with `npm ci`, runs lint, typecheck, source/flow frontend tests, builds the app, and runs the Selenium smoke suite against a local Next server.
-- `database-migrations.yml` applies Alembic migrations to a CI-only PostgreSQL service using placeholder credentials.
-- `security-scans.yml` runs Bandit, Python dependency auditing, `npm audit`, Gitleaks, and Trivy filesystem/config/security scanning.
+- `ci-cd.yml` is the consolidated CI/CD workflow for backend tests, migration checks, frontend quality gates, security scanning, Docker validation/builds, and production deployment.
+- The `Backend Tests` job installs the backend with dev dependencies, starts CI PostgreSQL and Redis services, and runs `pytest` with coverage.
+- The `Database Migration Check` job inspects Alembic heads, applies migrations to a CI-only PostgreSQL service using placeholder credentials, and verifies the current migration.
+- The `Frontend Checks` job installs frontend dependencies with `npm ci`, runs lint, typecheck, source/flow frontend tests, builds the app, and runs the Selenium smoke suite against a local Next server.
+- The `Security Checks` job runs Bandit, Python dependency auditing, `npm audit`, Gitleaks, and Trivy filesystem/config/security scanning.
+- The `Docker Build` job validates the Docker Compose configuration and builds the backend, frontend, worker, and beat images.
+- The `Deploy To EC2` job runs only for manual workflow dispatch or pushes to `main` after all required jobs pass, then deploys to the configured EC2 host using repository secrets.
 
 The workflows use read-only repository permissions and run on `push` and `pull_request` without `pull_request_target`, so untrusted pull request code is not executed with write tokens. CI is configured to fail closed on backend test failures, frontend lint/type/build failures, migration errors, committed secrets, and high or critical dependency/security findings.
 
