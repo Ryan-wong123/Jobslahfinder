@@ -57,7 +57,7 @@ class Settings(BaseSettings):
         default=30, validation_alias="PASSWORD_RESET_EXPIRE_MINUTES"
     )
 
-    frontend_base_url: str = Field(default="http://localhost:8080", validation_alias="FRONTEND_BASE_URL")
+    frontend_base_url: str = Field(default="http://18.218.236.144", validation_alias="FRONTEND_BASE_URL")
     smtp_host: str | None = Field(default=None, validation_alias="SMTP_HOST")
     smtp_port: int = Field(default=587, validation_alias="SMTP_PORT")
     smtp_username: str | None = Field(default=None, validation_alias="SMTP_USERNAME")
