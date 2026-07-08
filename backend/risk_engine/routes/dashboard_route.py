@@ -220,6 +220,10 @@ def dashboard(
     db: Session = Depends(get_db),
     app_db: Session = Depends(get_app_db),
     settings: Settings = Depends(get_settings),
+    username: str = Query("", max_length=254),
+    decision: str = Query("", max_length=20),
+    min_score: int | None = Query(None, ge=0, le=1000),
+    max_score: int | None = Query(None, ge=0, le=1000),
 ):
     try:
         admin_user = require_app_admin(request, app_db, settings)
@@ -229,12 +233,22 @@ def dashboard(
         log_admin_access(request, admin_user=admin_user, page="dashboard")
         request.session["risk_dashboard_access_logged_for_user"] = admin_user.id
 
-    raw_events = (
-    db.query(LoginEvent)
-    .order_by(LoginEvent.event_time_utc.desc())
-    .limit(500)
-    .all()
-    )
+    username_filter = username.strip().lower()
+    decision_filter = decision.strip().lower()
+    if decision_filter not in {"", "allow", "challenge", "block"}:
+        decision_filter = ""
+
+    query = db.query(LoginEvent)
+    if username_filter:
+        query = query.filter(func.lower(LoginEvent.username).contains(username_filter))
+    if decision_filter:
+        query = query.filter(LoginEvent.decision == decision_filter)
+    if min_score is not None:
+        query = query.filter(LoginEvent.score >= min_score)
+    if max_score is not None:
+        query = query.filter(LoginEvent.score <= max_score)
+
+    raw_events = query.order_by(LoginEvent.event_time_utc.desc()).limit(500).all()
 
     events = [
         {
@@ -275,6 +289,12 @@ def dashboard(
         context={
             **_template_context(request),
             "events": events,
+            "filters": {
+                "username": username.strip(),
+                "decision": decision_filter,
+                "min_score": "" if min_score is None else min_score,
+                "max_score": "" if max_score is None else max_score,
+            },
             "show_config_warning": show_config_warning,
             "config_change_date": config_change_date,
             "csrf_token": get_csrf_token(request)

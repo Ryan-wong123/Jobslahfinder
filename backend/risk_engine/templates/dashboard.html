@@ -33,27 +33,28 @@
   <section class="dashboard-section">
     <h3 class="section-title">Recent Login Events</h3>
 
-    <div class="filter-container">
+    <form class="filter-container" method="get" action="{{ admin_base_path }}/dashboard">
       <div class="filter-group">
-        <input type="text" id="filterUsername" placeholder="Search username..." class="filter-input">
+        <input type="text" id="filterUsername" name="username" value="{{ filters.username }}" placeholder="Search username..." class="filter-input">
       </div>
       <div class="filter-group">
-        <select id="filterDecision" class="filter-select">
+        <select id="filterDecision" name="decision" class="filter-select">
           <option value="">All Decisions</option>
-          <option value="allow">Allow</option>
-          <option value="challenge">Challenge</option>
-          <option value="block">Block</option>
+          <option value="allow" {% if filters.decision == "allow" %}selected{% endif %}>Allow</option>
+          <option value="challenge" {% if filters.decision == "challenge" %}selected{% endif %}>Challenge</option>
+          <option value="block" {% if filters.decision == "block" %}selected{% endif %}>Block</option>
         </select>
       </div>
       <div class="filter-group">
-        <input type="number" id="filterMinScore" placeholder="Min score" class="filter-input filter-input-small">
+        <input type="number" id="filterMinScore" name="min_score" value="{{ filters.min_score }}" min="0" max="1000" placeholder="Min score" class="filter-input filter-input-small">
         <span class="filter-separator">–</span>
-        <input type="number" id="filterMaxScore" placeholder="Max score" class="filter-input filter-input-small">
+        <input type="number" id="filterMaxScore" name="max_score" value="{{ filters.max_score }}" min="0" max="1000" placeholder="Max score" class="filter-input filter-input-small">
       </div>
       <div class="filter-group">
-        <button id="clearFilters" class="btn btn-secondary btn-small">Clear Filters</button>
+        <button type="submit" class="btn btn-primary btn-small">Apply</button>
+        <a href="{{ admin_base_path }}/dashboard" id="clearFilters" class="btn btn-secondary btn-small">Clear Filters</a>
       </div>
-    </div>
+    </form>
     
     <div class="table-container">
       <table>
