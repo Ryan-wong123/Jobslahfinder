@@ -58,7 +58,7 @@ APP_ENV=production
 DEBUG=false
 API_HOST=0.0.0.0
 NEXT_PUBLIC_API_BASE_URL=/api
-FRONTEND_BASE_URL=http://18.218.236.144
+FRONTEND_BASE_URL=https://18.218.236.144
 ```
 
 Do not commit `.env`.
