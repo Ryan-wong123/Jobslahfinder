@@ -88,9 +88,6 @@
 </div>
 
 <script>
-  // Use JSON.parse to avoid editor false-positives on template syntax.
-  const EVENTS = JSON.parse('{{ events | tojson | safe }}');
-
   // Filter functionality
   function applyFilters() {
     const usernameFilter = document.getElementById('filterUsername').value.toLowerCase();
@@ -102,9 +99,9 @@
     let visibleCount = 0;
 
     rows.forEach(row => {
-      const username = row.getAttribute('data-username').toLowerCase();
-      const decision = row.getAttribute('data-decision').toLowerCase();
-      const score = parseInt(row.getAttribute('data-score'));
+      const username = (row.getAttribute('data-username') || '').toLowerCase();
+      const decision = (row.getAttribute('data-decision') || '').toLowerCase();
+      const score = parseInt(row.getAttribute('data-score') || '0');
 
       let show = true;
 
