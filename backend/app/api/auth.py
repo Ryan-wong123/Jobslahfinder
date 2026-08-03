@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
@@ -71,6 +73,7 @@ from risk_engine.config import COOKIE_NAME, TOKEN_TTL_DAYS
 
 
 router = APIRouter(tags=["auth"])
+logger = logging.getLogger(__name__)
 
 
 def set_session_cookie(response: Response, settings: Settings, token: str) -> None:
@@ -221,6 +224,9 @@ def login(
         },
     )
     db.commit()
+
+    logger.info("Login successful.")
+    print("Login successful.")
 
     if not user.totp_enabled:
         token, _session = create_session(db, request, settings, user=user)
