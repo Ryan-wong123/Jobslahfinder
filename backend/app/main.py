@@ -91,6 +91,7 @@ async def csrf_origin_middleware(request: Request, call_next):
 @app.on_event("startup")
 def startup() -> None:
     init_risk_engine_storage()
+    print("Website just started")
 
 
 @app.exception_handler(RequestValidationError)
