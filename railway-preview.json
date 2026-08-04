@@ -5,14 +5,13 @@
         "name": "backend",
         "root_directory": "/backend",
         "dockerfile_path": "/backend/Dockerfile",
-        "public": false
+        "public": true
       },
       {
         "name": "frontend",
         "root_directory": "/frontend",
         "dockerfile_path": "/frontend/Dockerfile",
-        "public": true,
-        "backend_service": "backend"
+        "public": true
       }
     ]
   }
