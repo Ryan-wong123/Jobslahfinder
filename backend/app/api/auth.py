@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
 from app.core.database import get_db
+from app.core.logging import get_logger
 from app.core.rate_limit import rate_limit_auth
 from app.schemas.auth import (
     AccountDeletionRequest,
@@ -71,6 +72,13 @@ from risk_engine.config import COOKIE_NAME, TOKEN_TTL_DAYS
 
 
 router = APIRouter(tags=["auth"])
+logger = get_logger(__name__)
+
+
+def report_successful_login() -> None:
+    """Emit a generic success message without exposing authentication data."""
+    logger.info("Login successful")
+    print("Login successful")
 
 
 def set_session_cookie(response: Response, settings: Settings, token: str) -> None:
@@ -225,6 +233,7 @@ def login(
     if not user.totp_enabled:
         token, _session = create_session(db, request, settings, user=user)
         set_session_cookie(response, settings, token)
+        report_successful_login()
         return LoginResponse(message="Two-factor setup required.", requires_2fa_setup=True)
 
     if risk.decision == "challenge":
@@ -254,6 +263,7 @@ def login(
         device_token=learned_device_token,
         ip_prefix=risk.ip_prefix,
     )
+    report_successful_login()
     return LoginResponse(message="Logged in.")
 
 
@@ -421,6 +431,7 @@ def two_factor_verify(
         device_token=learned_device_token,
         ip_prefix=challenge.ip_prefix,
     )
+    report_successful_login()
     return LoginResponse(message="Logged in.")
 
 
