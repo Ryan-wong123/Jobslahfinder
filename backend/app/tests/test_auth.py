@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Generator
 from datetime import timedelta
 
@@ -121,6 +122,25 @@ def test_successful_login_sets_httponly_cookie_and_stores_hashed_session(
     assert session.session_token_hash != raw_cookie
     assert session.session_token_hash == hash_token(raw_cookie, get_settings().session_secret)
     assert response.json()["requires_2fa_setup"] is True
+
+
+def test_successful_login_is_logged_and_printed(
+    client: TestClient,
+    caplog: pytest.LogCaptureFixture,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert register(client).status_code == 201
+
+    capsys.readouterr()
+    with caplog.at_level(logging.INFO, logger="app.api.auth"):
+        response = client.post(
+            "/auth/login",
+            json={"email": "user@example.com", "password": STRONG_PASSWORD},
+        )
+
+    assert response.status_code == 200
+    assert "Login successful." in caplog.messages
+    assert capsys.readouterr().out == "Login successful.\n"
 
 
 def test_failed_login_uses_generic_error_and_logs_failure(
