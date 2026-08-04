@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
@@ -70,7 +72,14 @@ from app.services.auth import utc_now
 from risk_engine.config import COOKIE_NAME, TOKEN_TTL_DAYS
 
 
+logger = logging.getLogger(__name__)
 router = APIRouter(tags=["auth"])
+
+
+def report_successful_login(*, user_id: int) -> None:
+    """Report a completed login without exposing user credentials or PII."""
+    logger.info("Login successful", extra={"user_id": user_id})
+    print("Login successful")
 
 
 def set_session_cookie(response: Response, settings: Settings, token: str) -> None:
@@ -225,6 +234,7 @@ def login(
     if not user.totp_enabled:
         token, _session = create_session(db, request, settings, user=user)
         set_session_cookie(response, settings, token)
+        report_successful_login(user_id=user.id)
         return LoginResponse(message="Two-factor setup required.", requires_2fa_setup=True)
 
     if risk.decision == "challenge":
@@ -254,6 +264,7 @@ def login(
         device_token=learned_device_token,
         ip_prefix=risk.ip_prefix,
     )
+    report_successful_login(user_id=user.id)
     return LoginResponse(message="Logged in.")
 
 
@@ -421,6 +432,7 @@ def two_factor_verify(
         device_token=learned_device_token,
         ip_prefix=challenge.ip_prefix,
     )
+    report_successful_login(user_id=user.id)
     return LoginResponse(message="Logged in.")
 
 
