@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
 from app.core.database import get_db
+from app.core.logging import get_logger
 from app.core.rate_limit import rate_limit_auth
 from app.schemas.auth import (
     AccountDeletionRequest,
@@ -70,6 +71,7 @@ from app.services.auth import utc_now
 from risk_engine.config import COOKIE_NAME, TOKEN_TTL_DAYS
 
 
+logger = get_logger(__name__)
 router = APIRouter(tags=["auth"])
 
 
@@ -203,6 +205,9 @@ def login(
 
     if _auth_exc is not None:
         raise _auth_exc
+
+    logger.info("Login successful")
+    print("Login successful")
 
     # At this point risk.decision is never "block" (already raised above).
     create_audit_log(

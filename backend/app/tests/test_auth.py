@@ -103,13 +103,19 @@ def test_duplicate_registration_returns_safe_error(client: TestClient) -> None:
 
 
 def test_successful_login_sets_httponly_cookie_and_stores_hashed_session(
-    client: TestClient, db_session: Session
+    client: TestClient,
+    db_session: Session,
+    caplog: pytest.LogCaptureFixture,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     assert register(client).status_code == 201
 
-    response = login(client)
+    with caplog.at_level("INFO", logger="app.api.auth"):
+        response = login(client)
 
     assert response.status_code == 200
+    assert "Login successful" in caplog.messages
+    assert "Login successful" in capsys.readouterr().out
     cookie = response.headers["set-cookie"]
     assert "HttpOnly" in cookie
     assert "SameSite=lax" in cookie
