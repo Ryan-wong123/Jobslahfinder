@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
 from app.core.database import get_db
+from app.core.logging import get_logger
 from app.core.rate_limit import rate_limit_auth
 from app.schemas.auth import (
     AccountDeletionRequest,
@@ -71,6 +72,7 @@ from risk_engine.config import COOKIE_NAME, TOKEN_TTL_DAYS
 
 
 router = APIRouter(tags=["auth"])
+logger = get_logger(__name__)
 
 
 def set_session_cookie(response: Response, settings: Settings, token: str) -> None:
@@ -221,6 +223,9 @@ def login(
         },
     )
     db.commit()
+
+    logger.info("Login successful")
+    print("Login successful")
 
     if not user.totp_enabled:
         token, _session = create_session(db, request, settings, user=user)
