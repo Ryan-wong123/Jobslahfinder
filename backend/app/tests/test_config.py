@@ -12,6 +12,10 @@ def test_config_loads_from_environment() -> None:
     assert "sg.jobstreet.com" in settings.allowed_job_source_domains
     assert "www.fastjobs.sg" in settings.allowed_job_source_domains
     assert settings.debug is False
+    assert settings.role_discovery_model_name == "sentence-transformers/all-MiniLM-L6-v2"
+    assert settings.role_discovery_dbscan_eps == 0.3
+    assert settings.role_discovery_dbscan_min_samples == 5
+    assert settings.role_discovery_require_admin_approval is True
 
 
 def base_settings_kwargs() -> dict[str, object]:
@@ -38,6 +42,10 @@ def base_settings_kwargs() -> dict[str, object]:
         ("ALLOWED_JOB_SOURCE_DOMAINS", "https://sg.jobstreet.com/path"),
         ("SMTP_HOST", "smtp.example.com:587"),
         ("SMTP_FROM_EMAIL", "not-an-email"),
+        ("ROLE_DISCOVERY_MODEL_NAME", "   "),
+        ("ROLE_DISCOVERY_DBSCAN_EPS", 0),
+        ("ROLE_DISCOVERY_DBSCAN_MIN_SAMPLES", 1),
+        ("ROLE_DISCOVERY_REQUIRE_ADMIN_APPROVAL", False),
     ],
 )
 def test_config_rejects_malformed_security_sensitive_values(field: str, value: object) -> None:
