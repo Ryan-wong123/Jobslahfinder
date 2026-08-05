@@ -8,7 +8,7 @@ from app.models.account import User
 from app.core.config import Settings, get_settings
 from app.schemas.auth import MessageResponse
 from app.schemas.activity import CoverLetterResponse, InterviewQuestionsResponse
-from app.schemas.jobs import JobDetailResponse, JobListResponse, SalaryTrendResponse, SavedJobListResponse, SavedJobResponse
+from app.schemas.jobs import JobDetailResponse, JobListResponse, SalaryComparisonQuery, SalaryComparisonResponse, SalaryTrendResponse, SavedJobListResponse, SavedJobResponse
 from app.security.auth import require_authenticated_user
 from app.core.rate_limit import rate_limit_auth
 from app.services.activity import (
@@ -24,6 +24,7 @@ from app.services.jobs import (
     JobNotFoundError,
     get_visible_job_detail,
     get_salary_trend,
+    get_salary_comparison,
     list_jobs,
     list_saved_jobs_for_user,
     save_job_for_user,
@@ -86,6 +87,16 @@ def salary_trends(
 ) -> SalaryTrendResponse:
     rate_limit_auth(request, "salary-trends", limit=60, window_seconds=300)
     return get_salary_trend(db, role=role, months=months)
+
+
+@router.get("/jobs/salary-comparison", response_model=SalaryComparisonResponse)
+def salary_comparison(
+    request: Request,
+    query: Annotated[SalaryComparisonQuery, Query()],
+    db: Session = Depends(get_db),
+) -> SalaryComparisonResponse:
+    rate_limit_auth(request, "salary-comparison", limit=60, window_seconds=300)
+    return get_salary_comparison(db, roles=query.roles, page=query.page, page_size=query.page_size)
 
 
 @router.get("/jobs/{job_id}", response_model=JobDetailResponse)

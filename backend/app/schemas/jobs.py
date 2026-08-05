@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class JobSourceResponse(BaseModel):
@@ -56,6 +56,11 @@ class JobSummaryResponse(BaseModel):
     salary_currency: str | None = None
     salary_period: str | None = None
     minimum_experience: str | None = None
+    employment_type: str | None = None
+    workplace_type: str | None = None
+    seniority_level: str | None = None
+    skills: list[str] | None = None
+    closing_date: date | None = None
     source: JobSourcePublicResponse
     posting_date: date | None
     scraped_at: datetime
@@ -95,6 +100,57 @@ class SalaryTrendResponse(BaseModel):
     period: str
     points: list[SalaryTrendPointResponse]
     sample_size: int
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class SalaryComparisonQuery(BaseModel):
+    roles: list[str] = Field(min_length=2, max_length=4)
+    page: int = Field(default=1, ge=1, le=1000)
+    page_size: int = Field(default=4, ge=1, le=4)
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("roles")
+    @classmethod
+    def validate_roles(cls, roles: list[str]) -> list[str]:
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        for role in roles:
+            normalized = " ".join(role.split())
+            if not 2 <= len(normalized) <= 100:
+                raise ValueError("Each role must contain between 2 and 100 characters.")
+            if not all(character.isalnum() or character in " ., &()+#/'-_" for character in normalized):
+                raise ValueError("A role contains unsupported characters.")
+            key = normalized.casefold()
+            if key in seen:
+                raise ValueError("Roles must be unique.")
+            seen.add(key)
+            cleaned.append(normalized)
+        return cleaned
+
+
+class SalaryComparisonItemResponse(BaseModel):
+    role: str
+    currency: str = "SGD"
+    period: str = "month"
+    minimum_salary: float | None
+    maximum_salary: float | None
+    median_salary: float | None
+    average_salary: float | None
+    valid_posting_count: int = Field(ge=0)
+    median_minimum_experience_years: float | None
+    experience_data_coverage_percentage: float = Field(ge=0, le=100)
+    statistics_available: bool
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class SalaryComparisonResponse(BaseModel):
+    items: list[SalaryComparisonItemResponse]
+    page: int
+    page_size: int
+    total: int
 
     model_config = ConfigDict(extra="forbid")
 

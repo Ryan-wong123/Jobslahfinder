@@ -1,5 +1,11 @@
 # Secure Architecture
 
+## Salary Comparison Contract
+
+`GET /jobs/salary-comparison` accepts two to four unique `roles` query parameters, together with `page` and a bounded `page_size` of one to four. The jobs service matches each role against active, non-suspicious postings and returns one comparison record per selected role. Each record contains normalized monthly SGD minimum, maximum, median, and average salary, valid posting count, median minimum-experience years, experience-data coverage, and an explicit statistics-availability flag. Salary statistics are null when fewer than five valid postings are available. Pagination is applied to the ordered role records and reports the total number of selected roles.
+
+Salary and experience aggregation remains in the service layer, while Pydantic request and response models enforce the API contract. Scraped metadata remains untrusted: only active non-suspicious records with explicit SGD currency and a supported monthly, annual, or hourly period contribute salary values. Invalid or ambiguous experience values are excluded from the experience median and coverage numerator.
+
 ## 1. Architecture Goals
 
 The architecture must support:

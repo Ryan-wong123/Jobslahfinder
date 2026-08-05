@@ -182,6 +182,9 @@ Cannot:
 - **FR14 Redirect to original job source:** The system shall allow users to access the original job posting website through the provided application link.
 - **FR16 Duplicate job handling:** The system shall detect and manage duplicate job postings collected from one or more job sources.
 - **FR17 Scraping job monitoring:** The system shall allow administrators to view the execution status of scraping tasks, including successful runs, failed runs, and the number of job postings retrieved.
+- **FR26 Salary comparison:** The system shall permit comparison of two to four distinct job roles. It shall present paginated monthly SGD salary statistics and minimum-experience indicators for each selected role. Salary statistics shall be withheld unless at least five valid salary postings are available for the role.
+
+Salary comparison shall normalize annual salary by dividing by 12 and hourly salary by multiplying by 173.33. The minimum and maximum shall use the normalized range boundaries, while the median and average shall use normalized posting midpoints. Missing or ambiguous experience information shall remain null and shall not be treated as zero. Explicit fresh-graduate or no-experience wording shall normalize to zero years; ranges shall use their lower bound; and values above 50 years shall be excluded as invalid. Experience coverage shall be reported as the percentage of matched visible postings that contain a valid normalized minimum-experience value.
 
 ### 7.2 Resume and Profile
 

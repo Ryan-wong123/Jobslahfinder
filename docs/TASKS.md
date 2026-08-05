@@ -2,6 +2,8 @@
 
 # Implementation Tasks
 
+- [~] Issue #47: implement paginated salary comparison with normalized monthly SGD salary, experience metrics, nullable job metadata, migration, tests, and documentation. Code and focused tests are present; mark complete only after the test suite is executed successfully.
+
 ## Purpose
 This file is the implementation checklist for the Secure AI-Assisted Job Aggregation and Application Support Platform.
 
