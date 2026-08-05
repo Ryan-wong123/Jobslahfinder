@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class JobSourceResponse(BaseModel):
@@ -95,6 +95,39 @@ class SalaryTrendResponse(BaseModel):
     period: str
     points: list[SalaryTrendPointResponse]
     sample_size: int
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class SalaryComparisonQuery(BaseModel):
+    roles: list[str] = Field(min_length=2, max_length=4)
+    months: int = Field(default=12, ge=1, le=24)
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("roles")
+    @classmethod
+    def validate_roles(cls, roles: list[str]) -> list[str]:
+        cleaned_roles: list[str] = []
+        seen_roles: set[str] = set()
+        for role in roles:
+            cleaned_role = role.strip()
+            if not 2 <= len(cleaned_role) <= 100:
+                raise ValueError("Each role must be between 2 and 100 characters.")
+            if not all(character.isalnum() or character in " _.,&()+#/'-" for character in cleaned_role):
+                raise ValueError("Role contains unsupported characters.")
+
+            normalized_role = cleaned_role.casefold()
+            if normalized_role in seen_roles:
+                raise ValueError("Roles must be unique.")
+            seen_roles.add(normalized_role)
+            cleaned_roles.append(cleaned_role)
+        return cleaned_roles
+
+
+class SalaryComparisonResponse(BaseModel):
+    comparisons: list[SalaryTrendResponse]
+    months: int
 
     model_config = ConfigDict(extra="forbid")
 

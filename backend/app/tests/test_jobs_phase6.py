@@ -236,6 +236,80 @@ def test_salary_trends_use_monthly_salary_samples(client: TestClient, db_session
     assert body["points"] == [{"period": "2026-04", "average_salary": 8000.0, "sample_count": 2}]
 
 
+def test_salary_comparison_returns_two_to_four_role_trends(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    source = create_source(db_session)
+    create_job(
+        db_session,
+        source,
+        title="Software Engineer",
+        salary_min=5000,
+        salary_max=7000,
+        salary_period="month",
+    )
+    create_job(
+        db_session,
+        source,
+        title="Data Analyst",
+        salary_min=72000,
+        salary_max=72000,
+        salary_period="year",
+    )
+
+    response = client.get(
+        "/jobs/salary-comparison",
+        params=[("roles", " Software Engineer "), ("roles", "Data Analyst"), ("months", "6")],
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "comparisons": [
+            {
+                "role": "Software Engineer",
+                "currency": "SGD",
+                "period": "month",
+                "points": [{"period": "2026-04", "average_salary": 6000.0, "sample_count": 1}],
+                "sample_size": 1,
+            },
+            {
+                "role": "Data Analyst",
+                "currency": "SGD",
+                "period": "month",
+                "points": [{"period": "2026-04", "average_salary": 6000.0, "sample_count": 1}],
+                "sample_size": 1,
+            },
+        ],
+        "months": 6,
+    }
+
+
+def test_salary_comparison_validates_role_count_and_unique_safe_roles(client: TestClient) -> None:
+    assert client.get("/jobs/salary-comparison", params={"roles": "Software Engineer"}).status_code == 422
+    assert (
+        client.get(
+            "/jobs/salary-comparison",
+            params=[("roles", "Software Engineer"), ("roles", "software engineer")],
+        ).status_code
+        == 422
+    )
+    assert (
+        client.get(
+            "/jobs/salary-comparison",
+            params=[("roles", "Software Engineer"), ("roles", "<script>alert(1)</script>")],
+        ).status_code
+        == 422
+    )
+    assert (
+        client.get(
+            "/jobs/salary-comparison",
+            params=[("roles", f"Role {index}") for index in range(5)],
+        ).status_code
+        == 422
+    )
+
+
 def test_job_role_catalog_and_detail_are_derived_from_visible_jobs(client: TestClient, db_session: Session) -> None:
     source = create_source(db_session)
     create_job(
