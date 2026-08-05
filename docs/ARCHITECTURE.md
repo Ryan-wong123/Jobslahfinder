@@ -2,6 +2,14 @@
 
 ## 1. Architecture Goals
 
+### Salary comparison design
+
+`GET /jobs/salary-comparison` accepts the repeated `roles` query parameter two to four times, with `page` (1–1000) and `page_size` (1–4). Pydantic validates role syntax, uniqueness, count, and pagination boundaries before the job service aggregates data. The response contains paginated role records, pagination metadata, the minimum sample threshold, and requested roles withheld for insufficient samples.
+
+The service selects active, non-suspicious postings and converts supported SGD monthly, annual, and hourly salary ranges to monthly midpoint samples. It calculates minimum, maximum, median, arithmetic mean, and sample count when at least five valid samples exist. Experience parsing uses the lower bound of a range; explicit fresh-graduate or no-experience phrases produce zero; null and ambiguous values remain absent; and values outside 0–50 years are invalid. Experience coverage is the number of valid salary samples with experience divided by the valid salary sample count.
+
+The `job_postings` table reuses existing salary, minimum-experience, posting-date, and scrape-date columns. Migration `0010_job_comparison_metadata` adds only nullable `employment_type`, `workplace_type`, `seniority_level`, `skills`, and `closing_date` columns. Scraped values are sanitized and bounded before storage.
+
 The architecture must support:
 
 - Secure account and profile management.

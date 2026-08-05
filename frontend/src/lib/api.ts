@@ -151,6 +151,29 @@ export type SalaryTrendResponse = {
   sample_size: number;
 };
 
+export type SalaryComparisonItem = {
+  role: string;
+  currency: string;
+  period: string;
+  minimum_salary: number;
+  maximum_salary: number;
+  median_salary: number;
+  average_salary: number;
+  valid_posting_count: number;
+  median_minimum_experience_years: number | null;
+  experience_posting_count: number;
+  experience_coverage: number;
+};
+
+export type SalaryComparisonResponse = {
+  items: SalaryComparisonItem[];
+  insufficient_sample_roles: string[];
+  page: number;
+  page_size: number;
+  total: number;
+  minimum_sample_size: number;
+};
+
 export type JobRoleSummary = {
   slug: string;
   name: string;

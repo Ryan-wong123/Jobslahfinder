@@ -1,6 +1,9 @@
 from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+ROLE_PATTERN = r"^[\w\s.,&()+#/'\-]+$"
 
 
 class JobSourceResponse(BaseModel):
@@ -56,6 +59,11 @@ class JobSummaryResponse(BaseModel):
     salary_currency: str | None = None
     salary_period: str | None = None
     minimum_experience: str | None = None
+    employment_type: str | None = None
+    workplace_type: str | None = None
+    seniority_level: str | None = None
+    skills: list[str] | None = None
+    closing_date: date | None = None
     source: JobSourcePublicResponse
     posting_date: date | None
     scraped_at: datetime
@@ -96,6 +104,50 @@ class SalaryTrendResponse(BaseModel):
     points: list[SalaryTrendPointResponse]
     sample_size: int
 
+    model_config = ConfigDict(extra="forbid")
+
+
+class SalaryComparisonQuery(BaseModel):
+    roles: list[str] = Field(min_length=2, max_length=4)
+    page: int = Field(default=1, ge=1, le=1000)
+    page_size: int = Field(default=4, ge=1, le=4)
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("roles")
+    @classmethod
+    def validate_roles(cls, roles: list[str]) -> list[str]:
+        import re
+        cleaned = [role.strip() for role in roles]
+        if any(not 2 <= len(role) <= 100 or re.fullmatch(ROLE_PATTERN, role) is None for role in cleaned):
+            raise ValueError("Invalid role selection.")
+        if len({role.casefold() for role in cleaned}) != len(cleaned):
+            raise ValueError("Roles must be unique.")
+        return cleaned
+
+
+class SalaryComparisonItemResponse(BaseModel):
+    role: str
+    currency: str = "SGD"
+    period: str = "month"
+    minimum_salary: float
+    maximum_salary: float
+    median_salary: float
+    average_salary: float
+    valid_posting_count: int
+    median_minimum_experience_years: float | None
+    experience_posting_count: int
+    experience_coverage: float
+    model_config = ConfigDict(extra="forbid")
+
+
+class SalaryComparisonResponse(BaseModel):
+    items: list[SalaryComparisonItemResponse]
+    insufficient_sample_roles: list[str]
+    page: int
+    page_size: int
+    total: int
+    minimum_sample_size: int
     model_config = ConfigDict(extra="forbid")
 
 

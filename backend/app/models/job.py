@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import BigInteger, Boolean, CheckConstraint, Date, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, func
+from sqlalchemy import JSON, BigInteger, Boolean, CheckConstraint, Date, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -83,6 +83,11 @@ class JobPosting(Base):
     salary_currency: Mapped[str | None] = mapped_column(String(10))
     salary_period: Mapped[str | None] = mapped_column(String(20))
     minimum_experience: Mapped[str | None] = mapped_column(String(100))
+    employment_type: Mapped[str | None] = mapped_column(String(100))
+    workplace_type: Mapped[str | None] = mapped_column(String(50))
+    seniority_level: Mapped[str | None] = mapped_column(String(100))
+    skills: Mapped[list[str] | None] = mapped_column(JSON)
+    closing_date: Mapped[date | None] = mapped_column(Date)
     scraped_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

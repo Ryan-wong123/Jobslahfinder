@@ -334,6 +334,10 @@ A task is only done when:
 
 ## Phase 6: Job Browsing and Saved Jobs
 
+### Salary Comparison (Issue 44)
+
+- [~] Add validated 2–4 role salary comparison, monthly SGD aggregation, experience metrics, pagination, nullable job metadata, UI support, migration, and focused tests. Implementation and documentation are present; mark complete after dependency-backed backend and frontend test suites pass.
+
 ### Job Search API
 - [x] Implement `GET /jobs` with keyword filter.
 - [x] Implement company filter.

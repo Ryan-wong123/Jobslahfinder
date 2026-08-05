@@ -2,6 +2,12 @@
 
 ## 1. Product Overview
 
+### Salary comparison scope
+
+The platform shall allow a user to compare between two and four distinct job roles. The comparison shall publish paginated per-role statistics only when at least five active, non-suspicious postings contain a valid salary that can be normalized to monthly Singapore dollars. Published statistics shall comprise minimum, maximum, median, and average salary and the valid posting count.
+
+The comparison shall also state median minimum experience and experience-data coverage. Missing or ambiguous experience shall be excluded from the median rather than interpreted as zero. Explicit no-experience and fresh-graduate requirements shall be represented as zero years. Parsed experience below zero or above 50 years shall be rejected. Job records may contain nullable employment type, workplace type, seniority level, skills, and closing-date metadata; missing or ambiguous source values shall remain null.
+
 This project is a secure AI-assisted job aggregation and application support platform for ICT2216 Secure Software Development.
 
 The system helps job seekers:

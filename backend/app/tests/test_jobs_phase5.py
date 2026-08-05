@@ -1,4 +1,5 @@
 from collections.abc import Generator
+from datetime import date
 from types import SimpleNamespace
 import time
 
@@ -210,6 +211,20 @@ def test_job_normalization_strips_html_and_validates_source_domain(db_session: S
     assert normalized.is_suspicious is True
     assert "html_stripped" in normalized.suspicious_reasons
     assert len(normalized.content_hash) == 64
+
+
+def test_job_normalization_validates_experience_and_metadata(db_session: Session) -> None:
+    source = jobstreet_source(db_session)
+    normalized = normalize_job({
+        "title": "Platform Engineer", "company": "Example", "job_url": "https://sg.jobstreet.com/job/platform",
+        "minimum_experience": "Fresh grad", "employment_type": "Full-time", "workplace_type": "Hybrid",
+        "seniority_level": "Entry", "skills": ["Python", "python", "<b>AWS</b>"], "closing_date": "2026-09-01",
+    }, source)
+    assert normalized.skills == ["Python", "AWS"]
+    assert normalized.closing_date == date(2026, 9, 1)
+    with pytest.raises(JobValidationError):
+        normalize_job({"title": "Bad", "company": "Example", "job_url": "https://sg.jobstreet.com/job/bad",
+                       "minimum_experience": "At least 51 years"}, source)
 
     with pytest.raises(JobValidationError):
         normalize_job(

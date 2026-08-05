@@ -106,6 +106,7 @@ def create_job(
     salary_period: str | None = None,
     is_active: bool = True,
     is_suspicious: bool = False,
+    minimum_experience: str | None = None,
 ) -> JobPosting:
     hostname = "sg.jobstreet.com"
     if source.source_name == "MyCareersFuture":
@@ -124,6 +125,7 @@ def create_job(
         salary_max=salary_max,
         salary_currency="SGD" if salary_min is not None or salary_max is not None else None,
         salary_period=salary_period,
+        minimum_experience=minimum_experience,
         is_active=is_active,
         is_suspicious=is_suspicious,
         content_hash=f"hash-{title}-{company}",
@@ -132,6 +134,46 @@ def create_job(
     db_session.commit()
     db_session.refresh(job)
     return job
+
+
+def test_salary_comparison_aggregates_experience_and_paginates(client: TestClient, db_session: Session) -> None:
+    source = create_source(db_session)
+    for index, experience in enumerate(("At least 3 years", "3-5 years", "No experience", None, "Fresh grad")):
+        create_job(db_session, source, title=f"Software Engineer {index}", company=f"A{index}",
+                   salary_min=4000 + index * 1000, salary_max=6000 + index * 1000,
+                   salary_period="month", minimum_experience=experience)
+    for index in range(5):
+        create_job(db_session, source, title=f"Data Engineer {index}", company=f"B{index}",
+                   salary_min=120000, salary_max=120000, salary_period="year",
+                   minimum_experience="2 years")
+
+    response = client.get("/jobs/salary-comparison", params=[("roles", "Software Engineer"),
+                          ("roles", "Data Engineer"), ("page", "1"), ("page_size", "1")])
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 2
+    assert len(body["items"]) == 1
+    assert body["items"][0] == {
+        "role": "Software Engineer", "currency": "SGD", "period": "month",
+        "minimum_salary": 5000.0, "maximum_salary": 9000.0, "median_salary": 7000.0,
+        "average_salary": 7000.0, "valid_posting_count": 5,
+        "median_minimum_experience_years": 1.5, "experience_posting_count": 4,
+        "experience_coverage": 0.8,
+    }
+
+
+def test_salary_comparison_validates_roles_and_hides_small_samples(client: TestClient, db_session: Session) -> None:
+    source = create_source(db_session)
+    for index in range(4):
+        create_job(db_session, source, title=f"Security Engineer {index}", company=f"C{index}",
+                   salary_min=5000, salary_max=7000, salary_period="month")
+    response = client.get("/jobs/salary-comparison", params=[("roles", "Security Engineer"), ("roles", "Data Analyst")])
+    assert response.status_code == 200
+    assert response.json()["items"] == []
+    assert response.json()["insufficient_sample_roles"] == ["Security Engineer", "Data Analyst"]
+    assert client.get("/jobs/salary-comparison", params={"roles": "Only One"}).status_code == 422
+    assert client.get("/jobs/salary-comparison", params=[("roles", "Same"), ("roles", "same")]).status_code == 422
+    assert client.get("/jobs/salary-comparison", params=[("roles", "One"), ("roles", "Two"), ("page_size", "5")]).status_code == 422
 
 
 def test_job_search_filters_and_public_visibility(client: TestClient, db_session: Session) -> None:

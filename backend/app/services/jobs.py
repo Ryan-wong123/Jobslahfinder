@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 import hashlib
 import re
+import statistics
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -21,6 +22,8 @@ from app.schemas.jobs import (
     JobListResponse,
     JobSourcePublicResponse,
     JobSummaryResponse,
+    SalaryComparisonItemResponse,
+    SalaryComparisonResponse,
     SalaryTrendPointResponse,
     SalaryTrendResponse,
     SavedJobListResponse,
@@ -38,6 +41,7 @@ MAX_EXTERNAL_JOB_URL_LENGTH = 2048
 MAX_SEARCH_TERM_LENGTH = 100
 DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 50
+MIN_SALARY_COMPARISON_SAMPLES = 5
 EXTERNAL_LINK_WARNING = "You are leaving this platform for an approved external job source."
 APPROVED_JOB_SOURCES = {
     "JobStreet": {
@@ -105,6 +109,11 @@ class NormalizedJob:
     salary_currency: str | None
     salary_period: str | None
     minimum_experience: str | None
+    employment_type: str | None
+    workplace_type: str | None
+    seniority_level: str | None
+    skills: list[str] | None
+    closing_date: date | None
     content_hash: str
     is_suspicious: bool
     suspicious_reasons: tuple[str, ...]
@@ -307,6 +316,50 @@ def parse_salary_range(value: Any) -> tuple[float | None, float | None, str | No
     if salary_max < 1000 and "k" not in text and period in {"month", "year"}:
         return None, None, currency, period
     return salary_min, salary_max, currency, period
+
+
+def parse_minimum_experience(value: Any) -> float | None:
+    text = clean_text(value, max_length=100).lower()
+    if not text:
+        return None
+    if any(marker in text for marker in ("no experience", "fresh grad", "fresh graduate")):
+        return 0.0
+    if re.search(r"(?:^|\s)-\s*\d", text) or re.search(r"\bminus\s+\d", text):
+        raise JobValidationError("Job posting has invalid experience metadata.")
+    match = re.search(
+        r"(?<![\d.])(\d+(?:\.\d+)?)(?:\s*-\s*\d+(?:\.\d+)?)?\s*(?:years?|yrs?)\b",
+        text,
+    )
+    if match is None:
+        return None
+    years = float(match.group(1))
+    if years > 50:
+        raise JobValidationError("Job posting has invalid experience metadata.")
+    return years
+
+
+def normalize_skills(value: Any) -> list[str] | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        raw_items = re.split(r"[,;|]", value)
+    elif isinstance(value, (list, tuple, set)):
+        raw_items = value
+    else:
+        return None
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for raw_item in raw_items:
+        item = clean_text(raw_item, max_length=80)
+        key = item.casefold()
+        if item and key not in seen:
+            seen.add(key)
+            cleaned.append(item)
+        if len(cleaned) == 50:
+            break
+    return cleaned or None
+
+
 def compute_content_hash(*parts: str | None) -> str:
     normalized = "\n".join((part or "").strip().lower() for part in parts)
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
@@ -336,6 +389,12 @@ def normalize_job(raw_job: dict[str, Any], source: JobSource) -> NormalizedJob:
         raw_value(raw_job, "minimum_experience", "Job Minimum Experience", "job_minimum_experience"),
         max_length=100,
     ) or None
+    parse_minimum_experience(minimum_experience)
+    employment_type = clean_text(raw_value(raw_job, "employment_type", "Job Employment Type"), max_length=100) or None
+    workplace_type = clean_text(raw_value(raw_job, "workplace_type", "Job Workplace Type"), max_length=50) or None
+    seniority_level = clean_text(raw_value(raw_job, "seniority_level", "Job Seniority Level"), max_length=100) or None
+    skills = normalize_skills(raw_value(raw_job, "skills", "Job Skills"))
+    closing_date = parse_posting_date(raw_value(raw_job, "closing_date", "Job Closing Date"))
 
     if not title:
         title = "Untitled job"
@@ -374,6 +433,11 @@ def normalize_job(raw_job: dict[str, Any], source: JobSource) -> NormalizedJob:
         salary_currency=salary_currency,
         salary_period=salary_period,
         minimum_experience=minimum_experience,
+        employment_type=employment_type,
+        workplace_type=workplace_type,
+        seniority_level=seniority_level,
+        skills=skills,
+        closing_date=closing_date,
         content_hash=content_hash,
         is_suspicious=bool(suspicious_reasons),
         suspicious_reasons=tuple(dict.fromkeys(suspicious_reasons)),
@@ -474,6 +538,11 @@ def apply_normalized_job(posting: JobPosting, normalized_job: NormalizedJob) -> 
     posting.salary_currency = normalized_job.salary_currency
     posting.salary_period = normalized_job.salary_period
     posting.minimum_experience = normalized_job.minimum_experience
+    posting.employment_type = normalized_job.employment_type
+    posting.workplace_type = normalized_job.workplace_type
+    posting.seniority_level = normalized_job.seniority_level
+    posting.skills = normalized_job.skills
+    posting.closing_date = normalized_job.closing_date
     posting.content_hash = normalized_job.content_hash
     posting.is_suspicious = normalized_job.is_suspicious
 
@@ -520,6 +589,11 @@ def job_to_summary_response(job: JobPosting) -> JobSummaryResponse:
         salary_currency=safe_response_text(job.salary_currency, max_length=10),
         salary_period=safe_response_text(job.salary_period, max_length=20),
         minimum_experience=safe_response_text(job.minimum_experience, max_length=100),
+        employment_type=safe_response_text(job.employment_type, max_length=100),
+        workplace_type=safe_response_text(job.workplace_type, max_length=50),
+        seniority_level=safe_response_text(job.seniority_level, max_length=100),
+        skills=normalize_skills(job.skills),
+        closing_date=job.closing_date,
         scraped_at=job.scraped_at,
         is_active=job.is_active,
         is_suspicious=job.is_suspicious,
@@ -617,6 +691,64 @@ def get_salary_trend(
         period="month",
         points=points,
         sample_size=sum(point.sample_count for point in points),
+    )
+
+
+def get_salary_comparison(
+    db: Session, *, roles: list[str], page: int, page_size: int
+) -> SalaryComparisonResponse:
+    published: list[SalaryComparisonItemResponse] = []
+    insufficient: list[str] = []
+    for role in roles:
+        cleaned_role = clean_text(role, max_length=100)
+        title_filters = [
+            JobPosting.title.ilike(f"%{escape_like_term(keyword)}%", escape="\\")
+            for keyword in salary_search_keywords(cleaned_role)
+        ]
+        jobs = list(db.scalars(select(JobPosting).where(
+            JobPosting.is_active.is_(True),
+            JobPosting.is_suspicious.is_(False),
+            or_(*title_filters),
+            JobPosting.salary_currency.in_(("SGD", "S$")),
+            JobPosting.salary_period.in_(("month", "year", "hour")),
+            or_(JobPosting.salary_min.is_not(None), JobPosting.salary_max.is_not(None)),
+        ).limit(1000)).all())
+        salary_values: list[float] = []
+        experience_values: list[float] = []
+        for job in jobs:
+            salary = monthly_salary_midpoint(job)
+            if salary is None or not 100 <= salary <= 1_000_000:
+                continue
+            salary_values.append(salary)
+            try:
+                experience = parse_minimum_experience(job.minimum_experience)
+            except JobValidationError:
+                experience = None
+            if experience is not None:
+                experience_values.append(experience)
+        if len(salary_values) < MIN_SALARY_COMPARISON_SAMPLES:
+            insufficient.append(cleaned_role)
+            continue
+        published.append(SalaryComparisonItemResponse(
+            role=cleaned_role,
+            minimum_salary=round(min(salary_values), 2),
+            maximum_salary=round(max(salary_values), 2),
+            median_salary=round(statistics.median(salary_values), 2),
+            average_salary=round(statistics.fmean(salary_values), 2),
+            valid_posting_count=len(salary_values),
+            median_minimum_experience_years=(round(statistics.median(experience_values), 2) if experience_values else None),
+            experience_posting_count=len(experience_values),
+            experience_coverage=round(len(experience_values) / len(salary_values), 4),
+        ))
+    total = len(published)
+    start = (page - 1) * page_size
+    return SalaryComparisonResponse(
+        items=published[start:start + page_size],
+        insufficient_sample_roles=insufficient,
+        page=page,
+        page_size=page_size,
+        total=total,
+        minimum_sample_size=MIN_SALARY_COMPARISON_SAMPLES,
     )
 
 
