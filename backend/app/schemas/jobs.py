@@ -1,6 +1,10 @@
+import re
 from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+SALARY_ROLE_PATTERN = r"^[\w\s.,&()+#/'\-]+$"
 
 
 class JobSourceResponse(BaseModel):
@@ -95,6 +99,34 @@ class SalaryTrendResponse(BaseModel):
     period: str
     points: list[SalaryTrendPointResponse]
     sample_size: int
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class SalaryComparisonQuery(BaseModel):
+    roles: list[str] = Field(min_length=2, max_length=4)
+    months: int = Field(default=12, ge=1, le=24)
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("roles")
+    @classmethod
+    def validate_roles(cls, roles: list[str]) -> list[str]:
+        cleaned_roles = [role.strip() for role in roles]
+        if any(not 2 <= len(role) <= 100 for role in cleaned_roles):
+            raise ValueError("Each role must contain between 2 and 100 characters.")
+        if any(not re.fullmatch(SALARY_ROLE_PATTERN, role) for role in cleaned_roles):
+            raise ValueError("Each role contains unsupported characters.")
+        if len({role.casefold() for role in cleaned_roles}) != len(cleaned_roles):
+            raise ValueError("Roles must be unique.")
+        return cleaned_roles
+
+
+class SalaryComparisonResponse(BaseModel):
+    currency: str
+    period: str
+    months: int
+    roles: list[SalaryTrendResponse]
 
     model_config = ConfigDict(extra="forbid")
 

@@ -21,6 +21,7 @@ from app.schemas.jobs import (
     JobListResponse,
     JobSourcePublicResponse,
     JobSummaryResponse,
+    SalaryComparisonResponse,
     SalaryTrendPointResponse,
     SalaryTrendResponse,
     SavedJobListResponse,
@@ -617,6 +618,21 @@ def get_salary_trend(
         period="month",
         points=points,
         sample_size=sum(point.sample_count for point in points),
+    )
+
+
+def get_salary_comparison(
+    db: Session,
+    *,
+    roles: list[str],
+    months: int = 12,
+) -> SalaryComparisonResponse:
+    trends = [get_salary_trend(db, role=role, months=months) for role in roles]
+    return SalaryComparisonResponse(
+        currency="SGD",
+        period="month",
+        months=months,
+        roles=trends,
     )
 
 

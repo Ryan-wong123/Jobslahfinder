@@ -236,6 +236,81 @@ def test_salary_trends_use_monthly_salary_samples(client: TestClient, db_session
     assert body["points"] == [{"period": "2026-04", "average_salary": 8000.0, "sample_count": 2}]
 
 
+def test_salary_comparison_aggregates_two_to_four_roles(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    source = create_source(db_session)
+    create_job(
+        db_session,
+        source,
+        title="Software Engineer",
+        salary_min=5000,
+        salary_max=7000,
+        salary_period="month",
+    )
+    create_job(
+        db_session,
+        source,
+        title="Data Analyst",
+        salary_min=4000,
+        salary_max=5000,
+        salary_period="month",
+    )
+
+    response = client.get(
+        "/jobs/salary-comparison",
+        params=[("roles", "Software Engineer"), ("roles", "Data Analyst"), ("months", "6")],
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "currency": "SGD",
+        "period": "month",
+        "months": 6,
+        "roles": [
+            {
+                "role": "Software Engineer",
+                "currency": "SGD",
+                "period": "month",
+                "points": [{"period": "2026-04", "average_salary": 6000.0, "sample_count": 1}],
+                "sample_size": 1,
+            },
+            {
+                "role": "Data Analyst",
+                "currency": "SGD",
+                "period": "month",
+                "points": [{"period": "2026-04", "average_salary": 4500.0, "sample_count": 1}],
+                "sample_size": 1,
+            },
+        ],
+    }
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        [("roles", "Software Engineer")],
+        [("roles", "Software Engineer"), ("roles", "software engineer")],
+        [
+            ("roles", "Software Engineer"),
+            ("roles", "Data Analyst"),
+            ("roles", "Role 3"),
+            ("roles", "Role 4"),
+            ("roles", "Role 5"),
+        ],
+        [("roles", "Software Engineer"), ("roles", "<script>")],
+    ],
+)
+def test_salary_comparison_rejects_invalid_role_selections(
+    client: TestClient,
+    params: list[tuple[str, str]],
+) -> None:
+    response = client.get("/jobs/salary-comparison", params=params)
+
+    assert response.status_code == 422
+
+
 def test_job_role_catalog_and_detail_are_derived_from_visible_jobs(client: TestClient, db_session: Session) -> None:
     source = create_source(db_session)
     create_job(
