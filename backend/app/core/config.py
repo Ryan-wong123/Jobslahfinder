@@ -101,6 +101,19 @@ class Settings(BaseSettings):
     scraping_max_retries: int = Field(default=2, validation_alias="SCRAPING_MAX_RETRIES")
     celery_queue_max_length: int = Field(default=1000, validation_alias="CELERY_QUEUE_MAX_LENGTH")
     celery_result_expires_seconds: int = Field(default=3600, validation_alias="CELERY_RESULT_EXPIRES_SECONDS")
+    role_discovery_model: str = Field(
+        default="sentence-transformers/all-MiniLM-L6-v2",
+        validation_alias="ROLE_DISCOVERY_MODEL",
+    )
+    role_discovery_dbscan_eps: float = Field(
+        default=0.35, validation_alias="ROLE_DISCOVERY_DBSCAN_EPS"
+    )
+    role_discovery_dbscan_min_samples: int = Field(
+        default=3, validation_alias="ROLE_DISCOVERY_DBSCAN_MIN_SAMPLES"
+    )
+    role_discovery_max_jobs: int = Field(
+        default=1000, validation_alias="ROLE_DISCOVERY_MAX_JOBS"
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -179,6 +192,14 @@ class Settings(BaseSettings):
             raise ValueError("CELERY_QUEUE_MAX_LENGTH must be between 10 and 100000.")
         if self.celery_result_expires_seconds < 60 or self.celery_result_expires_seconds > 86400:
             raise ValueError("CELERY_RESULT_EXPIRES_SECONDS must be between 60 and 86400.")
+        if not self.role_discovery_model.strip() or len(self.role_discovery_model) > 255:
+            raise ValueError("ROLE_DISCOVERY_MODEL must be between 1 and 255 characters.")
+        if not 0 < self.role_discovery_dbscan_eps <= 2:
+            raise ValueError("ROLE_DISCOVERY_DBSCAN_EPS must be greater than 0 and at most 2.")
+        if not 2 <= self.role_discovery_dbscan_min_samples <= 100:
+            raise ValueError("ROLE_DISCOVERY_DBSCAN_MIN_SAMPLES must be between 2 and 100.")
+        if not 10 <= self.role_discovery_max_jobs <= 10000:
+            raise ValueError("ROLE_DISCOVERY_MAX_JOBS must be between 10 and 10000.")
         if self.smtp_port < 1 or self.smtp_port > 65535:
             raise ValueError("SMTP_PORT must be between 1 and 65535.")
         if self.smtp_password is not None and not self.smtp_username:

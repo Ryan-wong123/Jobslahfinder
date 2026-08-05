@@ -10,7 +10,7 @@ const workspaces = [
   { label: "Resume", value: "Upload", href: "/resumes" },
   { label: "Recommendations", value: "Match", href: "/recommendations" },
   { label: "Roadmaps", value: "Plan", href: "/roadmaps" },
-  { label: "Salary trends", value: "Compare", href: "/salary-trends" },
+  { label: "Salary comparison", value: "Compare", href: "/salary-comparison" },
   { label: "Cover letters", value: "Draft", href: "/cover-letters" },
   { label: "History", value: "Track", href: "/application-history" }
 ];

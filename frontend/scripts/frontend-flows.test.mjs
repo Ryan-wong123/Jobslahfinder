@@ -40,7 +40,8 @@ test("all implemented frontend routes mount their expected feature components", 
     [["saved-jobs"], "SavedJobsPanel"],
     [["two-factor", "setup"], "TwoFactorSetupPanel"],
     [["two-factor", "verify"], "TwoFactorVerifyPanel"],
-    [["salary-trends"], "SalaryTrendPanel"]
+    [["salary-trends"], "SalaryTrendPanel"],
+    [["salary-comparison"], "SalaryTrendPanel"]
   ];
 
   for (const [route, component] of routeComponents) {

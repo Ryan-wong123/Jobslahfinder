@@ -55,3 +55,40 @@ def test_config_accepts_explicit_trust_proxy_setting() -> None:
     settings = Settings(**kwargs)
 
     assert settings.trust_proxy_headers is True
+
+
+def test_config_loads_role_discovery_settings() -> None:
+    kwargs = base_settings_kwargs()
+    kwargs.update(
+        {
+            "ROLE_DISCOVERY_MODEL": "sentence-transformers/all-MiniLM-L6-v2",
+            "ROLE_DISCOVERY_DBSCAN_EPS": 0.4,
+            "ROLE_DISCOVERY_DBSCAN_MIN_SAMPLES": 4,
+            "ROLE_DISCOVERY_MAX_JOBS": 500,
+        }
+    )
+
+    settings = Settings(**kwargs)
+
+    assert settings.role_discovery_model == "sentence-transformers/all-MiniLM-L6-v2"
+    assert settings.role_discovery_dbscan_eps == 0.4
+    assert settings.role_discovery_dbscan_min_samples == 4
+    assert settings.role_discovery_max_jobs == 500
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("ROLE_DISCOVERY_MODEL", " "),
+        ("ROLE_DISCOVERY_DBSCAN_EPS", 0),
+        ("ROLE_DISCOVERY_DBSCAN_EPS", 2.1),
+        ("ROLE_DISCOVERY_DBSCAN_MIN_SAMPLES", 1),
+        ("ROLE_DISCOVERY_MAX_JOBS", 9),
+    ],
+)
+def test_config_rejects_invalid_role_discovery_settings(field: str, value: object) -> None:
+    kwargs = base_settings_kwargs()
+    kwargs[field] = value
+
+    with pytest.raises(ValueError):
+        Settings(**kwargs)
