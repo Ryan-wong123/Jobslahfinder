@@ -99,6 +99,15 @@ class Settings(BaseSettings):
         default=15, validation_alias="SCRAPING_REQUEST_TIMEOUT_SECONDS"
     )
     scraping_max_retries: int = Field(default=2, validation_alias="SCRAPING_MAX_RETRIES")
+    role_discovery_model_name: str = Field(
+        default="all-MiniLM-L6-v2", validation_alias="ROLE_DISCOVERY_MODEL_NAME"
+    )
+    role_discovery_dbscan_eps: float = Field(
+        default=0.3, validation_alias="ROLE_DISCOVERY_DBSCAN_EPS"
+    )
+    role_discovery_dbscan_min_samples: int = Field(
+        default=5, validation_alias="ROLE_DISCOVERY_DBSCAN_MIN_SAMPLES"
+    )
     celery_queue_max_length: int = Field(default=1000, validation_alias="CELERY_QUEUE_MAX_LENGTH")
     celery_result_expires_seconds: int = Field(default=3600, validation_alias="CELERY_RESULT_EXPIRES_SECONDS")
 
@@ -175,6 +184,17 @@ class Settings(BaseSettings):
             raise ValueError("ADMIN_SESSION_MAX_AGE_MINUTES must be between 5 and 1440.")
         if self.scraping_max_retries < 0 or self.scraping_max_retries > 5:
             raise ValueError("SCRAPING_MAX_RETRIES must be between 0 and 5.")
+        if not self.role_discovery_model_name.strip():
+            raise ValueError("ROLE_DISCOVERY_MODEL_NAME must not be empty.")
+        if self.role_discovery_dbscan_eps <= 0 or self.role_discovery_dbscan_eps > 2:
+            raise ValueError("ROLE_DISCOVERY_DBSCAN_EPS must be greater than 0 and at most 2.")
+        if (
+            self.role_discovery_dbscan_min_samples < 2
+            or self.role_discovery_dbscan_min_samples > 1000
+        ):
+            raise ValueError(
+                "ROLE_DISCOVERY_DBSCAN_MIN_SAMPLES must be between 2 and 1000."
+            )
         if self.celery_queue_max_length < 10 or self.celery_queue_max_length > 100000:
             raise ValueError("CELERY_QUEUE_MAX_LENGTH must be between 10 and 100000.")
         if self.celery_result_expires_seconds < 60 or self.celery_result_expires_seconds > 86400:
