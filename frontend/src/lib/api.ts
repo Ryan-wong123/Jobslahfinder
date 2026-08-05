@@ -116,8 +116,15 @@ export type JobSummary = {
   salary_currency: string | null;
   salary_period: string | null;
   minimum_experience: string | null;
+  minimum_experience_years: number | null;
+  employment_type: "FULL_TIME" | "PART_TIME" | "CONTRACT" | "TEMPORARY" | "INTERNSHIP" | null;
+  workplace_type: "ONSITE" | "HYBRID" | "REMOTE" | null;
+  seniority_level: "ENTRY" | "JUNIOR" | "MID" | "SENIOR" | "LEAD" | "MANAGER" | "DIRECTOR" | "EXECUTIVE" | null;
+  skills: string[] | null;
   source: JobSource;
   posting_date: string | null;
+  posted_at: string | null;
+  expires_at: string | null;
   scraped_at: string;
   is_active: boolean;
   is_suspicious: boolean;
@@ -135,6 +142,8 @@ export type JobListResponse = {
   page: number;
   page_size: number;
   total: number;
+  total_items: number;
+  total_pages: number;
 };
 
 export type SalaryTrendPoint = {

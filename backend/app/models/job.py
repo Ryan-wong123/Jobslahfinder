@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import BigInteger, Boolean, CheckConstraint, Date, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, func
+from sqlalchemy import JSON, BigInteger, Boolean, CheckConstraint, Date, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -64,6 +64,22 @@ class JobPosting(Base):
         Index("ix_job_postings_category", "category"),
         Index("ix_job_postings_posting_date", "posting_date"),
         Index("ix_job_postings_content_hash", "content_hash"),
+        CheckConstraint(
+            "minimum_experience_years is null or (minimum_experience_years >= 0 and minimum_experience_years <= 60)",
+            name="job_postings_experience_years_range",
+        ),
+        CheckConstraint(
+            "employment_type is null or employment_type in ('FULL_TIME', 'PART_TIME', 'CONTRACT', 'TEMPORARY', 'INTERNSHIP')",
+            name="job_postings_employment_type_allowed",
+        ),
+        CheckConstraint(
+            "workplace_type is null or workplace_type in ('ONSITE', 'HYBRID', 'REMOTE')",
+            name="job_postings_workplace_type_allowed",
+        ),
+        CheckConstraint(
+            "seniority_level is null or seniority_level in ('ENTRY', 'JUNIOR', 'MID', 'SENIOR', 'LEAD', 'MANAGER', 'DIRECTOR', 'EXECUTIVE')",
+            name="job_postings_seniority_level_allowed",
+        ),
     )
 
     id: Mapped[int] = mapped_column(
@@ -83,6 +99,12 @@ class JobPosting(Base):
     salary_currency: Mapped[str | None] = mapped_column(String(10))
     salary_period: Mapped[str | None] = mapped_column(String(20))
     minimum_experience: Mapped[str | None] = mapped_column(String(100))
+    minimum_experience_years: Mapped[int | None] = mapped_column(Integer)
+    employment_type: Mapped[str | None] = mapped_column(String(30))
+    workplace_type: Mapped[str | None] = mapped_column(String(20))
+    seniority_level: Mapped[str | None] = mapped_column(String(20))
+    skills: Mapped[list[str] | None] = mapped_column(JSON)
+    expires_at: Mapped[date | None] = mapped_column(Date, index=True)
     scraped_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

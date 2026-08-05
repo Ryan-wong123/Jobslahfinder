@@ -203,10 +203,42 @@ def test_pagination_limits_are_enforced(client: TestClient, db_session: Session)
     assert body["page"] == 2
     assert body["page_size"] == 1
     assert body["total"] == 3
+    assert body["total_items"] == 3
+    assert body["total_pages"] == 3
     assert len(body["items"]) == 1
 
     oversized = client.get("/jobs", params={"page_size": 51})
     assert oversized.status_code == 422
+
+
+def test_job_detail_returns_nullable_normalized_fields_consistently(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    source = create_source(db_session)
+    job = create_job(db_session, source, title="Platform Engineer")
+    job.minimum_experience_years = 4
+    job.employment_type = "FULL_TIME"
+    job.workplace_type = "HYBRID"
+    job.seniority_level = "SENIOR"
+    job.skills = ["Python", "AWS"]
+    job.expires_at = date(2026, 6, 30)
+    db_session.commit()
+
+    listing_item = client.get("/jobs").json()["items"][0]
+    detail = client.get(f"/jobs/{job.id}").json()
+
+    for field in (
+        "minimum_experience_years",
+        "employment_type",
+        "workplace_type",
+        "seniority_level",
+        "skills",
+        "posted_at",
+        "expires_at",
+    ):
+        assert listing_item[field] == detail[field]
+    assert detail["skills"] == ["Python", "AWS"]
 
 
 def test_salary_trends_use_monthly_salary_samples(client: TestClient, db_session: Session) -> None:

@@ -36,7 +36,7 @@ function JobStatus({ job }: { job: JobSummary }) {
 
 function formatSalary(job: JobSummary): string {
   if (job.salary_min === null && job.salary_max === null) {
-    return "Not listed";
+    return "Not specified";
   }
 
   const formatter = new Intl.NumberFormat("en-SG", {
@@ -46,7 +46,7 @@ function formatSalary(job: JobSummary): string {
   });
   const min = job.salary_min !== null ? formatter.format(job.salary_min) : null;
   const max = job.salary_max !== null ? formatter.format(job.salary_max) : null;
-  const amount = min && max && min !== max ? `${min} - ${max}` : min ?? max ?? "Not listed";
+  const amount = min && max && min !== max ? `${min} - ${max}` : min ?? max ?? "Not specified";
 
   return job.salary_period ? `${amount} / ${job.salary_period}` : amount;
 }
@@ -59,6 +59,10 @@ type JobRowProps = {
 };
 
 function JobRow({ job, isSaving, isSaved, onSave }: JobRowProps) {
+  const experience = job.minimum_experience_years !== null
+    ? `${job.minimum_experience_years} ${job.minimum_experience_years === 1 ? "year" : "years"}`
+    : job.minimum_experience ?? "Not specified";
+  const workplace = job.workplace_type ? job.workplace_type.toLowerCase().replace("_", " ") : "Not specified";
   return (
     <article className="rounded border border-zinc-200 bg-white p-5 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -80,10 +84,10 @@ function JobRow({ job, isSaving, isSaved, onSave }: JobRowProps) {
           </button>
         </div>
       </div>
-      <dl className="mt-4 grid gap-3 text-sm text-zinc-600 sm:grid-cols-3 lg:grid-cols-6">
+      <dl className="mt-4 grid gap-3 text-sm text-zinc-600 sm:grid-cols-3 lg:grid-cols-5">
         <div>
           <dt className="font-medium text-zinc-500">Location</dt>
-          <dd className="mt-1 text-zinc-900">{job.location ?? "Not listed"}</dd>
+          <dd className="mt-1 text-zinc-900">{job.location ?? "Not specified"}</dd>
         </div>
         <div>
           <dt className="font-medium text-zinc-500">Salary</dt>
@@ -91,19 +95,15 @@ function JobRow({ job, isSaving, isSaved, onSave }: JobRowProps) {
         </div>
         <div>
           <dt className="font-medium text-zinc-500">Min. experience</dt>
-          <dd className="mt-1 text-zinc-900">{job.minimum_experience ?? "Not listed"}</dd>
+          <dd className="mt-1 text-zinc-900">{experience}</dd>
         </div>
         <div>
-          <dt className="font-medium text-zinc-500">Category</dt>
-          <dd className="mt-1 text-zinc-900">{job.category ?? "Not listed"}</dd>
-        </div>
-        <div>
-          <dt className="font-medium text-zinc-500">Source</dt>
-          <dd className="mt-1 text-zinc-900">{job.source.source_name}</dd>
+          <dt className="font-medium text-zinc-500">Workplace</dt>
+          <dd className="mt-1 capitalize text-zinc-900">{workplace}</dd>
         </div>
         <div>
           <dt className="font-medium text-zinc-500">Posted</dt>
-          <dd className="mt-1 text-zinc-900">{formatDate(job.posting_date)}</dd>
+          <dd className="mt-1 text-zinc-900">{job.posted_at ? formatDate(job.posted_at) : "Not specified"}</dd>
         </div>
       </dl>
     </article>
@@ -201,7 +201,7 @@ export function JobBrowser() {
     }
   }
 
-  const totalPages = jobs ? Math.max(1, Math.ceil(jobs.total / jobs.page_size)) : 1;
+  const totalPages = jobs ? Math.max(1, jobs.total_pages) : 1;
 
   return (
     <div className="grid gap-6 lg:grid-cols-[320px_1fr]">

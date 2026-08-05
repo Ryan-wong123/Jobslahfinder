@@ -1,4 +1,5 @@
 from collections.abc import Generator
+from datetime import date
 from types import SimpleNamespace
 import time
 
@@ -194,6 +195,11 @@ def test_job_normalization_strips_html_and_validates_source_domain(db_session: S
             "posting_date": "2026-04-30",
             "salary": "SGD 4,000 - 6,000 per month",
             "minimum_experience": "2 years",
+            "employment_type": "Full-time",
+            "workplace_type": "work from home",
+            "seniority_level": "Senior",
+            "skills": ["Python", "FastAPI", "Python", "<b>SQL</b>"],
+            "closing_date": "2026-06-30",
         },
         source,
     )
@@ -207,6 +213,12 @@ def test_job_normalization_strips_html_and_validates_source_domain(db_session: S
     assert normalized.salary_currency == "SGD"
     assert normalized.salary_period == "month"
     assert normalized.minimum_experience == "2 years"
+    assert normalized.minimum_experience_years == 2
+    assert normalized.employment_type == "FULL_TIME"
+    assert normalized.workplace_type == "REMOTE"
+    assert normalized.seniority_level == "SENIOR"
+    assert normalized.skills == ["Python", "FastAPI", "SQL"]
+    assert normalized.expires_at == date(2026, 6, 30)
     assert normalized.is_suspicious is True
     assert "html_stripped" in normalized.suspicious_reasons
     assert len(normalized.content_hash) == 64
@@ -370,6 +382,7 @@ def test_approved_source_adapters_are_registered_and_store_jobs(db_session: Sess
     assert posting.salary_currency == "SGD"
     assert posting.salary_period == "month"
     assert posting.minimum_experience == "3 years exp"
+    assert posting.minimum_experience_years == 3
 
 
 def test_scraper_retry_policy_retries_up_to_success(db_session: Session) -> None:

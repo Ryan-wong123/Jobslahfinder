@@ -347,6 +347,7 @@ A task is only done when:
 
 ### Job Detail API
 - [x] Implement `GET /jobs/{job_id}`.
+- [x] Expose normalized employment, workplace, seniority, skills, experience, posting, and expiry data.
 - [x] Sanitize/encode job descriptions for display.
 - [x] Do not render untrusted HTML unsafely.
 - [x] Validate external job URLs against approved source domains.
@@ -367,6 +368,7 @@ A task is only done when:
 - [x] Build frontend saved jobs page.
 - [x] Add external link warning UI.
 - [x] Add safe display for job descriptions.
+- [x] Display high-value job metadata with safe fallback labels.
 
 ### Tests
 - [x] Add tests for job search.
@@ -375,6 +377,7 @@ A task is only done when:
 - [x] Add tests for job detail.
 - [x] Add tests for saved jobs access control.
 - [x] Add tests for XSS payloads in job descriptions.
+- [x] Add tests for normalized job metadata and pagination totals.
 
 ---
 

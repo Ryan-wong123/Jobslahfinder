@@ -26,7 +26,7 @@ type InterviewQuestionsResponse = {
 
 function formatSalary(job: JobDetail): string {
   if (job.salary_min === null && job.salary_max === null) {
-    return "Not listed";
+    return "Not specified";
   }
 
   const formatter = new Intl.NumberFormat("en-SG", {
@@ -36,7 +36,7 @@ function formatSalary(job: JobDetail): string {
   });
   const min = job.salary_min !== null ? formatter.format(job.salary_min) : null;
   const max = job.salary_max !== null ? formatter.format(job.salary_max) : null;
-  const amount = min && max && min !== max ? `${min} - ${max}` : min ?? max ?? "Not listed";
+  const amount = min && max && min !== max ? `${min} - ${max}` : min ?? max ?? "Not specified";
 
   return job.salary_period ? `${amount} / ${job.salary_period}` : amount;
 }
@@ -187,6 +187,11 @@ export function JobDetailPanel() {
     );
   }
 
+  const label = (value: string | null) => value ? value.toLowerCase().replaceAll("_", " ") : "Not specified";
+  const experience = job.minimum_experience_years !== null
+    ? `${job.minimum_experience_years} ${job.minimum_experience_years === 1 ? "year" : "years"}`
+    : job.minimum_experience ?? "Not specified";
+
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
       <div className="space-y-6">
@@ -203,32 +208,41 @@ export function JobDetailPanel() {
             </span>
           </div>
 
-          <dl className="mt-6 grid gap-4 border-y border-zinc-200 py-5 text-sm sm:grid-cols-2 lg:grid-cols-5">
+          <dl className="mt-6 grid gap-4 border-y border-zinc-200 py-5 text-sm sm:grid-cols-2 lg:grid-cols-3">
             <div>
-              <dt className="font-medium text-zinc-500">Location</dt>
-              <dd className="mt-1 text-zinc-950">{job.location ?? "Not listed"}</dd>
-            </div>
-
-            <div>
-              <dt className="font-medium text-zinc-500">Salary</dt>
+              <dt className="font-medium text-zinc-500">Salary and employment</dt>
               <dd className="mt-1 text-zinc-950">{formatSalary(job)}</dd>
+              <dd className="mt-1 capitalize text-zinc-700">{label(job.employment_type)}</dd>
             </div>
-
             <div>
-              <dt className="font-medium text-zinc-500">Min. experience</dt>
-              <dd className="mt-1 text-zinc-950">{job.minimum_experience ?? "Not listed"}</dd>
+              <dt className="font-medium text-zinc-500">Experience and seniority</dt>
+              <dd className="mt-1 text-zinc-950">{experience}</dd>
+              <dd className="mt-1 capitalize text-zinc-700">{label(job.seniority_level)}</dd>
             </div>
-
             <div>
-              <dt className="font-medium text-zinc-500">Category</dt>
-              <dd className="mt-1 text-zinc-950">{job.category ?? "Not listed"}</dd>
-            </div>
-
-            <div>
-              <dt className="font-medium text-zinc-500">Posted</dt>
-              <dd className="mt-1 text-zinc-950">{formatDate(job.posting_date)}</dd>
+              <dt className="font-medium text-zinc-500">Location and workplace</dt>
+              <dd className="mt-1 text-zinc-950">{job.location ?? "Not specified"}</dd>
+              <dd className="mt-1 capitalize text-zinc-700">{label(job.workplace_type)}</dd>
             </div>
           </dl>
+
+          <section className="mt-6">
+            <h2 className="text-lg font-semibold text-zinc-950">Skills</h2>
+            {job.skills?.length ? (
+              <ul className="mt-3 flex flex-wrap gap-2">
+                {job.skills.map((skill) => <li className="rounded bg-zinc-100 px-3 py-1 text-sm text-zinc-800" key={skill}>{skill}</li>)}
+              </ul>
+            ) : <p className="mt-2 text-sm text-zinc-600">Not specified</p>}
+          </section>
+
+          <section className="mt-6">
+            <h2 className="text-lg font-semibold text-zinc-950">Application information</h2>
+            <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-3">
+              <div><dt className="text-zinc-500">Posted</dt><dd className="mt-1 text-zinc-900">{job.posted_at ? formatDate(job.posted_at) : "Not specified"}</dd></div>
+              <div><dt className="text-zinc-500">Closing date</dt><dd className="mt-1 text-zinc-900">{job.expires_at ? formatDate(job.expires_at) : "Not specified"}</dd></div>
+              <div><dt className="text-zinc-500">Source</dt><dd className="mt-1 text-zinc-900">{job.source.source_name}</dd></div>
+            </dl>
+          </section>
 
           <section className="mt-6">
             <h2 className="text-lg font-semibold text-zinc-950">Description</h2>

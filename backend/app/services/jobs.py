@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import Settings
 from app.models.activity import SavedJob
-from app.models.enums import AuditOutcome
+from app.models.enums import AuditOutcome, EmploymentType, SeniorityLevel, WorkplaceType
 from app.models.job import JobPosting, JobSource
 from app.schemas.jobs import (
     JobDetailResponse,
@@ -105,6 +105,12 @@ class NormalizedJob:
     salary_currency: str | None
     salary_period: str | None
     minimum_experience: str | None
+    minimum_experience_years: int | None
+    employment_type: str | None
+    workplace_type: str | None
+    seniority_level: str | None
+    skills: list[str] | None
+    expires_at: date | None
     content_hash: str
     is_suspicious: bool
     suspicious_reasons: tuple[str, ...]
@@ -273,6 +279,42 @@ def parse_posting_date(value: Any) -> date | None:
         return None
 
 
+def parse_minimum_experience_years(value: Any) -> int | None:
+    if value in (None, ""):
+        return None
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value if 0 <= value <= 60 else None
+    text = clean_text(value, max_length=100)
+    match = re.search(r"(?i)(\d{1,2})(?:\s*[-–]\s*\d{1,2})?\s*(?:\+\s*)?years?", text)
+    if not match:
+        return None
+    years = int(match.group(1))
+    return years if years <= 60 else None
+
+
+def normalize_enum_value(value: Any, aliases: dict[str, str]) -> str | None:
+    text = clean_text(value, max_length=100).lower().replace("_", " ").replace("-", " ")
+    text = re.sub(r"\s+", " ", text).strip()
+    return aliases.get(text)
+
+
+def normalize_skills(value: Any) -> list[str] | None:
+    if value in (None, ""):
+        return None
+    candidates = value if isinstance(value, (list, tuple, set)) else re.split(r"[,;|\n]", str(value))
+    skills: list[str] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        skill = clean_text(candidate, max_length=100)
+        key = skill.casefold()
+        if skill and key not in seen:
+            skills.append(skill)
+            seen.add(key)
+        if len(skills) == 25:
+            break
+    return skills or None
+
+
 def parse_salary_range(value: Any) -> tuple[float | None, float | None, str | None, str | None]:
     if value in (None, ""):
         return None, None, None, None
@@ -336,6 +378,39 @@ def normalize_job(raw_job: dict[str, Any], source: JobSource) -> NormalizedJob:
         raw_value(raw_job, "minimum_experience", "Job Minimum Experience", "job_minimum_experience"),
         max_length=100,
     ) or None
+    minimum_experience_years = parse_minimum_experience_years(
+        raw_value(raw_job, "minimum_experience_years", "minimum_experience", "Job Minimum Experience")
+    )
+    employment_type = normalize_enum_value(
+        raw_value(raw_job, "employment_type", "Employment Type", "job_type"),
+        {
+            "full time": EmploymentType.FULL_TIME.value,
+            "permanent": EmploymentType.FULL_TIME.value,
+            "part time": EmploymentType.PART_TIME.value,
+            "contract": EmploymentType.CONTRACT.value,
+            "contractor": EmploymentType.CONTRACT.value,
+            "temporary": EmploymentType.TEMPORARY.value,
+            "internship": EmploymentType.INTERNSHIP.value,
+            "intern": EmploymentType.INTERNSHIP.value,
+        },
+    )
+    workplace_type = normalize_enum_value(
+        raw_value(raw_job, "workplace_type", "Workplace Type", "work_arrangement"),
+        {
+            "onsite": WorkplaceType.ONSITE.value,
+            "on site": WorkplaceType.ONSITE.value,
+            "hybrid": WorkplaceType.HYBRID.value,
+            "remote": WorkplaceType.REMOTE.value,
+            "work from home": WorkplaceType.REMOTE.value,
+        },
+    )
+    seniority_level = normalize_enum_value(
+        raw_value(raw_job, "seniority_level", "Seniority Level", "seniority"),
+        {member.value.lower(): member.value for member in SeniorityLevel}
+        | {"entry level": SeniorityLevel.ENTRY.value, "mid level": SeniorityLevel.MID.value},
+    )
+    skills = normalize_skills(raw_value(raw_job, "skills", "Skills", "required_skills"))
+    expires_at = parse_posting_date(raw_value(raw_job, "expires_at", "closing_date", "Closing Date"))
 
     if not title:
         title = "Untitled job"
@@ -374,6 +449,12 @@ def normalize_job(raw_job: dict[str, Any], source: JobSource) -> NormalizedJob:
         salary_currency=salary_currency,
         salary_period=salary_period,
         minimum_experience=minimum_experience,
+        minimum_experience_years=minimum_experience_years,
+        employment_type=employment_type,
+        workplace_type=workplace_type,
+        seniority_level=seniority_level,
+        skills=skills,
+        expires_at=expires_at,
         content_hash=content_hash,
         is_suspicious=bool(suspicious_reasons),
         suspicious_reasons=tuple(dict.fromkeys(suspicious_reasons)),
@@ -474,6 +555,12 @@ def apply_normalized_job(posting: JobPosting, normalized_job: NormalizedJob) -> 
     posting.salary_currency = normalized_job.salary_currency
     posting.salary_period = normalized_job.salary_period
     posting.minimum_experience = normalized_job.minimum_experience
+    posting.minimum_experience_years = normalized_job.minimum_experience_years
+    posting.employment_type = normalized_job.employment_type
+    posting.workplace_type = normalized_job.workplace_type
+    posting.seniority_level = normalized_job.seniority_level
+    posting.skills = normalized_job.skills
+    posting.expires_at = normalized_job.expires_at
     posting.content_hash = normalized_job.content_hash
     posting.is_suspicious = normalized_job.is_suspicious
 
@@ -520,6 +607,13 @@ def job_to_summary_response(job: JobPosting) -> JobSummaryResponse:
         salary_currency=safe_response_text(job.salary_currency, max_length=10),
         salary_period=safe_response_text(job.salary_period, max_length=20),
         minimum_experience=safe_response_text(job.minimum_experience, max_length=100),
+        minimum_experience_years=job.minimum_experience_years,
+        employment_type=job.employment_type,
+        workplace_type=job.workplace_type,
+        seniority_level=job.seniority_level,
+        skills=[safe_response_text(skill, max_length=100) for skill in (job.skills or []) if safe_response_text(skill, max_length=100)] or None,
+        posted_at=job.posting_date,
+        expires_at=job.expires_at,
         scraped_at=job.scraped_at,
         is_active=job.is_active,
         is_suspicious=job.is_suspicious,
@@ -692,6 +786,8 @@ def list_jobs(
         page=page,
         page_size=page_size,
         total=total,
+        total_items=total,
+        total_pages=(total + page_size - 1) // page_size,
     )
 
 
