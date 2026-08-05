@@ -55,3 +55,31 @@ def test_config_accepts_explicit_trust_proxy_setting() -> None:
     settings = Settings(**kwargs)
 
     assert settings.trust_proxy_headers is True
+
+
+def test_role_discovery_defaults_use_dbscan_and_require_admin_approval() -> None:
+    settings = Settings(**base_settings_kwargs())
+
+    assert settings.role_discovery_enabled is False
+    assert settings.role_discovery_model == "sentence-transformers/all-MiniLM-L6-v2"
+    assert settings.role_discovery_dbscan_eps == 0.35
+    assert settings.role_discovery_dbscan_min_samples == 5
+    assert settings.role_discovery_require_admin_approval is True
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("ROLE_DISCOVERY_MODEL", " "),
+        ("ROLE_DISCOVERY_DBSCAN_EPS", 0),
+        ("ROLE_DISCOVERY_DBSCAN_EPS", 2.1),
+        ("ROLE_DISCOVERY_DBSCAN_MIN_SAMPLES", 1),
+        ("ROLE_DISCOVERY_REQUIRE_ADMIN_APPROVAL", False),
+    ],
+)
+def test_config_rejects_unsafe_role_discovery_settings(field: str, value: object) -> None:
+    kwargs = base_settings_kwargs()
+    kwargs[field] = value
+
+    with pytest.raises(ValueError):
+        Settings(**kwargs)

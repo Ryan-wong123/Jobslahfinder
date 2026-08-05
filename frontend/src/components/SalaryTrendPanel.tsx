@@ -63,9 +63,9 @@ export function SalaryTrendPanel() {
   return (
     <section className="grid gap-6 lg:grid-cols-[340px_1fr]">
       <form className="rounded border border-zinc-200 bg-white p-5 shadow-sm" onSubmit={onSubmit}>
-        <h1 className="text-xl font-semibold text-zinc-950">Salary Trend Chart</h1>
+        <h1 className="text-xl font-semibold text-zinc-950">Salary Comparison</h1>
         <p className="mt-1 text-sm leading-6 text-zinc-600">
-          Compare monthly average salary from stored job postings that include salary ranges.
+          Compare monthly average salary trends from active, reviewed job postings that include salary ranges.
         </p>
 
         <label className="mt-5 block">

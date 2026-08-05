@@ -229,6 +229,7 @@ test("career roadmap, salary trend, and status pages call their expected read-on
   const roleCatalogPanel = readComponent("RoleCatalogPanel");
   const roleDetailPanel = readComponent("RoleDetailPanel");
   const salaryTrendPanel = readComponent("SalaryTrendPanel");
+  const salaryComparisonPage = readPage("salary-comparison");
   const statusPage = readPage("status");
 
   assert.match(roleCatalogPanel, /apiFetch<JobRoleListResponse>\("\/job-roles"\)/);
@@ -236,6 +237,7 @@ test("career roadmap, salary trend, and status pages call their expected read-on
   assert.match(salaryTrendPanel, /apiFetch<SalaryTrendResponse>\(\s*`\/salary-trends\?/);
   assert.match(salaryTrendPanel, /Choose a valid month range\./);
   assert.match(salaryTrendPanel, /\\p\{L\}\\p\{N\}/);
+  assert.match(salaryComparisonPage, /<SalaryTrendPanel \/>/);
   assert.match(statusPage, /getApiBaseUrl\(\)/);
 });
 
