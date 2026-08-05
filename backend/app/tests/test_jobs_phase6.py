@@ -282,7 +282,57 @@ def test_salary_comparison_returns_two_to_four_role_trends(
             },
         ],
         "months": 6,
+        "page": 1,
+        "page_size": 20,
+        "total": 2,
     }
+
+
+def test_salary_comparison_paginates_roles(client: TestClient, db_session: Session) -> None:
+    source = create_source(db_session)
+    create_job(
+        db_session,
+        source,
+        title="Software Engineer",
+        salary_min=5000,
+        salary_max=7000,
+        salary_period="month",
+    )
+    create_job(
+        db_session,
+        source,
+        title="Data Analyst",
+        salary_min=6000,
+        salary_max=8000,
+        salary_period="month",
+    )
+
+    response = client.get(
+        "/jobs/salary-comparison",
+        params=[
+            ("roles", "Software Engineer"),
+            ("roles", "Data Analyst"),
+            ("page", "2"),
+            ("page_size", "1"),
+        ],
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["page"] == 2
+    assert body["page_size"] == 1
+    assert body["total"] == 2
+    assert [comparison["role"] for comparison in body["comparisons"]] == ["Data Analyst"]
+
+    oversized = client.get(
+        "/jobs/salary-comparison",
+        params=[
+            ("roles", "Software Engineer"),
+            ("roles", "Data Analyst"),
+            ("page_size", "51"),
+        ],
+    )
+    assert oversized.status_code == 422
 
 
 def test_salary_comparison_validates_role_count_and_unique_safe_roles(client: TestClient) -> None:

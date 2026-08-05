@@ -626,10 +626,17 @@ def get_salary_comparison(
     *,
     roles: list[str],
     months: int = 12,
+    page: int = 1,
+    page_size: int = DEFAULT_PAGE_SIZE,
 ) -> SalaryComparisonResponse:
+    start = (page - 1) * page_size
+    paginated_roles = roles[start : start + page_size]
     return SalaryComparisonResponse(
-        comparisons=[get_salary_trend(db, role=role, months=months) for role in roles],
+        comparisons=[get_salary_trend(db, role=role, months=months) for role in paginated_roles],
         months=months,
+        page=page,
+        page_size=page_size,
+        total=len(roles),
     )
 
 

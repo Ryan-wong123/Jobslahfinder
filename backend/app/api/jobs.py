@@ -101,10 +101,18 @@ def salary_trends(
 def salary_comparison(
     request: Request,
     query: Annotated[SalaryComparisonQuery, Query()],
+    page: Page = 1,
+    page_size: PageSize = DEFAULT_PAGE_SIZE,
     db: Session = Depends(get_db),
 ) -> SalaryComparisonResponse:
     rate_limit_auth(request, "salary-comparison", limit=60, window_seconds=300)
-    return get_salary_comparison(db, roles=query.roles, months=query.months)
+    return get_salary_comparison(
+        db,
+        roles=query.roles,
+        months=query.months,
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.get("/jobs/{job_id}", response_model=JobDetailResponse)

@@ -128,6 +128,9 @@ class SalaryComparisonQuery(BaseModel):
 class SalaryComparisonResponse(BaseModel):
     comparisons: list[SalaryTrendResponse]
     months: int
+    page: int
+    page_size: int
+    total: int
 
     model_config = ConfigDict(extra="forbid")
 
