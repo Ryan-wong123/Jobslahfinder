@@ -300,7 +300,7 @@ def test_admin_can_list_and_moderate_jobs_safely(client: TestClient, db_session:
 
     assert list_response.status_code == 200
     list_body = list_response.json()
-    assert list_body["total"] == 1
+    assert list_body["total_items"] == 1
     assert "<script>" not in list_body["items"][0]["company"]
     assert "description" not in list_body["items"][0]
     assert patch_response.status_code == 200

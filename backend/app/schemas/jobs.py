@@ -2,6 +2,8 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.models.enums import EmploymentType, SeniorityLevel, WorkplaceType
+
 
 class JobSourceResponse(BaseModel):
     id: int
@@ -56,6 +58,13 @@ class JobSummaryResponse(BaseModel):
     salary_currency: str | None = None
     salary_period: str | None = None
     minimum_experience: str | None = None
+    minimum_experience_years: int | None = Field(default=None, ge=0, le=50)
+    employment_type: EmploymentType | None = None
+    workplace_type: WorkplaceType | None = None
+    seniority_level: SeniorityLevel | None = None
+    skills: list[str] | None = None
+    posted_at: datetime | None = None
+    expires_at: datetime | None = None
     source: JobSourcePublicResponse
     posting_date: date | None
     scraped_at: datetime
@@ -76,7 +85,8 @@ class JobListResponse(BaseModel):
     items: list[JobSummaryResponse]
     page: int
     page_size: int
-    total: int
+    total_items: int = Field(ge=0)
+    total_pages: int = Field(ge=0)
 
     model_config = ConfigDict(extra="forbid")
 

@@ -36,7 +36,7 @@ function JobStatus({ job }: { job: JobSummary }) {
 
 function formatSalary(job: JobSummary): string {
   if (job.salary_min === null && job.salary_max === null) {
-    return "Not listed";
+    return "Not specified";
   }
 
   const formatter = new Intl.NumberFormat("en-SG", {
@@ -46,9 +46,19 @@ function formatSalary(job: JobSummary): string {
   });
   const min = job.salary_min !== null ? formatter.format(job.salary_min) : null;
   const max = job.salary_max !== null ? formatter.format(job.salary_max) : null;
-  const amount = min && max && min !== max ? `${min} - ${max}` : min ?? max ?? "Not listed";
+  const amount = min && max && min !== max ? `${min} - ${max}` : min ?? max ?? "Not specified";
 
   return job.salary_period ? `${amount} / ${job.salary_period}` : amount;
+}
+
+function formatNormalizedValue(value: string | null): string {
+  return value ? value.toLowerCase().replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase()) : "Not specified";
+}
+
+function formatExperience(job: JobSummary): string {
+  return job.minimum_experience_years === null
+    ? "Not specified"
+    : `${job.minimum_experience_years} ${job.minimum_experience_years === 1 ? "year" : "years"}`;
 }
 
 type JobRowProps = {
@@ -80,30 +90,26 @@ function JobRow({ job, isSaving, isSaved, onSave }: JobRowProps) {
           </button>
         </div>
       </div>
-      <dl className="mt-4 grid gap-3 text-sm text-zinc-600 sm:grid-cols-3 lg:grid-cols-6">
+      <dl className="mt-4 grid gap-3 text-sm text-zinc-600 sm:grid-cols-2 lg:grid-cols-5">
         <div>
           <dt className="font-medium text-zinc-500">Location</dt>
-          <dd className="mt-1 text-zinc-900">{job.location ?? "Not listed"}</dd>
+          <dd className="mt-1 text-zinc-900">{job.location ?? "Not specified"}</dd>
         </div>
         <div>
           <dt className="font-medium text-zinc-500">Salary</dt>
           <dd className="mt-1 text-zinc-900">{formatSalary(job)}</dd>
         </div>
         <div>
+          <dt className="font-medium text-zinc-500">Workplace</dt>
+          <dd className="mt-1 text-zinc-900">{formatNormalizedValue(job.workplace_type)}</dd>
+        </div>
+        <div>
           <dt className="font-medium text-zinc-500">Min. experience</dt>
-          <dd className="mt-1 text-zinc-900">{job.minimum_experience ?? "Not listed"}</dd>
-        </div>
-        <div>
-          <dt className="font-medium text-zinc-500">Category</dt>
-          <dd className="mt-1 text-zinc-900">{job.category ?? "Not listed"}</dd>
-        </div>
-        <div>
-          <dt className="font-medium text-zinc-500">Source</dt>
-          <dd className="mt-1 text-zinc-900">{job.source.source_name}</dd>
+          <dd className="mt-1 text-zinc-900">{formatExperience(job)}</dd>
         </div>
         <div>
           <dt className="font-medium text-zinc-500">Posted</dt>
-          <dd className="mt-1 text-zinc-900">{formatDate(job.posting_date)}</dd>
+          <dd className="mt-1 text-zinc-900">{job.posted_at ? formatDate(job.posted_at) : "Not specified"}</dd>
         </div>
       </dl>
     </article>
@@ -201,7 +207,7 @@ export function JobBrowser() {
     }
   }
 
-  const totalPages = jobs ? Math.max(1, Math.ceil(jobs.total / jobs.page_size)) : 1;
+  const totalPages = jobs ? Math.max(1, jobs.total_pages) : 1;
 
   return (
     <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
@@ -267,7 +273,7 @@ export function JobBrowser() {
       <section>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-zinc-600">
-            {jobs ? `${jobs.total} active jobs` : "Loading active jobs"}
+            {jobs ? `${jobs.total_items} active jobs` : "Loading active jobs"}
           </p>
           <Link className="rounded border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900" href="/saved-jobs">
             Saved jobs
@@ -294,7 +300,7 @@ export function JobBrowser() {
             />
           ))}
         </div>
-        {jobs && jobs.total > jobs.page_size ? (
+        {jobs && jobs.total_pages > 1 ? (
           <div className="mt-5 flex items-center justify-between gap-3">
             <button
               className="rounded border border-zinc-300 bg-white px-3 py-2 text-sm disabled:cursor-not-allowed disabled:text-zinc-400"

@@ -109,8 +109,18 @@ test("job browsing and job detail flows cover search, save, draft, interview, an
   }
   assert.match(jobBrowser, /apiFetch<SavedJob>\(`\/jobs\/\$\{jobId\}\/save`, \{ method: "POST" \}\)/);
   assert.match(jobBrowser, /router\.push\("\/login"\)/);
+  assert.match(jobBrowser, /jobs\.total_items/);
+  assert.match(jobBrowser, /jobs\.total_pages/);
+  assert.match(jobBrowser, /job\.minimum_experience_years === null/);
+  assert.match(jobBrowser, /job\.workplace_type/);
+  assert.match(jobBrowser, /job\.posted_at/);
+  assert.match(jobBrowser, /Not specified/);
 
   assert.match(jobDetailPanel, /apiFetch<JobDetail>\(`\/jobs\/\$\{params\.jobId\}`\)/);
+  for (const field of ["employment_type", "minimum_experience_years", "skills", "location", "workplace_type", "expires_at"]) {
+    assert.match(jobDetailPanel, new RegExp(`job\\.${field}`));
+  }
+  assert.match(jobDetailPanel, /Not specified/);
   assert.match(jobDetailPanel, /apiFetch<SavedJob>\(`\/jobs\/\$\{params\.jobId\}\/save`, \{/);
   assert.match(jobDetailPanel, /apiFetch<CoverLetter>\(`\/jobs\/\$\{params\.jobId\}\/cover-letter`, \{/);
   assert.match(jobDetailPanel, /router\.push\(`\/cover-letters\/\$\{draft\.id\}`\)/);

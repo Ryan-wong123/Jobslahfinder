@@ -301,7 +301,11 @@ def list_admin_jobs(
     jobs = list(
         db.scalars(
             base_stmt.options(selectinload(JobPosting.source))
-            .order_by(JobPosting.posting_date.desc().nullslast(), JobPosting.id.desc())
+            .order_by(
+                JobPosting.posted_at.desc().nullslast(),
+                JobPosting.posting_date.desc().nullslast(),
+                JobPosting.id.desc(),
+            )
             .offset((page - 1) * page_size)
             .limit(page_size)
         ).all()
@@ -310,7 +314,8 @@ def list_admin_jobs(
         items=[job_to_summary_response(job) for job in jobs],
         page=page,
         page_size=page_size,
-        total=total,
+        total_items=total,
+        total_pages=(total + page_size - 1) // page_size,
     )
 
 

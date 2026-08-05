@@ -1,5 +1,5 @@
 from collections.abc import Generator
-from datetime import date
+from datetime import UTC, date, datetime
 
 import pyotp
 import pytest
@@ -106,6 +106,13 @@ def create_job(
     salary_period: str | None = None,
     is_active: bool = True,
     is_suspicious: bool = False,
+    posted_at: datetime | None = None,
+    minimum_experience_years: int | None = None,
+    employment_type: str | None = None,
+    workplace_type: str | None = None,
+    seniority_level: str | None = None,
+    skills: list[str] | None = None,
+    expires_at: datetime | None = None,
 ) -> JobPosting:
     hostname = "sg.jobstreet.com"
     if source.source_name == "MyCareersFuture":
@@ -124,6 +131,13 @@ def create_job(
         salary_max=salary_max,
         salary_currency="SGD" if salary_min is not None or salary_max is not None else None,
         salary_period=salary_period,
+        minimum_experience_years=minimum_experience_years,
+        employment_type=employment_type,
+        workplace_type=workplace_type,
+        seniority_level=seniority_level,
+        skills=skills,
+        posted_at=posted_at,
+        expires_at=expires_at,
         is_active=is_active,
         is_suspicious=is_suspicious,
         content_hash=f"hash-{title}-{company}",
@@ -164,7 +178,7 @@ def test_job_search_filters_and_public_visibility(client: TestClient, db_session
     search_response = client.get("/jobs", params={"keyword": "security"})
     assert search_response.status_code == 200
     search_body = search_response.json()
-    assert search_body["total"] == 1
+    assert search_body["total_items"] == 1
     assert search_body["items"][0]["title"] == "Security Engineer"
 
     filter_response = client.get(
@@ -178,7 +192,7 @@ def test_job_search_filters_and_public_visibility(client: TestClient, db_session
     )
     assert filter_response.status_code == 200
     filter_body = filter_response.json()
-    assert filter_body["total"] == 1
+    assert filter_body["total_items"] == 1
     assert filter_body["items"][0]["source"]["source_name"] == "MyCareersFuture"
 
     default_response = client.get("/jobs")
@@ -202,11 +216,68 @@ def test_pagination_limits_are_enforced(client: TestClient, db_session: Session)
     body = response.json()
     assert body["page"] == 2
     assert body["page_size"] == 1
-    assert body["total"] == 3
+    assert body["total_items"] == 3
+    assert body["total_pages"] == 3
     assert len(body["items"]) == 1
 
-    oversized = client.get("/jobs", params={"page_size": 51})
+    oversized = client.get("/jobs", params={"page_size": 101})
     assert oversized.status_code == 422
+
+    zero = client.get("/jobs", params={"page_size": 0})
+    assert zero.status_code == 422
+
+
+def test_normalized_fields_are_nullable_and_stably_ordered(
+    client: TestClient, db_session: Session
+) -> None:
+    source = create_source(db_session)
+    older = create_job(
+        db_session,
+        source,
+        title="Older normalized job",
+        posted_at=datetime(2026, 5, 1, tzinfo=UTC),
+    )
+    first_tied = create_job(
+        db_session,
+        source,
+        title="First tied job",
+        posted_at=datetime(2026, 5, 2, tzinfo=UTC),
+    )
+    newest_tied = create_job(
+        db_session,
+        source,
+        title="Newest tied job",
+        posted_at=datetime(2026, 5, 2, tzinfo=UTC),
+        minimum_experience_years=3,
+        employment_type="FULL_TIME",
+        workplace_type="HYBRID",
+        seniority_level="SENIOR",
+        skills=["Python", "FastAPI"],
+        expires_at=datetime(2026, 6, 1, tzinfo=UTC),
+    )
+
+    first_page = client.get("/jobs", params={"page": 1, "page_size": 2})
+    second_request = client.get("/jobs", params={"page": 1, "page_size": 2})
+    last_page = client.get("/jobs", params={"page": 2, "page_size": 2})
+
+    assert first_page.status_code == 200
+    body = first_page.json()
+    assert body["total_items"] == 3
+    assert body["total_pages"] == 2
+    assert [item["id"] for item in body["items"]] == [newest_tied.id, first_tied.id]
+    assert [item["id"] for item in second_request.json()["items"]] == [newest_tied.id, first_tied.id]
+    assert last_page.json()["items"][0]["id"] == older.id
+    assert body["items"][0]["minimum_experience_years"] == 3
+    assert body["items"][0]["employment_type"] == "FULL_TIME"
+    assert body["items"][0]["workplace_type"] == "HYBRID"
+    assert body["items"][0]["seniority_level"] == "SENIOR"
+    assert body["items"][0]["skills"] == ["Python", "FastAPI"]
+    nullable = last_page.json()["items"][0]
+    for field in (
+        "minimum_experience_years", "employment_type", "workplace_type",
+        "seniority_level", "skills", "expires_at",
+    ):
+        assert nullable[field] is None
 
 
 def test_salary_trends_use_monthly_salary_samples(client: TestClient, db_session: Session) -> None:

@@ -781,6 +781,8 @@ CREATE TABLE audit_logs (
 - `job_sources` defines approved sources.
 - `scraping_runs` records success/failure and job counts.
 - `job_postings` stores normalized job data.
+- `job_postings` additionally stores nullable normalized employment type, workplace type, seniority level, skill arrays, minimum experience years, posting timestamp, and expiry timestamp. Database constraints bound experience to 0–50 years and restrict controlled values to the application enums.
+- The `GET /jobs` contract returns `items`, `page`, `page_size`, `total_items`, and `total_pages`. Public queries exclude inactive or suspicious records and order by newest normalized posting timestamp, then legacy posting date, then descending job identifier for deterministic pagination.
 - `content_hash` supports duplicate detection.
 - `is_suspicious` supports moderation.
 

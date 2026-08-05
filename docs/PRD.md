@@ -182,6 +182,8 @@ Cannot:
 - **FR14 Redirect to original job source:** The system shall allow users to access the original job posting website through the provided application link.
 - **FR16 Duplicate job handling:** The system shall detect and manage duplicate job postings collected from one or more job sources.
 - **FR17 Scraping job monitoring:** The system shall allow administrators to view the execution status of scraping tasks, including successful runs, failed runs, and the number of job postings retrieved.
+- **FR26 Normalized job information:** Job listing and detail responses shall expose nullable minimum experience years, employment type, workplace type, seniority level, skills, posting timestamp, and expiry timestamp. Controlled values shall be normalized against server-side allowlists, and missing experience shall not be interpreted as zero.
+- **FR27 Stable job pagination:** Job browsing shall return `items`, `page`, `page_size`, `total_items`, and `total_pages`. Page sizes shall be restricted to 1 through 100, and results shall use deterministic descending ordering by posting timestamp and job identifier.
 
 ### 7.2 Resume and Profile
 

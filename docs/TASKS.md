@@ -306,6 +306,7 @@ A task is only done when:
 
 ### Job Normalization and Validation
 - [x] Normalize job fields: title, company, location, category, description, source, posting date, application link.
+- [x] Normalize nullable employment, workplace, seniority, skills, minimum experience years, posting time, and expiry time fields with controlled-value validation.
 - [x] Validate required fields: title, company, source, application link.
 - [x] Validate job URLs.
 - [x] Store source attribution.
@@ -341,6 +342,7 @@ A task is only done when:
 - [x] Implement category filter.
 - [x] Implement active-only filtering by default.
 - [x] Add pagination.
+- [x] Return bounded pagination metadata and stable newest-posting/job-ID ordering.
 - [x] Add query size limits.
 - [x] Prevent expensive unbounded queries.
 - [x] Use ORM/parameterized queries only.
@@ -367,6 +369,7 @@ A task is only done when:
 - [x] Build frontend saved jobs page.
 - [x] Add external link warning UI.
 - [x] Add safe display for job descriptions.
+- [x] Display concise normalized job summaries and organized detail sections with safe `Not specified` fallbacks.
 
 ### Tests
 - [x] Add tests for job search.

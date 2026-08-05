@@ -194,6 +194,11 @@ def test_job_normalization_strips_html_and_validates_source_domain(db_session: S
             "posting_date": "2026-04-30",
             "salary": "SGD 4,000 - 6,000 per month",
             "minimum_experience": "2 years",
+            "employment_type": "Full-time",
+            "workplace_type": "Hybrid",
+            "seniority_level": "Senior",
+            "skills": "Python, FastAPI; PostgreSQL",
+            "expires_at": "2026-05-31",
         },
         source,
     )
@@ -207,9 +212,30 @@ def test_job_normalization_strips_html_and_validates_source_domain(db_session: S
     assert normalized.salary_currency == "SGD"
     assert normalized.salary_period == "month"
     assert normalized.minimum_experience == "2 years"
+    assert normalized.minimum_experience_years == 2
+    assert normalized.employment_type == "FULL_TIME"
+    assert normalized.workplace_type == "HYBRID"
+    assert normalized.seniority_level == "SENIOR"
+    assert normalized.skills == ["Python", "FastAPI", "PostgreSQL"]
+    assert normalized.posted_at is not None
+    assert normalized.expires_at is not None
     assert normalized.is_suspicious is True
     assert "html_stripped" in normalized.suspicious_reasons
     assert len(normalized.content_hash) == 64
+
+    unrealistic = normalize_job(
+        {
+            "title": "Impossible experience",
+            "company": "Example Company",
+            "job_url": "https://sg.jobstreet.com/job/impossible-experience",
+            "minimum_experience_years": 99,
+            "salary": "salary unknown-ish",
+        },
+        source,
+    )
+    assert unrealistic.minimum_experience_years is None
+    assert "invalid_minimum_experience" in unrealistic.suspicious_reasons
+    assert "invalid_salary" in unrealistic.suspicious_reasons
 
     with pytest.raises(JobValidationError):
         normalize_job(

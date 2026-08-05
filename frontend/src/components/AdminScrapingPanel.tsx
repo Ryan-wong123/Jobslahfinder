@@ -222,7 +222,7 @@ async function fetchJobsThroughPage(page: number) {
     ...firstPage,
     items: [firstPage, ...nextPages].flatMap((response) => response.items),
     page,
-    total: nextPages.at(-1)?.total ?? firstPage.total
+    total_items: nextPages.at(-1)?.total_items ?? firstPage.total_items
   };
 }
 
@@ -405,7 +405,7 @@ export function AdminScrapingPanel() {
   }
 
   async function loadMoreJobs() {
-    if (!jobs || jobs.items.length >= jobs.total) {
+    if (!jobs || jobs.items.length >= jobs.total_items) {
       return;
     }
     const nextPage = jobPage + 1;
@@ -543,7 +543,7 @@ export function AdminScrapingPanel() {
           </div>
           <div className="rounded border border-zinc-200 p-4">
             <p className="text-xs uppercase text-zinc-500">Jobs</p>
-            <p className="mt-2 text-xl font-semibold">{jobs?.total ?? 0}</p>
+            <p className="mt-2 text-xl font-semibold">{jobs?.total_items ?? 0}</p>
             <dl className="mt-2 space-y-1 text-xs text-zinc-600">
               {portalJobCounts.map((portal) => (
                 <div key={portal.sourceName} className="flex items-center justify-between gap-2">
@@ -697,10 +697,10 @@ export function AdminScrapingPanel() {
             </tbody>
           </table>
         </div>
-        {jobs && jobs.items.length < jobs.total ? (
+        {jobs && jobs.items.length < jobs.total_items ? (
           <div className="mt-4 flex items-center justify-between gap-3">
             <p className="text-sm text-zinc-600">
-              Showing {jobs.items.length} of {jobs.total} scraped jobs.
+              Showing {jobs.items.length} of {jobs.total_items} scraped jobs.
             </p>
             <button
               className="rounded border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-900 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-400"
@@ -711,8 +711,8 @@ export function AdminScrapingPanel() {
               {loadingMoreJobs ? "Loading..." : "See more"}
             </button>
           </div>
-        ) : jobs && jobs.total > 0 ? (
-          <p className="mt-4 text-sm text-zinc-600">Showing all {jobs.total} scraped jobs.</p>
+        ) : jobs && jobs.total_items > 0 ? (
+          <p className="mt-4 text-sm text-zinc-600">Showing all {jobs.total_items} scraped jobs.</p>
         ) : null}
       </section>
 
