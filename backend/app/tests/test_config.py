@@ -55,3 +55,41 @@ def test_config_accepts_explicit_trust_proxy_setting() -> None:
     settings = Settings(**kwargs)
 
     assert settings.trust_proxy_headers is True
+
+
+def test_config_loads_role_discovery_settings() -> None:
+    kwargs = base_settings_kwargs()
+    kwargs.update(
+        {
+            "ROLE_DISCOVERY_MODEL_NAME": "sentence-transformers/custom-model",
+            "ROLE_DISCOVERY_DBSCAN_EPS": 0.4,
+            "ROLE_DISCOVERY_DBSCAN_MIN_SAMPLES": 7,
+            "ROLE_DISCOVERY_REQUIRE_ADMIN_APPROVAL": True,
+        }
+    )
+
+    settings = Settings(**kwargs)
+
+    assert settings.role_discovery_model_name == "sentence-transformers/custom-model"
+    assert settings.role_discovery_dbscan_eps == 0.4
+    assert settings.role_discovery_dbscan_min_samples == 7
+    assert settings.role_discovery_require_admin_approval is True
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("ROLE_DISCOVERY_MODEL_NAME", " "),
+        ("ROLE_DISCOVERY_DBSCAN_EPS", 0),
+        ("ROLE_DISCOVERY_DBSCAN_EPS", 2.1),
+        ("ROLE_DISCOVERY_DBSCAN_MIN_SAMPLES", 1),
+        ("ROLE_DISCOVERY_DBSCAN_MIN_SAMPLES", 101),
+        ("ROLE_DISCOVERY_REQUIRE_ADMIN_APPROVAL", False),
+    ],
+)
+def test_config_rejects_unsafe_role_discovery_settings(field: str, value: object) -> None:
+    kwargs = base_settings_kwargs()
+    kwargs[field] = value
+
+    with pytest.raises(ValueError):
+        Settings(**kwargs)
