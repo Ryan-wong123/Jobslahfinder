@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -95,6 +96,38 @@ class SalaryTrendResponse(BaseModel):
     period: str
     points: list[SalaryTrendPointResponse]
     sample_size: int
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ExperienceBand(StrEnum):
+    ZERO_TO_TWO = "0-2"
+    THREE_TO_FIVE = "3-5"
+    SIX_TO_NINE = "6-9"
+    TEN_PLUS = "10+"
+
+
+class SalaryExperienceBandResponse(BaseModel):
+    band: ExperienceBand
+    label: str
+    sample_count: int = Field(ge=0)
+    median_salary: float | None
+    lower_quartile: float | None
+    upper_quartile: float | None
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class SalaryExperienceComparisonResponse(BaseModel):
+    role: str
+    selected_band: ExperienceBand
+    currency: str = "SGD"
+    period: str = "month"
+    role_sample_count: int = Field(ge=0)
+    role_median_salary: float | None
+    selected_band_difference_from_role_median: float | None
+    bands: list[SalaryExperienceBandResponse]
+    disclaimer: str
 
     model_config = ConfigDict(extra="forbid")
 

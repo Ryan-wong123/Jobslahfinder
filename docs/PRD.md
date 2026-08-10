@@ -182,6 +182,9 @@ Cannot:
 - **FR14 Redirect to original job source:** The system shall allow users to access the original job posting website through the provided application link.
 - **FR16 Duplicate job handling:** The system shall detect and manage duplicate job postings collected from one or more job sources.
 - **FR17 Scraping job monitoring:** The system shall allow administrators to view the execution status of scraping tasks, including successful runs, failed runs, and the number of job postings retrieved.
+- **FR26 Salary comparison by experience:** The system shall allow users to select a job role and compare advertised monthly SGD salary statistics across the 0–2, 3–5, 6–9, and 10+ year minimum-experience bands. Each band shall report its qualifying sample count, median, lower quartile, and upper quartile, and the selected band shall report its difference from the role-wide median.
+
+Salary comparison includes only active, non-suspicious postings with supported monthly, annual, or hourly SGD salary data and an explicitly stated valid minimum experience. Annual and hourly advertised salary midpoints are normalized to monthly SGD. Missing or ambiguous experience remains “Not specified” and is excluded from numbered bands. The figures describe advertised salaries, may be based on small samples, and do not represent actual compensation.
 
 ### 7.2 Resume and Profile
 

@@ -48,6 +48,26 @@ The system allows administrators to:
 - Monitor scraping tasks.
 - View platform activity and audit logs.
 
+### Salary-by-experience aggregation flow
+
+The public, rate-limited `GET /salary-comparison` endpoint accepts a constrained role label and one enumerated experience band. The jobs API passes validated values to the jobs service, which uses parameterized SQLAlchemy expressions to select active, non-suspicious SGD postings for matching role titles. The service normalizes supported salary midpoints to monthly SGD, parses only explicitly stated minimum-experience values, assigns the values to the four fixed bands, and calculates sample count, median, lower quartile, and upper quartile. The response also includes the role-wide median, selected-band difference, and an advertised-salary limitation notice. The Next.js salary trends page renders the summary and all four bands with React text interpolation; scraped role labels are never rendered as HTML.
+
+```text
+Role + fixed experience band
+          |
+          v
+FastAPI validation and rate limit
+          |
+          v
+SQLAlchemy: active + non-suspicious + SGD jobs
+          |
+          v
+Monthly normalization -> experience parsing -> band aggregation
+          |
+          v
+Typed statistics response -> Next.js summary and comparison chart
+```
+
 The system integrates with:
 - Approved external job sources.
 - An AI service for recommendation and cover letter support.

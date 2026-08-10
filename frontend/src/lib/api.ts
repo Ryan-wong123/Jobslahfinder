@@ -151,6 +151,29 @@ export type SalaryTrendResponse = {
   sample_size: number;
 };
 
+export type ExperienceBand = "0-2" | "3-5" | "6-9" | "10+";
+
+export type SalaryExperienceBand = {
+  band: ExperienceBand;
+  label: string;
+  sample_count: number;
+  median_salary: number | null;
+  lower_quartile: number | null;
+  upper_quartile: number | null;
+};
+
+export type SalaryExperienceComparisonResponse = {
+  role: string;
+  selected_band: ExperienceBand;
+  currency: string;
+  period: string;
+  role_sample_count: number;
+  role_median_salary: number | null;
+  selected_band_difference_from_role_median: number | null;
+  bands: SalaryExperienceBand[];
+  disclaimer: string;
+};
+
 export type JobRoleSummary = {
   slug: string;
   name: string;

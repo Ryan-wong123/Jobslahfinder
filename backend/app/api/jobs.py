@@ -8,7 +8,7 @@ from app.models.account import User
 from app.core.config import Settings, get_settings
 from app.schemas.auth import MessageResponse
 from app.schemas.activity import CoverLetterResponse, InterviewQuestionsResponse
-from app.schemas.jobs import JobDetailResponse, JobListResponse, SalaryTrendResponse, SavedJobListResponse, SavedJobResponse
+from app.schemas.jobs import ExperienceBand, JobDetailResponse, JobListResponse, SalaryExperienceComparisonResponse, SalaryTrendResponse, SavedJobListResponse, SavedJobResponse
 from app.security.auth import require_authenticated_user
 from app.core.rate_limit import rate_limit_auth
 from app.services.activity import (
@@ -24,6 +24,7 @@ from app.services.jobs import (
     JobNotFoundError,
     get_visible_job_detail,
     get_salary_trend,
+    get_salary_experience_comparison,
     list_jobs,
     list_saved_jobs_for_user,
     save_job_for_user,
@@ -86,6 +87,17 @@ def salary_trends(
 ) -> SalaryTrendResponse:
     rate_limit_auth(request, "salary-trends", limit=60, window_seconds=300)
     return get_salary_trend(db, role=role, months=months)
+
+
+@router.get("/salary-comparison", response_model=SalaryExperienceComparisonResponse)
+def salary_comparison(
+    request: Request,
+    role: Annotated[str, Query(min_length=2, max_length=100, pattern=r"^[\w\s.,&()+#/'\-]+$")],
+    experience_band: Annotated[ExperienceBand, Query()],
+    db: Session = Depends(get_db),
+) -> SalaryExperienceComparisonResponse:
+    rate_limit_auth(request, "salary-comparison", limit=60, window_seconds=300)
+    return get_salary_experience_comparison(db, role=role, selected_band=experience_band)
 
 
 @router.get("/jobs/{job_id}", response_model=JobDetailResponse)

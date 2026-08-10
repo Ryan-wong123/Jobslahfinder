@@ -104,6 +104,8 @@ def create_job(
     salary_min: float | None = None,
     salary_max: float | None = None,
     salary_period: str | None = None,
+    salary_currency: str | None = None,
+    minimum_experience: str | None = None,
     is_active: bool = True,
     is_suspicious: bool = False,
 ) -> JobPosting:
@@ -122,8 +124,9 @@ def create_job(
         posting_date=date(2026, 4, 30),
         salary_min=salary_min,
         salary_max=salary_max,
-        salary_currency="SGD" if salary_min is not None or salary_max is not None else None,
+        salary_currency=salary_currency or ("SGD" if salary_min is not None or salary_max is not None else None),
         salary_period=salary_period,
+        minimum_experience=minimum_experience,
         is_active=is_active,
         is_suspicious=is_suspicious,
         content_hash=f"hash-{title}-{company}",
@@ -234,6 +237,57 @@ def test_salary_trends_use_monthly_salary_samples(client: TestClient, db_session
     body = response.json()
     assert body["sample_size"] == 2
     assert body["points"] == [{"period": "2026-04", "average_salary": 8000.0, "sample_count": 2}]
+
+
+def test_salary_comparison_normalizes_and_groups_boundaries(client: TestClient, db_session: Session) -> None:
+    source = create_source(db_session)
+    cases = [
+        ("2 years", 3000, "month"), ("3 years", 48000, "year"),
+        ("5 years", 5000, "month"), ("6 years", 6000, "month"),
+        ("9 years", 7000, "month"), ("10+ years", 120000, "year"),
+    ]
+    for index, (experience, salary, period) in enumerate(cases):
+        create_job(db_session, source, title="Software Engineer", company=f"Company {index}",
+                   salary_min=salary, salary_max=salary, salary_period=period,
+                   minimum_experience=experience)
+
+    response = client.get("/salary-comparison", params={"role": "Software Engineer", "experience_band": "3-5"})
+    assert response.status_code == 200
+    body = response.json()
+    assert [item["band"] for item in body["bands"]] == ["0-2", "3-5", "6-9", "10+"]
+    assert [item["sample_count"] for item in body["bands"]] == [1, 2, 2, 1]
+    selected = body["bands"][1]
+    assert selected["median_salary"] == 4500
+    assert selected["lower_quartile"] == 4250
+    assert selected["upper_quartile"] == 4750
+    assert body["role_median_salary"] == 5500
+    assert body["selected_band_difference_from_role_median"] == -1000
+
+
+def test_salary_comparison_excludes_invalid_unpublished_suspicious_non_sgd_and_unspecified(
+    client: TestClient, db_session: Session,
+) -> None:
+    source = create_source(db_session)
+    common = {"title": "Data Analyst", "salary_min": 5000, "salary_max": 5000,
+              "salary_period": "month"}
+    create_job(db_session, source, company="Valid", minimum_experience="0 years", **common)
+    create_job(db_session, source, company="Missing experience", minimum_experience=None, **common)
+    create_job(db_session, source, company="Inactive", minimum_experience="1 year", is_active=False, **common)
+    create_job(db_session, source, company="Suspicious", minimum_experience="1 year", is_suspicious=True, **common)
+    create_job(db_session, source, company="Foreign", minimum_experience="1 year", salary_currency="USD", **common)
+    create_job(db_session, source, company="Invalid period", minimum_experience="1 year",
+               salary_min=5000, salary_max=5000, salary_period=None, title="Data Analyst")
+    create_job(db_session, source, company="Inverted range", minimum_experience="1 year",
+               salary_min=7000, salary_max=5000, salary_period="month", title="Data Analyst")
+
+    body = client.get("/salary-comparison", params={"role": "Data Analyst", "experience_band": "0-2"}).json()
+    assert body["role_sample_count"] == 1
+    assert body["bands"][0]["sample_count"] == 1
+
+
+def test_salary_comparison_validates_role_and_band(client: TestClient) -> None:
+    assert client.get("/salary-comparison", params={"role": "x", "experience_band": "0-2"}).status_code == 422
+    assert client.get("/salary-comparison", params={"role": "Engineer", "experience_band": "-1"}).status_code == 422
 
 
 def test_job_role_catalog_and_detail_are_derived_from_visible_jobs(client: TestClient, db_session: Session) -> None:

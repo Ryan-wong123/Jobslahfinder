@@ -334,6 +334,14 @@ A task is only done when:
 
 ## Phase 6: Job Browsing and Saved Jobs
 
+### Salary Comparison by Experience (Issue #49)
+- [x] Add the validated and rate-limited salary comparison endpoint and typed response schemas.
+- [x] Normalize supported advertised salaries to monthly SGD and aggregate specified experience into 0–2, 3–5, 6–9, and 10+ year bands.
+- [x] Exclude inactive, suspicious, non-SGD, invalid salary, and unspecified-experience records.
+- [x] Add role and experience selectors, selected-band summary statistics, reliability counts, disclaimer, and comparison chart.
+- [~] Add focused backend boundary, normalization, exclusion, median, and validation tests (implemented; execution pending availability of the pytest environment).
+- [x] Add and execute frontend flow coverage for the salary-comparison request and state handling.
+
 ### Job Search API
 - [x] Implement `GET /jobs` with keyword filter.
 - [x] Implement company filter.

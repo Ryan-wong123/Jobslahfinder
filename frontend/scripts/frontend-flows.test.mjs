@@ -233,8 +233,10 @@ test("career roadmap, salary trend, and status pages call their expected read-on
 
   assert.match(roleCatalogPanel, /apiFetch<JobRoleListResponse>\("\/job-roles"\)/);
   assert.match(roleDetailPanel, /apiFetch<JobRoleDetail>\(`\/job-roles\/\$\{encodeURIComponent\(slug\)\}`\)/);
-  assert.match(salaryTrendPanel, /apiFetch<SalaryTrendResponse>\(\s*`\/salary-trends\?/);
-  assert.match(salaryTrendPanel, /Choose a valid month range\./);
+  assert.match(salaryTrendPanel, /apiFetch<SalaryExperienceComparisonResponse>\(`\/salary-comparison\?/);
+  assert.match(salaryTrendPanel, /Choose a valid experience band\./);
+  assert.match(salaryTrendPanel, /comparison\.disclaimer/);
+  assert.match(salaryTrendPanel, /SalaryTrendChart bands=/);
   assert.match(salaryTrendPanel, /\\p\{L\}\\p\{N\}/);
   assert.match(statusPage, /getApiBaseUrl\(\)/);
 });

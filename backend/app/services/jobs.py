@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 import hashlib
+import math
 import re
 from typing import Any
 from urllib.parse import urlsplit
@@ -23,6 +24,9 @@ from app.schemas.jobs import (
     JobSummaryResponse,
     SalaryTrendPointResponse,
     SalaryTrendResponse,
+    ExperienceBand,
+    SalaryExperienceBandResponse,
+    SalaryExperienceComparisonResponse,
     SavedJobListResponse,
     SavedJobResponse,
 )
@@ -76,6 +80,16 @@ SALARY_ROLE_KEYWORD_EXPANSIONS: dict[str, tuple[str, ...]] = {
 }
 
 SALARY_NUMBER_PATTERN = re.compile(r"(?i)(\d+(?:,\d{3})*(?:\.\d+)?|\d+(?:\.\d+)?)\s*(k)?")
+EXPERIENCE_NUMBER_PATTERN = re.compile(r"(?i)(\d+(?:\.\d+)?)\s*(?:\+\s*)?(?:years?|yrs?)")
+EXPERIENCE_BAND_LABELS = {
+    ExperienceBand.ZERO_TO_TWO: "0–2 years",
+    ExperienceBand.THREE_TO_FIVE: "3–5 years",
+    ExperienceBand.SIX_TO_NINE: "6–9 years",
+    ExperienceBand.TEN_PLUS: "10+ years",
+}
+SALARY_COMPARISON_DISCLAIMER = (
+    "Results are based on advertised salaries and may not represent actual compensation."
+)
 
 
 class JobSourceValidationError(ValueError):
@@ -549,6 +563,108 @@ def monthly_salary_midpoint(job: JobPosting) -> float | None:
     if period == "hour":
         return midpoint * 173.33
     return None
+
+
+def valid_monthly_salary_midpoint(job: JobPosting) -> float | None:
+    values = [float(value) for value in (job.salary_min, job.salary_max) if value is not None]
+    if not values or any(not math.isfinite(value) or value <= 0 or value > 1_000_000 for value in values):
+        return None
+    if job.salary_min is not None and job.salary_max is not None and float(job.salary_min) > float(job.salary_max):
+        return None
+    monthly = monthly_salary_midpoint(job)
+    return monthly if monthly is not None and math.isfinite(monthly) and monthly > 0 else None
+
+
+def parse_minimum_experience_years(value: str | None) -> float | None:
+    """Return a stated minimum in years; missing or ambiguous text stays unspecified."""
+    if not value:
+        return None
+    cleaned = clean_text(value, max_length=100).lower()
+    if not cleaned or any(marker in cleaned for marker in ("not specified", "unspecified", "negotiable")):
+        return None
+    match = EXPERIENCE_NUMBER_PATTERN.search(cleaned)
+    if match is None:
+        return None
+    years = float(match.group(1))
+    return years if 0 <= years <= 80 else None
+
+
+def experience_band_for_years(years: float | None) -> ExperienceBand | None:
+    if years is None or years < 0 or years > 80:
+        return None
+    if years <= 2:
+        return ExperienceBand.ZERO_TO_TWO
+    if years <= 5:
+        return ExperienceBand.THREE_TO_FIVE
+    if years <= 9:
+        return ExperienceBand.SIX_TO_NINE
+    return ExperienceBand.TEN_PLUS
+
+
+def percentile(values: list[float], percentile_value: float) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    position = (len(ordered) - 1) * percentile_value
+    lower = math.floor(position)
+    upper = math.ceil(position)
+    if lower == upper:
+        return ordered[lower]
+    return ordered[lower] + (ordered[upper] - ordered[lower]) * (position - lower)
+
+
+def get_salary_experience_comparison(
+    db: Session,
+    *,
+    role: str,
+    selected_band: ExperienceBand,
+) -> SalaryExperienceComparisonResponse:
+    cleaned_role = clean_text(role, max_length=100)
+    keywords = salary_search_keywords(cleaned_role)
+    patterns = [f"%{escape_like_term(keyword)}%" for keyword in keywords]
+    title_filters = [JobPosting.title.ilike(pattern, escape="\\") for pattern in patterns]
+
+    jobs: list[JobPosting] = []
+    if title_filters:
+        jobs = list(db.scalars(select(JobPosting).where(
+            JobPosting.is_active.is_(True),
+            JobPosting.is_suspicious.is_(False),
+            JobPosting.salary_currency == "SGD",
+            JobPosting.salary_period.in_(("month", "year", "hour")),
+            or_(JobPosting.salary_min.is_not(None), JobPosting.salary_max.is_not(None)),
+            or_(*title_filters),
+        ).limit(500)).all())
+
+    grouped: dict[ExperienceBand, list[float]] = {band: [] for band in ExperienceBand}
+    all_values: list[float] = []
+    for job in jobs:
+        midpoint = valid_monthly_salary_midpoint(job)
+        band = experience_band_for_years(parse_minimum_experience_years(job.minimum_experience))
+        if midpoint is None or band is None:
+            continue
+        grouped[band].append(midpoint)
+        all_values.append(midpoint)
+
+    bands = [SalaryExperienceBandResponse(
+        band=band,
+        label=EXPERIENCE_BAND_LABELS[band],
+        sample_count=len(grouped[band]),
+        median_salary=round(value, 2) if (value := percentile(grouped[band], 0.5)) is not None else None,
+        lower_quartile=round(value, 2) if (value := percentile(grouped[band], 0.25)) is not None else None,
+        upper_quartile=round(value, 2) if (value := percentile(grouped[band], 0.75)) is not None else None,
+    ) for band in ExperienceBand]
+    role_median = percentile(all_values, 0.5)
+    selected_median = next(item.median_salary for item in bands if item.band == selected_band)
+    difference = selected_median - role_median if selected_median is not None and role_median is not None else None
+    return SalaryExperienceComparisonResponse(
+        role=cleaned_role,
+        selected_band=selected_band,
+        role_sample_count=len(all_values),
+        role_median_salary=round(role_median, 2) if role_median is not None else None,
+        selected_band_difference_from_role_median=round(difference, 2) if difference is not None else None,
+        bands=bands,
+        disclaimer=SALARY_COMPARISON_DISCLAIMER,
+    )
 
 
 def salary_search_keywords(role: str, role_keywords: tuple[str, ...] | None = None) -> tuple[str, ...]:
