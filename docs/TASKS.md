@@ -334,6 +334,12 @@ A task is only done when:
 
 ## Phase 6: Job Browsing and Saved Jobs
 
+### Salary Comparison by Experience
+- [x] Add the four fixed minimum-experience bands and centralized monthly salary normalization.
+- [x] Add a validated, rate-limited role salary-comparison API with medians, percentile ranges, counts, preceding-band differences, observation dates, and insufficient-data indicators.
+- [x] Add the location-filtered “By experience” chart and disclosure states to the salary-trends interface.
+- [x] Add focused backend boundary/normalization/security tests and frontend endpoint/state checks; the focused backend tests, frontend flow tests, frontend lint, TypeScript checks, and production build pass.
+
 ### Job Search API
 - [x] Implement `GET /jobs` with keyword filter.
 - [x] Implement company filter.

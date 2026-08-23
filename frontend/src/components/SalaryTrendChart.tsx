@@ -1,6 +1,6 @@
 "use client";
 
-import type { SalaryTrendPoint } from "@/lib/api";
+import type { ExperienceSalaryBand, SalaryTrendPoint } from "@/lib/api";
 
 type SalaryTrendChartProps = {
   points: SalaryTrendPoint[];
@@ -108,6 +108,45 @@ export function SalaryTrendChart({ points, currency }: SalaryTrendChartProps) {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+export function ExperienceSalaryChart({ bands, currency }: { bands: ExperienceSalaryBand[]; currency: string }) {
+  const reliableValues = bands.flatMap((band) =>
+    band.insufficient_data || band.percentile_75 === null ? [] : [band.percentile_75]
+  );
+  const maxSalary = Math.max(1, ...reliableValues);
+
+  return (
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label="Monthly salary by experience band">
+      {bands.map((band) => {
+        const reliable = !band.insufficient_data && band.median_monthly_salary !== null;
+        const height = reliable ? Math.max(12, (band.median_monthly_salary! / maxSalary) * 150) : 0;
+        return (
+          <article className="rounded border border-zinc-200 p-4" key={band.key}>
+            <h3 className="font-semibold text-zinc-950">{band.label}</h3>
+            <p className="text-xs text-zinc-500">{band.years_label}</p>
+            <div className="mt-4 flex h-40 items-end justify-center rounded bg-zinc-50" aria-hidden="true">
+              {reliable ? <div className="w-16 rounded-t bg-teal-700" style={{ height }} /> : null}
+            </div>
+            {reliable ? (
+              <>
+                <p className="mt-3 font-semibold text-zinc-950">Median {formatSalary(band.median_monthly_salary!, currency)}</p>
+                <p className="mt-1 text-xs text-zinc-600">
+                  25th–75th: {formatSalary(band.percentile_25!, currency)}–{formatSalary(band.percentile_75!, currency)}
+                </p>
+                <p className="mt-1 text-xs text-zinc-600">
+                  Change: {band.difference_from_preceding_band === null ? "Not applicable" : formatSalary(band.difference_from_preceding_band, currency)}
+                </p>
+              </>
+            ) : (
+              <p className="mt-3 font-medium text-amber-800">Insufficient data</p>
+            )}
+            <p className="mt-1 text-xs text-zinc-500">{band.sample_count} qualifying posting{band.sample_count === 1 ? "" : "s"}</p>
+          </article>
+        );
+      })}
     </div>
   );
 }

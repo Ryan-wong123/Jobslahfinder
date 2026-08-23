@@ -842,6 +842,9 @@ Do not store:
 
 - `GET /jobs`
 - `GET /jobs/{job_id}`
+- `GET /job-roles/{slug}/salary-comparison?location={location}` returns the current role-level advertised monthly salary comparison across the four fixed minimum-experience bands.
+
+The salary-by-experience aggregation reads active, non-suspicious postings already associated with the dynamic role. It optionally applies a validated case-insensitive location match, requires both salary bounds, SGD currency, a supported salary period, and an explicitly parseable minimum-experience value, and excludes impossible or suspiciously wide ranges. The service normalizes each range midpoint to a monthly value, assigns the experience band, and calculates the median, interpolated 25th and 75th percentiles, sample count, and difference from the immediately preceding reportable band. No historical snapshot or additional database table is used; observation dates are derived from qualifying posting or scrape dates.
 - `POST /jobs/{job_id}/save`
 - `DELETE /jobs/{job_id}/save`
 - `GET /saved-jobs`

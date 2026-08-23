@@ -164,6 +164,30 @@ export type JobRoleListResponse = {
   items: JobRoleSummary[];
 };
 
+export type ExperienceSalaryBand = {
+  key: "entry" | "mid_level" | "senior" | "lead_expert";
+  label: string;
+  years_label: string;
+  median_monthly_salary: number | null;
+  percentile_25: number | null;
+  percentile_75: number | null;
+  sample_count: number;
+  difference_from_preceding_band: number | null;
+  insufficient_data: boolean;
+};
+
+export type SalaryExperienceComparison = {
+  role_slug: string;
+  role_name: string;
+  location: string | null;
+  currency: "SGD";
+  period: "month";
+  observation_start: string | null;
+  observation_end: string | null;
+  bands: ExperienceSalaryBand[];
+  disclaimer: string;
+};
+
 export type JobRoleDetail = JobRoleSummary & {
   overview: string;
   tasks: string[];

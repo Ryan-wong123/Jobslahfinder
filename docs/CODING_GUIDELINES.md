@@ -483,6 +483,8 @@ Do not trust the client-provided MIME type by itself.
 
 ### 13.2 Data Normalization
 
+Salary comparisons shall use the centralized conversion factors in `backend/app/services/job_roles.py`: monthly values are unchanged, annual values are divided by 12, daily values are multiplied by 21.67 working days per month, and hourly values are multiplied by 173.33 working hours per month (40 hours per week × 52 weeks ÷ 12 months). Comparisons require two positive ordered salary bounds, SGD currency, a supported period, and explicit minimum-experience years. Invalid, impossible, excessively high, or suspiciously wide salary ranges must be excluded before statistical calculation. Median is the primary statistic; percentile calculations and fixed experience-band boundaries must remain centralized and unit tested.
+
 Normalize these fields:
 
 - title

@@ -1,3 +1,6 @@
+from datetime import date
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict
 
 from app.schemas.jobs import JobSummaryResponse, SalaryTrendPointResponse
@@ -16,6 +19,34 @@ class JobRoleSummaryResponse(BaseModel):
 
 class JobRoleListResponse(BaseModel):
     items: list[JobRoleSummaryResponse]
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ExperienceSalaryBand(BaseModel):
+    key: Literal["entry", "mid_level", "senior", "lead_expert"]
+    label: str
+    years_label: str
+    median_monthly_salary: float | None
+    percentile_25: float | None
+    percentile_75: float | None
+    sample_count: int
+    difference_from_preceding_band: float | None
+    insufficient_data: bool
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class SalaryExperienceComparison(BaseModel):
+    role_slug: str
+    role_name: str
+    location: str | None
+    currency: Literal["SGD"] = "SGD"
+    period: Literal["month"] = "month"
+    observation_start: date | None
+    observation_end: date | None
+    bands: list[ExperienceSalaryBand]
+    disclaimer: str
 
     model_config = ConfigDict(extra="forbid")
 

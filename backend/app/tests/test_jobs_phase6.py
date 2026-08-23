@@ -104,6 +104,8 @@ def create_job(
     salary_min: float | None = None,
     salary_max: float | None = None,
     salary_period: str | None = None,
+    salary_currency: str | None = None,
+    minimum_experience: str | None = None,
     is_active: bool = True,
     is_suspicious: bool = False,
 ) -> JobPosting:
@@ -122,8 +124,9 @@ def create_job(
         posting_date=date(2026, 4, 30),
         salary_min=salary_min,
         salary_max=salary_max,
-        salary_currency="SGD" if salary_min is not None or salary_max is not None else None,
+        salary_currency=salary_currency or ("SGD" if salary_min is not None or salary_max is not None else None),
         salary_period=salary_period,
+        minimum_experience=minimum_experience,
         is_active=is_active,
         is_suspicious=is_suspicious,
         content_hash=f"hash-{title}-{company}",
@@ -263,6 +266,64 @@ def test_job_role_catalog_and_detail_are_derived_from_visible_jobs(client: TestC
     assert body["typical_monthly_salary"] == 5000.0
     assert body["salary_points"] == [{"period": "2026-04", "average_salary": 5000.0, "sample_count": 1}]
     assert body["latest_jobs"][0]["title"] == "Software Developer"
+
+
+def test_salary_comparison_assigns_boundaries_and_normalizes_periods(
+    client: TestClient, db_session: Session
+) -> None:
+    source = create_source(db_session)
+    cases = [
+        (0, 3000, "month", "Entry 0"),
+        (2, 36000, "year", "Entry 2"),
+        (3, 200, "day", "Mid 3"),
+        (5, 25, "hour", "Mid 5"),
+        (6, 6000, "month", "Senior 6"),
+        (9, 72000, "year", "Senior 9"),
+        (10, 8000, "month", "Lead 10"),
+    ]
+    for years, salary, period, company in cases:
+        create_job(
+            db_session,
+            source,
+            title="Software Engineer",
+            company=company,
+            location="Central Singapore",
+            salary_min=salary,
+            salary_max=salary,
+            salary_period=period,
+            minimum_experience=f"{years} years",
+        )
+
+    response = client.get(
+        "/job-roles/software-engineer/salary-comparison", params={"location": "Central"}
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [band["sample_count"] for band in body["bands"]] == [2, 2, 2, 1]
+    assert [band["median_monthly_salary"] for band in body["bands"]] == [3000.0, 4333.62, 6000.0, 8000.0]
+    assert body["bands"][1]["percentile_25"] == 4333.44
+    assert body["bands"][1]["percentile_75"] == 4333.81
+    assert body["bands"][1]["difference_from_preceding_band"] == 1333.62
+    assert all(band["insufficient_data"] for band in body["bands"])
+    assert body["observation_start"] == "2026-04-30"
+    assert body["observation_end"] == "2026-04-30"
+
+
+def test_salary_comparison_excludes_invalid_salary_and_experience_data(
+    client: TestClient, db_session: Session
+) -> None:
+    source = create_source(db_session)
+    create_job(db_session, source, title="Data Analyst", company="Valid", salary_min=4000, salary_max=6000, salary_period="month", minimum_experience="3 years")
+    create_job(db_session, source, title="Data Analyst", company="No experience", salary_min=4000, salary_max=6000, salary_period="month")
+    create_job(db_session, source, title="Data Analyst", company="Wide range", salary_min=1000, salary_max=20000, salary_period="month", minimum_experience="3 years")
+    create_job(db_session, source, title="Data Analyst", company="Wrong currency", salary_min=4000, salary_max=6000, salary_period="month", salary_currency="USD", minimum_experience="3 years")
+
+    response = client.get("/job-roles/data-analyst/salary-comparison")
+
+    assert response.status_code == 200
+    assert [band["sample_count"] for band in response.json()["bands"]] == [0, 1, 0, 0]
+    assert client.get("/job-roles/data-analyst/salary-comparison", params={"location": "<script>"}).status_code == 422
 
 
 def test_public_jobs_never_include_suspicious_jobs_even_when_requested(
