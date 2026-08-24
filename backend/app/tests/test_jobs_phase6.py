@@ -104,6 +104,8 @@ def create_job(
     salary_min: float | None = None,
     salary_max: float | None = None,
     salary_period: str | None = None,
+    salary_currency: str | None = None,
+    minimum_experience: str | None = None,
     is_active: bool = True,
     is_suspicious: bool = False,
 ) -> JobPosting:
@@ -122,8 +124,9 @@ def create_job(
         posting_date=date(2026, 4, 30),
         salary_min=salary_min,
         salary_max=salary_max,
-        salary_currency="SGD" if salary_min is not None or salary_max is not None else None,
+        salary_currency=salary_currency or ("SGD" if salary_min is not None or salary_max is not None else None),
         salary_period=salary_period,
+        minimum_experience=minimum_experience,
         is_active=is_active,
         is_suspicious=is_suspicious,
         content_hash=f"hash-{title}-{company}",
@@ -263,6 +266,77 @@ def test_job_role_catalog_and_detail_are_derived_from_visible_jobs(client: TestC
     assert body["typical_monthly_salary"] == 5000.0
     assert body["salary_points"] == [{"period": "2026-04", "average_salary": 5000.0, "sample_count": 1}]
     assert body["latest_jobs"][0]["title"] == "Software Developer"
+
+
+def test_salary_by_experience_returns_reportable_bands_and_location_filter(
+    client: TestClient, db_session: Session
+) -> None:
+    source = create_source(db_session)
+    for years, base_salary in ((0, 3000), (3, 5000), (6, 7000), (10, 10000)):
+        for index in range(5):
+            create_job(
+                db_session,
+                source,
+                title="Software Developer",
+                company=f"Company {years}-{index}",
+                location="Singapore Central",
+                salary_min=base_salary + index * 100,
+                salary_max=base_salary + index * 100,
+                salary_period="month",
+                minimum_experience=f"{years}{'+' if years == 10 else ''} years",
+            )
+
+    response = client.get(
+        "/job-roles/software-engineer/salary-by-experience", params={"location": "Central"}
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [band["key"] for band in body["bands"]] == ["ENTRY", "MID_LEVEL", "SENIOR", "LEAD_EXPERT"]
+    assert [band["median_monthly_salary"] for band in body["bands"]] == [3200, 5200, 7200, 10200]
+    assert body["bands"][0]["percentile_25"] == 3100
+    assert body["bands"][0]["percentile_75"] == 3300
+    assert body["bands"][1]["difference_from_preceding_band"] == 2000
+    assert all(band["sample_count"] == 5 and not band["insufficient_data"] for band in body["bands"])
+    assert body["observation_start"] == "2026-04-30"
+    assert body["observation_end"] == "2026-04-30"
+
+
+def test_salary_by_experience_rejects_invalid_filter_and_hides_small_or_malformed_samples(
+    client: TestClient, db_session: Session
+) -> None:
+    source = create_source(db_session)
+    for index in range(4):
+        create_job(
+            db_session,
+            source,
+            title="Security Analyst",
+            company=f"Small {index}",
+            salary_min=5000,
+            salary_max=6000,
+            salary_period="month",
+            minimum_experience="2 years",
+        )
+    create_job(
+        db_session,
+        source,
+        title="Security Analyst",
+        company="Malformed",
+        salary_min=9000,
+        salary_max=1000,
+        salary_period="month",
+        minimum_experience="2 years",
+    )
+
+    response = client.get("/job-roles/security-analyst/salary-by-experience")
+    assert response.status_code == 200
+    entry = response.json()["bands"][0]
+    assert entry["sample_count"] == 4
+    assert entry["insufficient_data"] is True
+    assert entry["median_monthly_salary"] is None
+    assert client.get(
+        "/job-roles/security-analyst/salary-by-experience", params={"location": "<script>"}
+    ).status_code == 422
 
 
 def test_public_jobs_never_include_suspicious_jobs_even_when_requested(

@@ -151,6 +151,29 @@ export type SalaryTrendResponse = {
   sample_size: number;
 };
 
+export type ExperienceSalaryBand = {
+  key: "ENTRY" | "MID_LEVEL" | "SENIOR" | "LEAD_EXPERT";
+  label: string;
+  years: string;
+  median_monthly_salary: number | null;
+  percentile_25: number | null;
+  percentile_75: number | null;
+  sample_count: number;
+  difference_from_preceding_band: number | null;
+  insufficient_data: boolean;
+};
+
+export type ExperienceSalaryComparison = {
+  role_slug: string;
+  role_name: string;
+  location: string | null;
+  currency: "SGD";
+  period: "month";
+  observation_start: string | null;
+  observation_end: string | null;
+  bands: ExperienceSalaryBand[];
+};
+
 export type JobRoleSummary = {
   slug: string;
   name: string;

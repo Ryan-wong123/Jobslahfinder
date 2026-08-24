@@ -1,5 +1,9 @@
 # Secure Architecture
 
+## Salary-by-Experience Aggregation Flow
+
+`GET /job-roles/{slug}/salary-by-experience` validates the role slug and optional location before invoking the job-role service. The service resolves the role from active, non-suspicious postings; applies the location filter; and retains only records with an explicit minimum-experience value, complete plausible salary bounds, SGD currency, and a supported salary period. It normalizes each range midpoint to a monthly amount, assigns the posting to one of four centralized experience bands, and calculates the median, interpolated 25th and 75th percentiles, sample count, and difference from the preceding reportable band. Typed response schemas return all four bands, with estimates set to null when fewer than five samples qualify. The observation period uses posting dates, with scrape date as the fallback. Historical snapshot storage is outside this flow.
+
 ## 1. Architecture Goals
 
 The architecture must support:

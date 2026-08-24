@@ -5,7 +5,9 @@ from pydantic import ValidationError
 from app.models.job import JobPosting
 from app.schemas.roadmaps import RoadmapCreateRequest
 from app.services.job_roles import (
+    experience_band_key,
     extract_skills,
+    normalized_monthly_salary,
     normalize_role_title,
     salary_points_for_jobs,
     typical_salary_for_jobs,
@@ -17,6 +19,28 @@ def test_business_logic_role_title_normalization_groups_common_variants() -> Non
     assert normalize_role_title("Senior Backend Engineer - Payments") == "Backend Developer"
     assert normalize_role_title("Frontend React Developer at Startup") == "Frontend Developer"
     assert normalize_role_title("Cybersecurity SOC Analyst (Shift)") == "Security Analyst"
+
+
+def test_experience_boundaries_and_salary_period_normalization() -> None:
+    expected = {
+        0: "ENTRY", 2: "ENTRY", 3: "MID_LEVEL", 5: "MID_LEVEL",
+        6: "SENIOR", 9: "SENIOR", 10: "LEAD_EXPERT",
+    }
+    for years, band in expected.items():
+        assert experience_band_key(f"{years} years") == band
+    assert experience_band_key("experience preferred") is None
+
+    def salary(period: str, amount: float) -> float | None:
+        return normalized_monthly_salary(JobPosting(
+            title="Engineer", company="A", job_url="https://example.com/1", content_hash=period,
+            source_id=1, salary_min=amount, salary_max=amount, salary_currency="SGD", salary_period=period,
+        ))
+
+    assert salary("month", 5000) == 5000
+    assert salary("year", 120000) == 10000
+    assert salary("week", 1200) == 5200
+    assert salary("day", 240) == 5200
+    assert salary("hour", 30) == 5199.9
 
 
 def test_business_logic_salary_points_ignore_jobs_without_salary_and_bucket_by_month() -> None:

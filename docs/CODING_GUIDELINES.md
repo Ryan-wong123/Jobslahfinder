@@ -160,6 +160,10 @@ Use this responsibility split:
 
 ---
 
+### 5.5 Salary Normalization and Experience Comparison
+
+Salary comparison uses the midpoint of a complete advertised salary range. Only SGD records are currently comparable. Monthly values use a factor of 1; annual values are divided by 12; weekly values are multiplied by 52/12; daily values assume 260 paid working days per year and are multiplied by 260/12; and hourly values assume 173.33 paid hours per month. Records with missing or inverted bounds, unsupported currency or period, or implausible normalized values are excluded. These constants and the four experience-band boundaries must remain centralized in the job-role service and covered by unit tests. Median is the primary estimate, and at least five qualifying postings are required before an estimate may be displayed.
+
 ## 6. Frontend Guidelines
 
 ### 6.1 Stack

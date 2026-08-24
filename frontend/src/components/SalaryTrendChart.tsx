@@ -1,6 +1,6 @@
 "use client";
 
-import type { SalaryTrendPoint } from "@/lib/api";
+import type { ExperienceSalaryBand, SalaryTrendPoint } from "@/lib/api";
 
 type SalaryTrendChartProps = {
   points: SalaryTrendPoint[];
@@ -108,6 +108,51 @@ export function SalaryTrendChart({ points, currency }: SalaryTrendChartProps) {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+export function ExperienceSalaryChart({ bands, currency }: { bands: ExperienceSalaryBand[]; currency: string }) {
+  const reportable = bands.filter((band) => !band.insufficient_data && band.median_monthly_salary !== null);
+  const maximum = Math.max(1, ...reportable.map((band) => band.percentile_75 ?? band.median_monthly_salary ?? 0));
+
+  return (
+    <div aria-label="Salary by experience chart" className="grid gap-4" role="img">
+      {bands.map((band) => {
+        const medianValue = band.median_monthly_salary;
+        const medianWidth = medianValue === null ? 0 : (medianValue / maximum) * 100;
+        const rangeLeft = band.percentile_25 === null ? 0 : (band.percentile_25 / maximum) * 100;
+        const rangeWidth =
+          band.percentile_25 === null || band.percentile_75 === null
+            ? 0
+            : ((band.percentile_75 - band.percentile_25) / maximum) * 100;
+        return (
+          <section className="rounded border border-zinc-200 p-4" key={band.key}>
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <div>
+                <h3 className="font-semibold text-zinc-950">{band.label}</h3>
+                <p className="text-xs text-zinc-500">{band.years}</p>
+              </div>
+              <p className="text-sm text-zinc-600">{band.sample_count} qualifying posting{band.sample_count === 1 ? "" : "s"}</p>
+            </div>
+            {band.insufficient_data ? (
+              <p className="mt-3 rounded bg-amber-50 p-3 text-sm text-amber-900">Insufficient data (at least 5 postings required).</p>
+            ) : (
+              <>
+                <div className="relative mt-4 h-9 rounded bg-zinc-100" title={`25th–75th percentile: ${formatSalary(band.percentile_25!, currency)}–${formatSalary(band.percentile_75!, currency)}`}>
+                  <div className="absolute inset-y-0 left-0 rounded bg-teal-600" style={{ width: `${medianWidth}%` }} />
+                  <div className="absolute top-1/2 h-2 -translate-y-1/2 rounded bg-teal-200 ring-1 ring-teal-800" style={{ left: `${rangeLeft}%`, width: `${rangeWidth}%` }} />
+                </div>
+                <div className="mt-2 flex flex-wrap justify-between gap-2 text-sm">
+                  <strong>{formatSalary(medianValue!, currency)} median</strong>
+                  <span className="text-zinc-600">25th–75th: {formatSalary(band.percentile_25!, currency)}–{formatSalary(band.percentile_75!, currency)}</span>
+                  {band.difference_from_preceding_band !== null ? <span className="text-zinc-600">Previous band: {band.difference_from_preceding_band >= 0 ? "+" : ""}{formatSalary(band.difference_from_preceding_band, currency)}</span> : null}
+                </div>
+              </>
+            )}
+          </section>
+        );
+      })}
     </div>
   );
 }

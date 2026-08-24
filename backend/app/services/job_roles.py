@@ -2,19 +2,40 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from dataclasses import dataclass
+from datetime import date
 import re
+from statistics import median
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.job import JobPosting
-from app.schemas.job_roles import JobRoleDetailResponse, JobRoleListResponse, JobRoleSummaryResponse
+from app.schemas.job_roles import (
+    ExperienceSalaryBandResponse,
+    ExperienceSalaryComparisonResponse,
+    JobRoleDetailResponse,
+    JobRoleListResponse,
+    JobRoleSummaryResponse,
+)
 from app.schemas.jobs import SalaryTrendPointResponse
 from app.services.jobs import clean_text, job_to_summary_response, monthly_salary_midpoint, safe_response_text
 
 
 MAX_ROLE_GROUPS = 40
 MAX_JOBS_TO_ANALYZE = 1000
+MIN_REPORTABLE_SALARY_SAMPLES = 5
+SUPPORTED_SALARY_CURRENCIES = frozenset({"SGD"})
+SALARY_PERIOD_TO_MONTHLY = {"month": 1.0, "year": 1 / 12, "week": 52 / 12, "day": 260 / 12, "hour": 173.33}
+EXPERIENCE_NUMBER_PATTERN = re.compile(
+    r"^\s*(\d{1,2})(?:\.0)?\s*(?:\+\s*(?:years?)?|years?|yrs?)(?=\s|$|[,;(/-])",
+    re.IGNORECASE,
+)
+EXPERIENCE_BANDS: tuple[tuple[str, str, str, int, int | None], ...] = (
+    ("ENTRY", "Entry", "0–2 years", 0, 2),
+    ("MID_LEVEL", "Mid-level", "3–5 years", 3, 5),
+    ("SENIOR", "Senior", "6–9 years", 6, 9),
+    ("LEAD_EXPERT", "Lead/Expert", "10+ years", 10, None),
+)
 ROLE_TITLE_MAX_WORDS = 6
 WORD_PATTERN = re.compile(r"[a-zA-Z][a-zA-Z+#.\-]{1,}")
 SENTENCE_PATTERN = re.compile(r"(?<=[.!?])\s+|\n+")
@@ -215,6 +236,102 @@ def salary_points_for_jobs(jobs: tuple[JobPosting, ...] | list[JobPosting], *, m
         )
         for period, values in sorted(buckets.items())[-months:]
     ]
+
+
+def experience_band_key(value: str | None) -> str | None:
+    """Return a band only when the scraped field starts with an explicit year count."""
+    if not value or not (match := EXPERIENCE_NUMBER_PATTERN.match(value)):
+        return None
+    years = int(match.group(1))
+    for key, _label, _years_label, minimum, maximum in EXPERIENCE_BANDS:
+        if years >= minimum and (maximum is None or years <= maximum):
+            return key
+    return None
+
+
+def normalized_monthly_salary(job: JobPosting) -> float | None:
+    """Normalize the midpoint of a complete, plausible SGD salary range."""
+    if job.salary_min is None or job.salary_max is None:
+        return None
+    currency = (job.salary_currency or "").strip().upper()
+    period = (job.salary_period or "").strip().lower()
+    factor = SALARY_PERIOD_TO_MONTHLY.get(period)
+    lower, upper = float(job.salary_min), float(job.salary_max)
+    if currency not in SUPPORTED_SALARY_CURRENCIES or factor is None:
+        return None
+    if lower <= 0 or upper < lower or upper > 10_000_000:
+        return None
+    monthly = ((lower + upper) / 2) * factor
+    if monthly < 500 or monthly > 200_000:
+        return None
+    return round(monthly, 2)
+
+
+def percentile(values: list[float], percentage: float) -> float:
+    ordered = sorted(values)
+    position = (len(ordered) - 1) * percentage
+    lower_index = int(position)
+    upper_index = min(lower_index + 1, len(ordered) - 1)
+    fraction = position - lower_index
+    return ordered[lower_index] + (ordered[upper_index] - ordered[lower_index]) * fraction
+
+
+def salary_by_experience_for_role(
+    role: DynamicRole, *, location: str | None = None
+) -> ExperienceSalaryComparisonResponse:
+    location_key = location.casefold() if location else None
+    samples: dict[str, list[float]] = {key: [] for key, *_rest in EXPERIENCE_BANDS}
+    observation_dates: list[date] = []
+    for job in role.jobs:
+        if location_key and location_key not in (job.location or "").casefold():
+            continue
+        band_key = experience_band_key(job.minimum_experience)
+        salary = normalized_monthly_salary(job)
+        if band_key is None or salary is None:
+            continue
+        samples[band_key].append(salary)
+        observation_dates.append(job.posting_date or job.scraped_at.date())
+
+    bands: list[ExperienceSalaryBandResponse] = []
+    preceding_median: float | None = None
+    for key, label, years_label, _minimum, _maximum in EXPERIENCE_BANDS:
+        values = samples[key]
+        reportable = len(values) >= MIN_REPORTABLE_SALARY_SAMPLES
+        current_median = float(median(values)) if reportable else None
+        bands.append(
+            ExperienceSalaryBandResponse(
+                key=key,
+                label=label,
+                years=years_label,
+                median_monthly_salary=round(current_median, 2) if current_median is not None else None,
+                percentile_25=round(percentile(values, 0.25), 2) if reportable else None,
+                percentile_75=round(percentile(values, 0.75), 2) if reportable else None,
+                sample_count=len(values),
+                difference_from_preceding_band=(
+                    round(current_median - preceding_median, 2)
+                    if current_median is not None and preceding_median is not None
+                    else None
+                ),
+                insufficient_data=not reportable,
+            )
+        )
+        preceding_median = current_median
+
+    return ExperienceSalaryComparisonResponse(
+        role_slug=role.slug,
+        role_name=role.name,
+        location=location,
+        observation_start=min(observation_dates) if observation_dates else None,
+        observation_end=max(observation_dates) if observation_dates else None,
+        bands=bands,
+    )
+
+
+def get_salary_by_experience(
+    db: Session, *, slug: str, location: str | None = None
+) -> ExperienceSalaryComparisonResponse | None:
+    role = next((candidate for candidate in build_dynamic_roles(db) if candidate.slug == slug), None)
+    return salary_by_experience_for_role(role, location=location) if role else None
 
 
 def category_salary_fallback_jobs(db: Session, category: str) -> list[JobPosting]:

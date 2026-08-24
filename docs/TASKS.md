@@ -862,6 +862,13 @@ The MVP is complete when:
 ## Stretch Goals
 Only attempt these after MVP is complete:
 
+### Salary Comparison by Experience (Issue #53)
+
+- [x] Add centralized experience bands and monthly salary normalization.
+- [x] Add the validated job-role salary comparison endpoint and typed response.
+- [x] Add location filtering, four-band chart states, percentile/sample disclosure, observation period, and advertised-salary disclaimer.
+- [x] Add and run focused backend and frontend regression checks.
+
 - [ ] Add MFA for admin accounts.
 - [ ] Add email verification for registration.
 - [ ] Add CAPTCHA after repeated failed login attempts.
