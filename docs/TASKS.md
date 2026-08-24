@@ -862,6 +862,8 @@ The MVP is complete when:
 ## Stretch Goals
 Only attempt these after MVP is complete:
 
+- [~] Add salary comparison by experience level (implementation and focused tests added; full test execution pending dependency installation).
+
 - [ ] Add MFA for admin accounts.
 - [ ] Add email verification for registration.
 - [ ] Add CAPTCHA after repeated failed login attempts.

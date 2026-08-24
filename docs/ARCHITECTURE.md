@@ -1122,3 +1122,13 @@ Any extension must preserve:
 - least privilege
 - secure configuration
 - safe error handling
+
+---
+
+## 27. Salary-by-Experience Aggregation Flow
+
+The public `GET /job-roles/{slug}/salary-by-experience` endpoint accepts a constrained role slug and an optional constrained location query. It applies the existing public-job visibility rules and rate-limiting convention before the job-role service aggregates data.
+
+The service derives the selected dynamic role, applies the location filter, parses only explicit minimum-experience values, validates complete SGD salary ranges, converts supported periods to monthly values, and assigns each posting to one centralized experience band. For each band it calculates the median and linearly interpolated 25th and 75th percentiles. Statistics are returned only when at least five postings qualify; empty and insufficient bands remain present in the typed response with null statistics. Observation dates are derived from the qualifying postings' posting or scrape dates.
+
+The frontend API client supplies the typed response to the salary-trends panel. Its By experience view renders reportable medians as bars, includes percentile intervals and counts, and renders insufficient bands without an estimate. No historical salary snapshot is stored or introduced by this flow.

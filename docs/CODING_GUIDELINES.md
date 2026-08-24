@@ -1012,3 +1012,14 @@ Prefer:
 - explicit validation over implicit trust
 - auditability over silent changes
 - fail-closed behavior over fail-open behavior
+
+---
+
+## 28. Salary Normalization and Experience Aggregation
+
+- Maintain experience-band boundaries and salary conversion factors centrally in the job-role aggregation service.
+- Normalize monthly salaries with the following assumptions: monthly values use a factor of 1; annual values are divided by 12; hourly values are multiplied by 173.33 hours per month (40 hours per week multiplied by 52 weeks and divided by 12, rounded for display).
+- Require both salary bounds, SGD currency, a supported period, positive finite values, an upper bound not lower than the lower bound, and a normalized upper bound not exceeding SGD 1,000,000 per month.
+- Use the midpoint of each valid advertised range as the posting-level sample and use the median as the primary band statistic.
+- Do not infer experience from titles or descriptions. Use only an explicit, parseable minimum-experience value from zero to sixty years.
+- Withhold median and percentile outputs for bands with fewer than five qualifying postings.

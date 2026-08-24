@@ -624,3 +624,14 @@ A feature is done only when:
 - Tests cover success and failure cases.
 - Documentation is updated where architecture or behaviour changes.
 - No secrets are committed.
+
+---
+
+## 20. Salary Comparison by Experience Level
+
+- **FR26 Salary comparison by experience:** The system shall allow users to compare advertised monthly salaries for a selected job role across Entry (0–2 years), Mid-level (3–5 years), Senior (6–9 years), and Lead/Expert (10+ years) bands, based only on explicit minimum-experience data.
+- Each band shall report the median, 25th and 75th percentiles, qualifying-posting count, and the median difference from the preceding reportable band.
+- A validated optional location filter shall restrict the comparison to matching posting locations.
+- A band containing fewer than five qualifying postings shall be identified as insufficient and its salary estimate shall be withheld.
+- The interface shall state the observation period and disclose that advertised salary is not guaranteed compensation.
+- Only active, non-suspicious postings with complete, plausible salary bounds, SGD currency, a supported salary period, and explicit minimum experience shall qualify. Historical snapshots are excluded.

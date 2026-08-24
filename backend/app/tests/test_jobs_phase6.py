@@ -104,6 +104,7 @@ def create_job(
     salary_min: float | None = None,
     salary_max: float | None = None,
     salary_period: str | None = None,
+    minimum_experience: str | None = None,
     is_active: bool = True,
     is_suspicious: bool = False,
 ) -> JobPosting:
@@ -124,6 +125,7 @@ def create_job(
         salary_max=salary_max,
         salary_currency="SGD" if salary_min is not None or salary_max is not None else None,
         salary_period=salary_period,
+        minimum_experience=minimum_experience,
         is_active=is_active,
         is_suspicious=is_suspicious,
         content_hash=f"hash-{title}-{company}",
@@ -234,6 +236,68 @@ def test_salary_trends_use_monthly_salary_samples(client: TestClient, db_session
     body = response.json()
     assert body["sample_size"] == 2
     assert body["points"] == [{"period": "2026-04", "average_salary": 8000.0, "sample_count": 2}]
+
+
+def test_salary_by_experience_boundaries_normalization_and_location(
+    client: TestClient, db_session: Session
+) -> None:
+    source = create_source(db_session)
+    samples = [
+        (0, 3000, "month"), (1, 36000, "year"), (2, 3000, "month"),
+        (2, 3000, "month"), (2, 3000, "month"),
+        (3, 4000, "month"), (4, 4000, "month"), (5, 4000, "month"),
+        (5, 4000, "month"), (5, 4000, "month"),
+        (6, 5000, "month"), (9, 5000, "month"),
+        (10, 6000, "month"),
+    ]
+    for index, (years, salary, period) in enumerate(samples):
+        create_job(
+            db_session,
+            source,
+            title="Software Engineer",
+            company=f"Company {index}",
+            location="Singapore Central",
+            salary_min=salary,
+            salary_max=salary,
+            salary_period=period,
+            minimum_experience=f"{years} years",
+        )
+
+    response = client.get(
+        "/job-roles/software-engineer/salary-by-experience", params={"location": "Singapore"}
+    )
+    assert response.status_code == 200
+    body = response.json()
+    entry, mid, senior, lead = body["bands"]
+    assert (entry["sample_count"], entry["median_monthly_salary"]) == (5, 3000.0)
+    assert (entry["percentile_25"], entry["percentile_75"]) == (3000.0, 3000.0)
+    assert (mid["sample_count"], mid["median_monthly_salary"]) == (5, 4000.0)
+    assert mid["difference_from_preceding_band"] == 1000.0
+    assert senior["sample_count"] == 2 and senior["insufficient_data"] is True
+    assert senior["median_monthly_salary"] is None
+    assert lead["sample_count"] == 1 and lead["median_monthly_salary"] is None
+    assert body["observation_start"] == "2026-04-30"
+    assert "not guaranteed compensation" in body["disclaimer"]
+
+
+def test_salary_by_experience_rejects_invalid_filters_and_malformed_salary(
+    client: TestClient, db_session: Session
+) -> None:
+    source = create_source(db_session)
+    create_job(
+        db_session,
+        source,
+        title="Data Analyst",
+        salary_min=7000,
+        salary_max=6000,
+        salary_period="month",
+        minimum_experience="3 years",
+    )
+    response = client.get("/job-roles/data-analyst/salary-by-experience")
+    assert response.status_code == 200
+    assert all(band["sample_count"] == 0 for band in response.json()["bands"])
+    assert client.get("/job-roles/data-analyst/salary-by-experience?location=%3Cscript%3E").status_code == 422
+    assert client.get("/job-roles/INVALID!/salary-by-experience").status_code == 422
 
 
 def test_job_role_catalog_and_detail_are_derived_from_visible_jobs(client: TestClient, db_session: Session) -> None:
