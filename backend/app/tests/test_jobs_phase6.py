@@ -104,6 +104,7 @@ def create_job(
     salary_min: float | None = None,
     salary_max: float | None = None,
     salary_period: str | None = None,
+    minimum_experience: str | None = None,
     is_active: bool = True,
     is_suspicious: bool = False,
 ) -> JobPosting:
@@ -124,6 +125,7 @@ def create_job(
         salary_max=salary_max,
         salary_currency="SGD" if salary_min is not None or salary_max is not None else None,
         salary_period=salary_period,
+        minimum_experience=minimum_experience,
         is_active=is_active,
         is_suspicious=is_suspicious,
         content_hash=f"hash-{title}-{company}",
@@ -263,6 +265,64 @@ def test_job_role_catalog_and_detail_are_derived_from_visible_jobs(client: TestC
     assert body["typical_monthly_salary"] == 5000.0
     assert body["salary_points"] == [{"period": "2026-04", "average_salary": 5000.0, "sample_count": 1}]
     assert body["latest_jobs"][0]["title"] == "Software Developer"
+
+
+def test_salary_by_experience_aggregates_reliable_bands_and_filters_location(
+    client: TestClient, db_session: Session
+) -> None:
+    source = create_source(db_session)
+    for years, salaries in ((2, [4000, 4200, 4400, 4600, 4800]), (3, [6000, 6200, 6400, 6600, 6800])):
+        for index, salary in enumerate(salaries):
+            create_job(
+                db_session,
+                source,
+                title="Software Engineer",
+                company=f"Company {years}-{index}",
+                location="Singapore Central",
+                salary_min=salary,
+                salary_max=salary,
+                salary_period="month",
+                minimum_experience=f"{years} years",
+            )
+    create_job(
+        db_session,
+        source,
+        title="Software Engineer",
+        company="Excluded location",
+        location="Remote",
+        salary_min=10000,
+        salary_max=10000,
+        salary_period="month",
+        minimum_experience="2 years",
+    )
+
+    response = client.get(
+        "/job-roles/software-engineer/salary-by-experience", params={"location": "Singapore"}
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["observation_start"] == "2026-04-30"
+    assert body["observation_end"] == "2026-04-30"
+    entry, mid, senior, lead = body["bands"]
+    assert entry["median_monthly_salary"] == 4400
+    assert entry["percentile_25"] == 4200
+    assert entry["percentile_75"] == 4600
+    assert entry["sample_count"] == 5
+    assert entry["insufficient_data"] is False
+    assert mid["median_monthly_salary"] == 6400
+    assert mid["difference_from_preceding_band"] == 2000
+    assert senior["sample_count"] == 0 and senior["insufficient_data"] is True
+    assert lead["sample_count"] == 0 and lead["insufficient_data"] is True
+
+
+def test_salary_by_experience_rejects_invalid_location(client: TestClient, db_session: Session) -> None:
+    source = create_source(db_session)
+    create_job(db_session, source, title="Software Engineer")
+    response = client.get(
+        "/job-roles/software-engineer/salary-by-experience", params={"location": "<script>"}
+    )
+    assert response.status_code == 422
 
 
 def test_public_jobs_never_include_suspicious_jobs_even_when_requested(

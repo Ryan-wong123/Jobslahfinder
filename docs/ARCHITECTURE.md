@@ -1098,7 +1098,15 @@ CI should fail on:
 
 ---
 
-## 26. Future Extension Points
+## 26. Salary-by-Experience Aggregation
+
+The public `GET /job-roles/{slug}/salary-by-experience` endpoint extends the existing job-role API. The route validates the role slug and optional location query before database access and applies the established read-rate limit. The service resolves the slug against active, non-suspicious role postings, applies a case-insensitive location match when requested, and excludes records without explicit minimum-experience and qualifying salary data.
+
+The aggregation service owns the shared experience-band definitions, minimum sample threshold, and salary conversion factors. It converts each complete SGD salary range to a monthly midpoint, assigns the posting to one experience band, and calculates the median, linearly interpolated 25th and 75th percentiles, sample count, and difference from the immediately preceding reliable band. The typed response includes all four bands, the qualifying observation-date range, the reliability threshold, and the required compensation disclaimer. The frontend renders reliable medians as bars and represents empty or sub-threshold bands without an estimate.
+
+No historical snapshot table is introduced. The report is computed from the bounded set of currently visible postings, using SQLAlchemy queries and existing job fields.
+
+## 27. Future Extension Points
 
 The architecture should allow adding:
 

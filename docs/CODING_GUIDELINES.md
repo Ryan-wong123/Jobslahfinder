@@ -957,7 +957,18 @@ Admin:
 
 ---
 
-## 25. Code Review Checklist
+## 25. Salary Comparison Rules
+
+Salary-by-experience reporting shall use the following centralized assumptions:
+
+- Experience bands use the explicit minimum stated in `minimum_experience`: Entry 0–2, Mid-level 3–5, Senior 6–9, and Lead/Expert 10 or more years. Missing or ambiguous values are excluded.
+- Both salary bounds must be present, positive, ordered, plausible, and denominated in SGD.
+- Supported periods are monthly (factor 1), annual (divide by 12), and hourly (multiply by 173.33 hours per month). Unsupported periods are excluded.
+- A posting contributes the midpoint of its normalized monthly range. The primary statistic is the median; percentile bounds use linear interpolation.
+- A band requires five qualifying postings to be treated as reliable. An insufficient band may retain typed aggregate metadata for transparency, but the frontend must withhold its plotted estimate.
+- Labels and scraped fields remain untrusted text and must be rendered through normal React text encoding without unsafe HTML.
+
+## 26. Code Review Checklist
 
 Before completing any feature, check:
 
@@ -978,7 +989,7 @@ Before completing any feature, check:
 
 ---
 
-## 26. Definition of Done
+## 27. Definition of Done
 
 A feature is done only when:
 
@@ -998,7 +1009,7 @@ A feature is done only when:
 
 ---
 
-## 27. When Unsure
+## 28. When Unsure
 
 Choose the safer implementation.
 

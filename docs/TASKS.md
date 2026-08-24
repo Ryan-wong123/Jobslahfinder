@@ -373,6 +373,11 @@ A task is only done when:
 - [x] Add tests for filters.
 - [x] Add tests for pagination.
 - [x] Add tests for job detail.
+
+### Salary Comparison by Experience (Issue #55)
+- [~] Add the typed job-role salary-by-experience endpoint and centralized aggregation rules.
+- [~] Add the location-filtered “By experience” chart, percentile details, sample counts, observation period, and disclaimer.
+- [~] Verify experience boundaries, salary normalization, invalid filters, aggregation, and insufficient-data display (implementation and focused tests added; backend pytest execution remains pending in the current environment).
 - [x] Add tests for saved jobs access control.
 - [x] Add tests for XSS payloads in job descriptions.
 

@@ -164,6 +164,31 @@ export type JobRoleListResponse = {
   items: JobRoleSummary[];
 };
 
+export type ExperienceSalaryBand = {
+  key: string;
+  label: string;
+  years_label: string;
+  median_monthly_salary: number | null;
+  percentile_25: number | null;
+  percentile_75: number | null;
+  sample_count: number;
+  difference_from_preceding_band: number | null;
+  insufficient_data: boolean;
+};
+
+export type ExperienceSalaryComparison = {
+  role_slug: string;
+  role_name: string;
+  location: string | null;
+  currency: string;
+  period: string;
+  observation_start: string | null;
+  observation_end: string | null;
+  minimum_reliable_sample: number;
+  disclaimer: string;
+  bands: ExperienceSalaryBand[];
+};
+
 export type JobRoleDetail = JobRoleSummary & {
   overview: string;
   tasks: string[];

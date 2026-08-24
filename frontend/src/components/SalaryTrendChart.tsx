@@ -1,6 +1,7 @@
 "use client";
 
 import type { SalaryTrendPoint } from "@/lib/api";
+import type { ExperienceSalaryBand } from "@/lib/api";
 
 type SalaryTrendChartProps = {
   points: SalaryTrendPoint[];
@@ -108,6 +109,52 @@ export function SalaryTrendChart({ points, currency }: SalaryTrendChartProps) {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+export function ExperienceSalaryChart({ bands, currency }: { bands: ExperienceSalaryBand[]; currency: string }) {
+  const reliable = bands.filter((band) => !band.insufficient_data && band.median_monthly_salary !== null);
+  const maximum = Math.max(1, ...reliable.map((band) => band.percentile_75 ?? band.median_monthly_salary ?? 0));
+
+  return (
+    <div aria-label="Salary by experience bar chart" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" role="img">
+      {bands.map((band) => (
+        <section className="rounded border border-zinc-200 bg-white p-4" key={band.key}>
+          <h3 className="font-semibold text-zinc-950">{band.label}</h3>
+          <p className="text-xs text-zinc-500">{band.years_label}</p>
+          {band.insufficient_data || band.median_monthly_salary === null ? (
+            <div className="mt-4 flex h-36 items-end rounded bg-zinc-50 p-3">
+              <p className="text-sm text-zinc-600">Insufficient data</p>
+            </div>
+          ) : (
+            <div className="mt-4 flex h-36 items-end justify-center rounded bg-zinc-50 px-5 pt-3">
+              <div
+                aria-label={`${band.label} median ${formatSalary(band.median_monthly_salary, currency)}`}
+                className="w-full rounded-t bg-teal-700"
+                style={{ height: `${Math.max(8, (band.median_monthly_salary / maximum) * 100)}%` }}
+                title={`25th–75th percentile: ${formatSalary(band.percentile_25 ?? 0, currency)}–${formatSalary(band.percentile_75 ?? 0, currency)}`}
+              />
+            </div>
+          )}
+          <p className="mt-3 text-sm font-semibold text-zinc-900">
+            {band.insufficient_data || band.median_monthly_salary === null
+              ? "Estimate withheld"
+              : `${formatSalary(band.median_monthly_salary, currency)} median`}
+          </p>
+          {!band.insufficient_data && band.percentile_25 !== null && band.percentile_75 !== null ? (
+            <p className="mt-1 text-xs text-zinc-600">
+              25th–75th: {formatSalary(band.percentile_25, currency)}–{formatSalary(band.percentile_75, currency)}
+            </p>
+          ) : null}
+          <p className="mt-1 text-xs text-zinc-600">{band.sample_count} qualifying posting{band.sample_count === 1 ? "" : "s"}</p>
+          {band.difference_from_preceding_band !== null ? (
+            <p className="mt-1 text-xs text-zinc-600">
+              {band.difference_from_preceding_band >= 0 ? "+" : ""}{formatSalary(band.difference_from_preceding_band, currency)} from preceding band
+            </p>
+          ) : null}
+        </section>
+      ))}
     </div>
   );
 }

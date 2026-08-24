@@ -236,6 +236,12 @@ test("career roadmap, salary trend, and status pages call their expected read-on
   assert.match(salaryTrendPanel, /apiFetch<SalaryTrendResponse>\(\s*`\/salary-trends\?/);
   assert.match(salaryTrendPanel, /Choose a valid month range\./);
   assert.match(salaryTrendPanel, /\\p\{L\}\\p\{N\}/);
+  assert.match(salaryTrendPanel, /By experience/);
+  assert.match(salaryTrendPanel, /salary-by-experience/);
+  assert.match(salaryTrendPanel, /Observation period:/);
+  const salaryTrendChart = readComponent("SalaryTrendChart");
+  assert.match(salaryTrendChart, /Insufficient data/);
+  assert.match(salaryTrendChart, /25th–75th percentile/);
   assert.match(statusPage, /getApiBaseUrl\(\)/);
 });
 
