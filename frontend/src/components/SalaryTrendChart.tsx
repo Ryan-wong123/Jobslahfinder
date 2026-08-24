@@ -1,6 +1,6 @@
 "use client";
 
-import type { SalaryTrendPoint } from "@/lib/api";
+import type { ExperienceSalaryBand, SalaryTrendPoint } from "@/lib/api";
 
 type SalaryTrendChartProps = {
   points: SalaryTrendPoint[];
@@ -108,6 +108,66 @@ export function SalaryTrendChart({ points, currency }: SalaryTrendChartProps) {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+export function ExperienceSalaryChart({ bands, currency }: { bands: ExperienceSalaryBand[]; currency: string }) {
+  const reportable = bands.filter(
+    (band) => !band.insufficient_data && band.median_monthly_salary !== null && band.percentile_25 !== null && band.percentile_75 !== null
+  );
+  const maximum = Math.max(1, ...reportable.map((band) => band.percentile_75 ?? 0));
+
+  return (
+    <div className="overflow-hidden rounded border border-zinc-200 bg-white">
+      <div aria-label="Salary by experience chart" className="grid min-w-[640px] grid-cols-4 gap-4 p-5" role="img">
+        {bands.map((band) => {
+          const medianHeight = band.median_monthly_salary === null ? 0 : (band.median_monthly_salary / maximum) * 210;
+          const rangeBottom = band.percentile_25 === null ? 0 : (band.percentile_25 / maximum) * 210;
+          const rangeTop = band.percentile_75 === null ? 0 : (band.percentile_75 / maximum) * 210;
+          return (
+            <div className="flex min-w-0 flex-col" key={band.key}>
+              <div className="relative h-[240px] border-b border-zinc-300" title={`${band.sample_count} qualifying postings`}>
+                {band.insufficient_data ? (
+                  <div className="absolute inset-x-1 bottom-4 rounded border border-dashed border-amber-400 bg-amber-50 p-2 text-center text-xs text-amber-900">
+                    Insufficient data
+                  </div>
+                ) : (
+                  <>
+                    <div
+                      className="absolute left-1/2 w-10 -translate-x-1/2 rounded-t bg-teal-700"
+                      style={{ bottom: 0, height: `${medianHeight}px` }}
+                    />
+                    <div
+                      className="absolute left-1/2 w-16 -translate-x-1/2 border-x-2 border-teal-950 bg-teal-100/80"
+                      style={{ bottom: `${rangeBottom}px`, height: `${Math.max(2, rangeTop - rangeBottom)}px` }}
+                      title={`25th–75th percentile: ${formatSalary(band.percentile_25!, currency)}–${formatSalary(band.percentile_75!, currency)}`}
+                    />
+                    <p className="absolute inset-x-0 text-center text-xs font-semibold text-zinc-900" style={{ bottom: `${Math.min(218, medianHeight + 5)}px` }}>
+                      {formatSalary(band.median_monthly_salary!, currency)}
+                    </p>
+                  </>
+                )}
+              </div>
+              <p className="mt-3 text-center text-sm font-semibold text-zinc-950">{band.label}</p>
+              <p className="mt-1 text-center text-xs text-zinc-600">n={band.sample_count}</p>
+              {!band.insufficient_data && band.percentile_25 !== null && band.percentile_75 !== null ? (
+                <p className="mt-1 text-center text-xs text-zinc-600">
+                  P25–P75: {formatSalary(band.percentile_25, currency)}–{formatSalary(band.percentile_75, currency)}
+                </p>
+              ) : null}
+              {band.difference_from_preceding_band !== null ? (
+                <p className="mt-1 text-center text-xs text-teal-800">
+                  {band.difference_from_preceding_band >= 0 ? "+" : ""}{formatSalary(band.difference_from_preceding_band, currency)} vs preceding band
+                </p>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+      <p className="border-t border-zinc-200 p-3 text-xs text-zinc-600">
+        Bars show median monthly advertised salary; shaded markers show the 25th–75th percentile range.
+      </p>
     </div>
   );
 }

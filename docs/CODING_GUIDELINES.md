@@ -509,6 +509,15 @@ Normalize these fields:
 - Show external link warning when redirecting users.
 - Log scraping run success/failure and number of jobs retrieved.
 
+### 13.5 Salary Normalization and Experience Bands
+
+- Keep salary-period multipliers and experience-band boundaries centralized in the job-role service.
+- Accept salary comparison records only when both bounds are positive, ordered, plausible, denominated in SGD, and accompanied by an allowlisted period and explicit minimum-experience value.
+- Normalize midpoint salaries using these documented assumptions: monthly values are unchanged; annual values are divided by 12; weekly values use 52 weeks per year; daily values use 260 workdays per year; and hourly values use 2,080 work hours per year. Convert yearly, weekly, daily, and hourly values to a monthly equivalent by dividing the respective annual total by 12.
+- Assign explicit minimum experience to Entry for 0–2 years, Mid-level for 3–5 years, Senior for 6–9 years, and Lead/Expert for 10 or more years. Do not infer experience from job titles or descriptions.
+- Use the median as the primary statistic and an inclusive, linearly interpolated 25th–75th percentile range. Do not return or plot salary estimates for bands with fewer than five qualifying postings.
+- Validate role slugs and locations before querying, use ORM expressions, and render all returned labels as ordinary encoded text.
+
 ---
 
 ## 14. AI Integration Guidelines

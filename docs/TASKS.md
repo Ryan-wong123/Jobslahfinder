@@ -367,6 +367,7 @@ A task is only done when:
 - [x] Build frontend saved jobs page.
 - [x] Add external link warning UI.
 - [x] Add safe display for job descriptions.
+- [x] Add location-filtered salary comparison by experience with percentile ranges, sample counts, observation period, and compensation disclosure.
 
 ### Tests
 - [x] Add tests for job search.
@@ -375,6 +376,7 @@ A task is only done when:
 - [x] Add tests for job detail.
 - [x] Add tests for saved jobs access control.
 - [x] Add tests for XSS payloads in job descriptions.
+- [x] Add tests for experience-band boundaries, salary-period normalization, location validation, aggregation statistics, and insufficient-data handling.
 
 ---
 

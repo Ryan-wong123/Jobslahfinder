@@ -182,6 +182,8 @@ Cannot:
 - **FR14 Redirect to original job source:** The system shall allow users to access the original job posting website through the provided application link.
 - **FR16 Duplicate job handling:** The system shall detect and manage duplicate job postings collected from one or more job sources.
 - **FR17 Scraping job monitoring:** The system shall allow administrators to view the execution status of scraping tasks, including successful runs, failed runs, and the number of job postings retrieved.
+- **FR26 Salary comparison by experience:** The system shall allow users to compare advertised monthly salaries for a selected job role and optional validated location across Entry (0–2 years), Mid-level (3–5 years), Senior (6–9 years), and Lead/Expert (10+ years) minimum-experience bands. Each band shall report its qualifying-posting count and, when at least five postings qualify, its median and 25th–75th percentile range. A difference shall be reported only when both that band and its immediately preceding band meet the threshold.
+- **FR27 Salary comparison disclosure:** The salary-by-experience view shall state its observation period, identify bands with fewer than five qualifying postings as insufficient data without presenting an estimate, and disclose that advertised salary is not guaranteed compensation.
 
 ### 7.2 Resume and Profile
 

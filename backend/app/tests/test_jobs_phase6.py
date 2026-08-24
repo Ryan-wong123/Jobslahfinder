@@ -104,6 +104,7 @@ def create_job(
     salary_min: float | None = None,
     salary_max: float | None = None,
     salary_period: str | None = None,
+    minimum_experience: str | None = None,
     is_active: bool = True,
     is_suspicious: bool = False,
 ) -> JobPosting:
@@ -124,6 +125,7 @@ def create_job(
         salary_max=salary_max,
         salary_currency="SGD" if salary_min is not None or salary_max is not None else None,
         salary_period=salary_period,
+        minimum_experience=minimum_experience,
         is_active=is_active,
         is_suspicious=is_suspicious,
         content_hash=f"hash-{title}-{company}",
@@ -263,6 +265,87 @@ def test_job_role_catalog_and_detail_are_derived_from_visible_jobs(client: TestC
     assert body["typical_monthly_salary"] == 5000.0
     assert body["salary_points"] == [{"period": "2026-04", "average_salary": 5000.0, "sample_count": 1}]
     assert body["latest_jobs"][0]["title"] == "Software Developer"
+
+
+def test_salary_by_experience_returns_median_percentiles_and_location_filter(
+    client: TestClient, db_session: Session
+) -> None:
+    source = create_source(db_session)
+    salaries_by_experience = {
+        0: [3000, 3200, 3400, 3600, 3800],
+        3: [4000, 4200, 4400, 4600, 4800],
+        6: [5000, 5200, 5400, 5600, 5800],
+        10: [6000, 6200, 6400, 6600, 6800],
+    }
+    for years, salaries in salaries_by_experience.items():
+        for index, salary in enumerate(salaries):
+            create_job(
+                db_session,
+                source,
+                title="Software Engineer",
+                company=f"Company {years}-{index}",
+                location="Singapore",
+                salary_min=salary,
+                salary_max=salary,
+                salary_period="month",
+                minimum_experience=f"{years} years",
+            )
+    create_job(
+        db_session,
+        source,
+        title="Software Engineer",
+        company="Excluded location",
+        location="Remote",
+        salary_min=100000,
+        salary_max=100000,
+        salary_period="month",
+        minimum_experience="0 years",
+    )
+
+    response = client.get(
+        "/job-roles/software-engineer/salary-by-experience",
+        params={"location": "Singapore"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["location"] == "Singapore"
+    assert body["observation_start"] == "2026-04-30"
+    assert body["observation_end"] == "2026-04-30"
+    assert [band["sample_count"] for band in body["bands"]] == [5, 5, 5, 5]
+    assert [band["median_monthly_salary"] for band in body["bands"]] == [3400, 4400, 5400, 6400]
+    assert body["bands"][0]["percentile_25"] == 3200
+    assert body["bands"][0]["percentile_75"] == 3600
+    assert body["bands"][1]["difference_from_preceding_band"] == 1000
+    assert all(not band["insufficient_data"] for band in body["bands"])
+
+
+def test_salary_by_experience_rejects_bad_inputs_and_hides_insufficient_estimates(
+    client: TestClient, db_session: Session
+) -> None:
+    source = create_source(db_session)
+    for index, years in enumerate((0, 2, 3, 5, 6, 9, 10)):
+        create_job(
+            db_session,
+            source,
+            title="Data Analyst",
+            company=f"Boundary {index}",
+            salary_min=4000,
+            salary_max=5000,
+            salary_period="year" if index == 0 else "month",
+            minimum_experience=f"{years} years",
+        )
+
+    response = client.get("/job-roles/data-analyst/salary-by-experience")
+    assert response.status_code == 200
+    bands = response.json()["bands"]
+    assert [band["sample_count"] for band in bands] == [2, 2, 2, 1]
+    assert all(band["insufficient_data"] for band in bands)
+    assert all(band["median_monthly_salary"] is None for band in bands)
+    assert client.get(
+        "/job-roles/data-analyst/salary-by-experience", params={"location": "<script>"}
+    ).status_code == 422
+    assert client.get("/job-roles/INVALID!/salary-by-experience").status_code == 422
 
 
 def test_public_jobs_never_include_suspicious_jobs_even_when_requested(
