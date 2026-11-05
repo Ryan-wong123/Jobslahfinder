@@ -72,7 +72,7 @@ jobs:
           ALLOWED_JOB_SOURCE_DOMAINS: sg.jobstreet.com,www.mycareersfuture.gov.sg,www.jobslah.com,www.fastjobs.sg
           RESUME_EXTRACTION_PROVIDER: local
           COVER_LETTER_GENERATION_PROVIDER: local
-        run: python -m pytest --cov=app --cov-report=term-missing
+        run: python -m pytest --cov=app --cov-report=term-missing --cov-fail-under=70
 
   migrations:
     name: Database Migration Check
@@ -299,6 +299,30 @@ jobs:
           UPLOAD_DIR: /var/lib/jobapp/uploads
           ALLOWED_JOB_SOURCE_DOMAINS: sg.jobstreet.com,www.mycareersfuture.gov.sg,www.jobslah.com,www.fastjobs.sg
 
+      - name: Validate production compose profile
+        run: docker compose -f docker-compose.yml -f docker-compose.prod.yml config > /dev/null
+        env:
+          POSTGRES_DB: jobapp
+          POSTGRES_USER: jobapp
+          POSTGRES_PASSWORD: compose_config_placeholder
+          DOMAIN: ci.example.test
+
+      - name: Validate production Nginx config
+        run: |
+          DOMAIN=ci.example.test
+          mkdir -p ci-nginx/certs/live/$DOMAIN ci-nginx/conf
+          openssl req -x509 -nodes -newkey rsa:2048 -days 1 -subj "/CN=$DOMAIN" \
+            -keyout ci-nginx/certs/live/$DOMAIN/privkey.pem -out ci-nginx/certs/live/$DOMAIN/fullchain.pem
+          docker run --rm -e DOMAIN=$DOMAIN \
+            -v "$PWD/infra/nginx/templates:/etc/nginx/templates:ro" \
+            -v "$PWD/ci-nginx/certs:/etc/letsencrypt:ro" \
+            --add-host backend:127.0.0.1 --add-host frontend:127.0.0.1 \
+            --entrypoint sh nginx:1.27-alpine -c \
+            'envsubst "\$DOMAIN" < /etc/nginx/templates/production.conf.template > /etc/nginx/conf.d/default.conf && nginx -t'
+
+      - name: Syntax-check deployment scripts
+        run: for f in infra/scripts/*.sh; do bash -n "$f"; done
+
       - name: Build application images
         run: docker compose build backend frontend worker beat
         env:
@@ -370,14 +394,9 @@ jobs:
             exit 1
           fi
 
+          PREVIOUS_SHA="$(git rev-parse HEAD)"
           git fetch --prune origin
           git checkout --force "$DEPLOY_SHA"
-
-          COMPOSE="docker compose -f docker-compose.yml -f docker-compose.local-tls.yml"
-
-          $COMPOSE build backend worker beat frontend
-          $COMPOSE up -d postgres redis
-          $COMPOSE run --rm backend alembic upgrade head
-          $COMPOSE up -d --force-recreate --remove-orphans
-          $COMPOSE ps
+          # Pre-deploy backup, build, migrate, HTTPS smoke test and automatic rollback.
+          PREVIOUS_SHA="$PREVIOUS_SHA" DEPLOY_SHA="$DEPLOY_SHA" bash infra/scripts/deploy.sh
           EOF

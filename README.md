@@ -329,8 +329,9 @@ docker compose logs --tail=80 backend
 Run backend tests:
 
 ```powershell
-$env:PYTHONPATH='C:\Users\Downloads\SSD-project\backend\.test-deps;C:\Users\Downloads\SSD-project\backend'
-& 'C:\Users\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' -m pytest
+cd backend
+python -m pip install -e ".[dev]"
+python -m pytest --cov=app --cov-fail-under=70
 ```
 
 ### Backend API Or Model Change With Migration
