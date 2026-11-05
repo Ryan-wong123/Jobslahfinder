@@ -49,8 +49,8 @@ A task is only done when:
 - [x] Add `README.md` with local setup, test, lint, Docker, and deployment commands.
 - [x] Add `docs/` directory for project documentation, screenshots, diagrams, and report-related assets.
 - [x] Add `.gitignore` for `.env`, uploaded files, generated keys, caches, build outputs, logs, local database files, and temporary worker files.
-- [~] Add `.env.example` with placeholder values only.
-- [~] Add `CHANGELOG.md` or simple release notes if useful.
+- [x] Add `.env.example` with placeholder values only.
+- [x] Add `CHANGELOG.md` or simple release notes if useful.
 
 ### Backend Setup
 - [x] Create backend FastAPI project.
@@ -74,7 +74,7 @@ A task is only done when:
 ### Docker and Local Environment
 - [x] Create Docker Compose with frontend, backend, PostgreSQL, Redis, worker, and Nginx.
 - [ ] Add development Docker Compose profile.
-- [ ] Add production Docker Compose profile.
+- [x] Add production Docker Compose profile.
 - [x] Add Dockerfiles for backend, frontend, worker, and Nginx if needed.
 - [x] Add container healthchecks.
 - [x] Ensure PostgreSQL and Redis are internal-only in Docker networking.
@@ -750,13 +750,13 @@ A task is only done when:
 
 ### Nginx and TLS
 - [ ] Configure Nginx reverse proxy.
-- [ ] Configure HTTPS/TLS.
-- [ ] Add HTTP to HTTPS redirect if domain/cert setup allows.
-- [ ] Add Nginx request size limits.
-- [ ] Add Nginx security headers.
+- [~] Configure HTTPS/TLS. (Config and scripts added; verify on the VM with a real domain.)
+- [~] Add HTTP to HTTPS redirect if domain/cert setup allows. (In production template; verify on the VM.)
+- [x] Add Nginx request size limits.
+- [x] Add Nginx security headers.
 
 ### Application Deployment
-- [ ] Configure Docker Compose production profile.
+- [x] Configure Docker Compose production profile.
 - [ ] Configure environment variables on AWS VM.
 - [ ] Run database migrations.
 - [ ] Create initial admin account securely.
@@ -793,17 +793,17 @@ A task is only done when:
 ### Developer Documentation
 - [ ] Update README with setup instructions.
 - [ ] Document environment variables.
-- [ ] Document database migration commands.
-- [ ] Document test commands.
-- [ ] Document deployment commands.
-- [ ] Document backup/restore commands.
+- [x] Document database migration commands.
+- [x] Document test commands.
+- [x] Document deployment commands.
+- [x] Document backup/restore commands.
 
 ### Security Documentation
 - [ ] Document security assumptions.
 - [ ] Document threat model summary.
 - [ ] Document attack surface summary.
 - [ ] Document security controls implemented.
-- [ ] Document accepted risks or limitations.
+- [x] Document accepted risks or limitations.
 - [ ] Document dependency/security scan results.
 
 ### Demo Preparation

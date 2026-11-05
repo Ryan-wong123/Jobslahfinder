@@ -1,105 +1,98 @@
-# EC2 CI/CD Deployment
+# Production Deployment (EC2, Docker Compose, Let's Encrypt)
 
-This repository deploys through GitHub Actions in `.github/workflows/ci-cd.yml`.
+Production runs `docker-compose.yml` + `docker-compose.prod.yml`: Nginx terminates HTTPS on 80/443, everything else stays on the internal Docker network. CI/CD (`.github/workflows/ci-cd.yml`) deploys with `infra/scripts/deploy.sh`, which takes a pre-deploy backup, migrates, smoke-tests `https://$DOMAIN/health`, and rolls the code back automatically on failure.
 
-The pipeline runs backend tests, frontend lint/typecheck/build, security checks, Docker build validation, and then deploys to EC2 over SSH after successful checks.
+## 1. Prerequisites
 
-## GitHub Secrets
+- An EC2 instance (Ubuntu recommended) with Docker, Docker Compose v2, Git, `curl`, `openssl`, and optionally `awscli` and `gpg` (for off-box encrypted backups).
+- A DNS `A` record for your domain pointing at the instance's public IP (use an Elastic IP).
+- Security group: `80` and `443` open to the world; `22` restricted to trusted IPs. Do **not** open 5432, 6379 or 8000.
 
-Create these repository secrets in GitHub:
+## 2. GitHub secrets (Settings -> Secrets and variables -> Actions)
 
-GitHub path: `Settings` -> `Secrets and variables` -> `Actions` -> `New repository secret`.
+| Secret | Notes |
+| --- | --- |
+| `EC2_HOST` | Public IP or DNS of the instance. |
+| `EC2_USER` | SSH user (`ubuntu` / `ec2-user`). |
+| `EC2_PORT` | Optional, defaults to `22`. |
+| `EC2_SSH_KEY` | Full private key (never stored on the VM). |
+| `DEPLOY_PATH` | Absolute path of the checkout, e.g. `/opt/jobslahfinder`. |
 
-| Secret | Example | Notes |
-| --- | --- | --- |
-| `EC2_HOST` | `13.250.10.20` | Public IPv4 or DNS name of the EC2 instance. |
-| `EC2_USER` | `ubuntu` | SSH user for the instance. Amazon Linux often uses `ec2-user`. |
-| `EC2_PORT` | `22` | Optional. Defaults to `22` if omitted. |
-| `EC2_SSH_KEY` | Private key contents | The private key that can SSH into the EC2 instance. |
-| `DEPLOY_PATH` | `/opt/jobslahfinder` | Absolute path to the checked-out repository on EC2. |
-
-Never commit SSH keys, `.env`, generated secrets, backups, logs, or uploaded files.
-
-For `EC2_SSH_KEY`, paste the full private key including the begin/end lines, for example:
-
-```text
------BEGIN OPENSSH PRIVATE KEY-----
-...
------END OPENSSH PRIVATE KEY-----
-```
-
-Do not store this private key on EC2 for GitHub Actions. EC2 should only have the matching public key in the deploy user's `~/.ssh/authorized_keys`.
-
-## EC2 Setup
-
-Install Git, Docker, and Docker Compose on the EC2 instance. Then clone the repo into the deployment path:
+## 3. Configure the VM
 
 ```bash
-sudo mkdir -p /opt/jobslahfinder
-sudo chown "$USER:$USER" /opt/jobslahfinder
-git clone git@github.com:<owner>/<repo>.git /opt/jobslahfinder
-cd /opt/jobslahfinder
+sudo mkdir -p /opt/jobslahfinder && sudo chown "$USER" /opt/jobslahfinder
+git clone <repo-url> /opt/jobslahfinder && cd /opt/jobslahfinder
+cp .env.example .env && chmod 600 .env
 ```
 
-The EC2 deploy user must be able to run Docker commands. Commonly this means adding the user to the `docker` group and starting a new login session.
+Edit `.env` and replace **every** placeholder. In production the backend refuses to start if:
+`FRONTEND_BASE_URL` is not `https://` or points at localhost, any secret still contains a placeholder (`change-me`, `replace-with`, ...), the session and reset secrets are identical or shorter than 32 characters, SMTP is not configured, or Gemini is enabled without an API key.
 
-The repository on EC2 must also be able to run `git fetch origin` during deployment. For private GitHub repositories, add a read-only GitHub deploy key or use another secure Git credential on the EC2 instance.
+Generate secrets with `openssl rand -base64 48`. Required deployment keys: `DOMAIN`, `LETSENCRYPT_EMAIL`, `FRONTEND_BASE_URL=https://<DOMAIN>`, `COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml`, `POSTGRES_*`, `DATABASE_URL`, `SESSION_SECRET`, `PASSWORD_RESET_SECRET`, SMTP_*, `GEMINI_API_KEY`.
 
-Create the production environment file on EC2:
+Use a transactional email provider (e.g. Amazon SES) and configure SPF/DKIM for your domain, otherwise password-reset email will be filtered as spam.
 
-```bash
-cp .env.example .env
-chmod 600 .env
-```
-
-Edit `.env` and replace every placeholder with production values. Use long random values for `POSTGRES_PASSWORD`, `SESSION_SECRET`, and `PASSWORD_RESET_SECRET`.
-
-The EC2 security group should expose only the ports needed for this deployment:
-
-- `22` for SSH, restricted to trusted IPs where possible.
-- `80` and later `443` for web traffic.
-
-PostgreSQL and Redis are internal Docker services and must not be exposed publicly.
-
-## First Deployment
-
-Push to `main` or run the `CI/CD` workflow manually from GitHub Actions.
-
-The deploy job connects to EC2, checks out the exact commit, builds Docker images, runs Alembic migrations, and starts services:
+## 4. First-time HTTPS and startup
 
 ```bash
-docker compose build
+sh infra/scripts/init-letsencrypt.sh        # set LETSENCRYPT_STAGING=1 first to test without rate limits
 docker compose run --rm backend alembic upgrade head
-docker compose up -d --remove-orphans
+docker compose run --rm backend python -m app.cli create-initial-admin --email admin@your-domain
 ```
 
-After deployment, verify:
+Schedule certificate renewal (twice daily) in root's crontab:
 
-```bash
-cd /opt/jobslahfinder
-docker compose ps
-docker compose logs --tail=100 backend
-docker compose logs --tail=100 nginx
+```cron
+17 3,15 * * * cd /opt/jobslahfinder && sh infra/scripts/renew-certs.sh >> /var/log/jobapp-cert-renew.log 2>&1
 ```
 
-The current Compose file maps Nginx to host port `8080`. For public HTTP on port `80`, update `docker-compose.yml` to map `80:80` before production release, or route traffic through a host-level reverse proxy.
+### Optional GeoIP database
 
-## Optional Self-Signed HTTPS For IP-Only EC2 Demo
-
-If you do not have a domain, you can still run encrypted HTTPS with a self-signed certificate for the EC2 public IP. Browsers will show a certificate warning.
+The risk engine's impossible-travel check uses MaxMind GeoLite2 (not committed; licence forbids redistribution). Without it that check is skipped.
 
 ```bash
-cd /opt/jobslahfinder
+MAXMIND_LICENSE_KEY=<your key> sh infra/scripts/download-geolite.sh   # writes infra/geoip/GeoLite2-City.mmdb
+docker compose up -d backend
+```
+
+Initialise the risk engine once and store the returned key in a password manager: `curl -X POST https://<DOMAIN>/risk-engine/setup`.
+
+## 5. Backups and restore test
+
+```cron
+30 2 * * * cd /opt/jobslahfinder && bash infra/scripts/backup-prod.sh >> /var/log/jobapp-backup.log 2>&1
+```
+
+Environment (export in the cron line or `/etc/environment`): `BACKUP_DIR` (default `/var/backups/jobapp`), `BACKUP_RETENTION_DAYS` (14), `BACKUP_PASSPHRASE_FILE` (enables GPG AES-256 encryption), `BACKUP_S3_URI` (e.g. `s3://my-bucket/jobapp`, uploaded with server-side encryption; give the instance an IAM role limited to that prefix).
+
+Verify a backup is restorable (runs in a throwaway container, never touches production):
+
+```bash
+bash infra/scripts/restore-test.sh /var/backups/jobapp/<timestamp>
+```
+
+Run this after the first backup and periodically afterwards; record the result in `docs/TASKS.md`.
+
+## 6. Deploying
+
+Push to `main` (or run the workflow manually). The deploy job runs `infra/scripts/deploy.sh`: backup -> checkout -> build -> `alembic upgrade head` -> start -> HTTPS `/health` smoke test -> rollback of the code on failure. Migrations are not reverted on rollback; restore the pre-deploy backup if a schema change must be undone.
+
+Manual deploy on the VM: `DEPLOY_SHA=$(git rev-parse origin/main) bash infra/scripts/deploy.sh`.
+
+## 7. Post-deploy verification
+
+```bash
+docker compose ps                              # all services healthy
+curl -sI https://<DOMAIN> | head              # HSTS + CSP headers present
+curl -sI http://<DOMAIN> | head -1            # 301 to https
+curl -s -o /dev/null -w '%{http_code}\n' https://<DOMAIN>/api/me   # 401 when logged out
+nmap -Pn -p 5432,6379,8000 <public-ip>        # must all be closed/filtered
+```
+
+## Self-signed HTTPS for an IP-only demo (not for production)
+
+```bash
 sh ./infra/scripts/create-ec2-self-signed-cert.sh <EC2_PUBLIC_IP>
 docker compose -f docker-compose.yml -f docker-compose.local-tls.yml up -d --build
 ```
-
-Open:
-
-```text
-https://<EC2_PUBLIC_IP>
-```
-
-Only switch secure-cookie production settings after HTTPS is reachable. If you continue using plain HTTP, keep `APP_ENV=development` or otherwise ensure secure cookies are not forced.
-
-Generated cert files under `infra/nginx/certs/` must stay on the server and must not be committed.
