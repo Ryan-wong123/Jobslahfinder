@@ -59,3 +59,12 @@ Thumbs.db
 # Let's Encrypt state (private keys)
 infra/certbot/conf/
 infra/certbot/www/
+
+# Local artifacts that must never be committed
+cookies.txt
+*.tsbuildinfo
+frontend/.env.local
+backend/risk_engine/GeoLite2-City.mmdb
+infra/geoip/*.mmdb
+infra/geoip/GeoLite2*
+!infra/geoip/.gitkeep

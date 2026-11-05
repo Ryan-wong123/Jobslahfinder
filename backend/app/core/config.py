@@ -10,6 +10,7 @@ COOKIE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$")
 HOSTNAME_PATTERN = re.compile(
     r"^(?=.{1,253}$)(?!-)(?:[A-Za-z0-9-]{1,63}\.)*[A-Za-z0-9-]{1,63}(?<!-)$"
 )
+PLACEHOLDER_MARKERS = ("change-me", "changeme", "replace-with", "placeholder", "your-secret", "example.com")
 EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
@@ -57,7 +58,7 @@ class Settings(BaseSettings):
         default=30, validation_alias="PASSWORD_RESET_EXPIRE_MINUTES"
     )
 
-    frontend_base_url: str = Field(default="https://18.218.236.144", validation_alias="FRONTEND_BASE_URL")
+    frontend_base_url: str = Field(default="http://localhost:8080", validation_alias="FRONTEND_BASE_URL")
     smtp_host: str | None = Field(default=None, validation_alias="SMTP_HOST")
     smtp_port: int = Field(default=587, validation_alias="SMTP_PORT")
     smtp_username: str | None = Field(default=None, validation_alias="SMTP_USERNAME")
@@ -203,6 +204,26 @@ class Settings(BaseSettings):
         if self.app_env.lower() == "production":
             if self.debug:
                 raise ValueError("DEBUG must be false in production.")
+            if not self.frontend_base_url.lower().startswith("https://"):
+                raise ValueError("FRONTEND_BASE_URL must use https in production.")
+            frontend_host = (urlsplit(self.frontend_base_url).hostname or "").lower()
+            if frontend_host in {"localhost", "127.0.0.1", "::1", "0.0.0.0"} or "your-domain" in frontend_host:
+                raise ValueError("FRONTEND_BASE_URL must not point to localhost in production.")
+            sensitive_values = {
+                "SESSION_SECRET": self.session_secret.get_secret_value(),
+                "PASSWORD_RESET_SECRET": self.password_reset_secret.get_secret_value(),
+                "DATABASE_URL": self.database_url,
+            }
+            if self.smtp_password is not None:
+                sensitive_values["SMTP_PASSWORD"] = self.smtp_password.get_secret_value()
+            if self.gemini_api_key is not None:
+                sensitive_values["GEMINI_API_KEY"] = self.gemini_api_key.get_secret_value()
+            for name, secret_value in sensitive_values.items():
+                lowered = secret_value.lower()
+                if any(marker in lowered for marker in PLACEHOLDER_MARKERS):
+                    raise ValueError(f"{name} still contains a placeholder value; set a real secret.")
+            if self.session_secret.get_secret_value() == self.password_reset_secret.get_secret_value():
+                raise ValueError("SESSION_SECRET and PASSWORD_RESET_SECRET must be different.")
             if len(self.session_secret.get_secret_value()) < 32:
                 raise ValueError("SESSION_SECRET must be at least 32 characters.")
             if len(self.password_reset_secret.get_secret_value()) < 32:
