@@ -20,6 +20,8 @@ Production runs `docker-compose.yml` + `docker-compose.prod.yml`: Nginx terminat
 
 ## 3. Configure the VM
 
+Shortcut: `bash infra/scripts/bootstrap-vm.sh` installs Docker, AWS CLI and git, creates the protected backup directory, enables automatic security updates, installs the backup and certificate-renewal cron jobs, and creates `.env` from the template. After step 6 run `bash infra/scripts/verify-deploy.sh` to check DNS, HTTPS, headers, closed ports and config in one go.
+
 ```bash
 sudo mkdir -p /opt/jobslahfinder && sudo chown "$USER" /opt/jobslahfinder
 git clone <repo-url> /opt/jobslahfinder && cd /opt/jobslahfinder
