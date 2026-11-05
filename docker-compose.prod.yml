@@ -1,0 +1,114 @@
+# Production override. Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+# or set COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml in .env.
+#
+# Requires in .env: DOMAIN, FRONTEND_BASE_URL=https://<DOMAIN>, LETSENCRYPT_EMAIL (for cert issuance).
+# First-time certificate issuance: sh infra/scripts/init-letsencrypt.sh
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  postgres:
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+  redis:
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  backend:
+    logging: *default-logging
+    environment:
+      APP_ENV: production
+      DEBUG: "false"
+      RISK_ENGINE_DATA_DIR: /var/lib/jobapp/risk-engine
+      RISK_ENGINE_BASE_PATH: /risk-engine
+      TRUST_PROXY_HEADERS: "true"
+      TRUSTED_PROXY_CIDRS: 172.28.0.0/24
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+  worker:
+    logging: *default-logging
+    environment:
+      APP_ENV: production
+      DEBUG: "false"
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.workers.celery_app inspect ping -d celery@$$HOSTNAME -t 10 || exit 1"]
+      interval: 60s
+      timeout: 20s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          memory: 1536m
+
+  beat:
+    logging: *default-logging
+    environment:
+      APP_ENV: production
+      DEBUG: "false"
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/celerybeat-schedule || exit 1"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  frontend:
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  nginx:
+    logging: *default-logging
+    ports: !override
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:?DOMAIN is required for the production profile}
+    volumes: !override
+      - ./infra/nginx/templates:/etc/nginx/templates:ro
+      - ./infra/certbot/conf:/etc/letsencrypt:ro
+      - ./infra/certbot/www:/var/www/certbot:ro
+    deploy:
+      resources:
+        limits:
+          memory: 192m
+
+  # One-shot tool container for certificate issuance/renewal (never runs by default).
+  certbot:
+    image: certbot/certbot:v2.11.0
+    profiles: ["tools"]
+    entrypoint: ["certbot"]
+    volumes:
+      - ./infra/certbot/conf:/etc/letsencrypt
+      - ./infra/certbot/www:/var/www/certbot
+    networks:
+      - internal
+
+networks:
+  internal:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24

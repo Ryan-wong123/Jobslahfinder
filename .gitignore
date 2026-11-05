@@ -55,3 +55,7 @@ bronze_datasets/
 Thumbs.db
 .idea/
 .vscode/
+
+# Let's Encrypt state (private keys)
+infra/certbot/conf/
+infra/certbot/www/
