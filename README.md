@@ -516,6 +516,10 @@ cd ..
 
 For container images, build first and then scan the produced images with Trivy.
 
+## Production Deployment
+
+See `docs/DEPLOYMENT.md` for the full guide: domain + Let's Encrypt HTTPS (`docker-compose.prod.yml`), required `.env` values, encrypted/off-box backups, restore testing, and rollback-capable deploys. In production the backend validates its configuration at startup and refuses placeholder secrets.
+
 ## CI/CD
 
 GitHub Actions workflows live under `.github/workflows/`:
