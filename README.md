@@ -200,7 +200,7 @@ Resume skill, education, and experience extraction uses Gemini suggestions plus 
 
 ```text
 RESUME_EXTRACTION_PROVIDER=gemini
-GEMINI_RESUME_MODEL=gemini-2.5-flash-lite
+GEMINI_RESUME_MODEL=gemini-3.5-flash-lite
 GEMINI_API_KEY=replace-with-your-google-ai-api-key
 ```
 
@@ -212,7 +212,7 @@ Cover letter drafts use Gemini by default when `GEMINI_API_KEY` is configured:
 
 ```text
 COVER_LETTER_GENERATION_PROVIDER=gemini
-GEMINI_COVER_LETTER_MODEL=gemini-2.5-flash-lite
+GEMINI_COVER_LETTER_MODEL=gemini-3.5-flash-lite
 GEMINI_COVER_LETTER_MAX_OUTPUT_TOKENS=2048
 ```
 

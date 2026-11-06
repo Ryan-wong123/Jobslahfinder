@@ -79,7 +79,7 @@ class Settings(BaseSettings):
     )
     gemini_api_key: SecretStr | None = Field(default=None, validation_alias="GEMINI_API_KEY")
     gemini_resume_model: str = Field(
-        default="gemini-2.5-flash-lite", validation_alias="GEMINI_RESUME_MODEL"
+        default="gemini-3.5-flash-lite", validation_alias="GEMINI_RESUME_MODEL"
     )
     gemini_resume_max_output_tokens: int = Field(
         default=2048, validation_alias="GEMINI_RESUME_MAX_OUTPUT_TOKENS"
@@ -88,7 +88,7 @@ class Settings(BaseSettings):
         default="gemini", validation_alias="COVER_LETTER_GENERATION_PROVIDER"
     )
     gemini_cover_letter_model: str = Field(
-        default="gemini-2.5-flash-lite", validation_alias="GEMINI_COVER_LETTER_MODEL"
+        default="gemini-3.5-flash-lite", validation_alias="GEMINI_COVER_LETTER_MODEL"
     )
     gemini_cover_letter_max_output_tokens: int = Field(
         default=2048, validation_alias="GEMINI_COVER_LETTER_MAX_OUTPUT_TOKENS"
