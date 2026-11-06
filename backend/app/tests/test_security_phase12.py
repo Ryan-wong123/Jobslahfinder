@@ -614,7 +614,9 @@ def test_resume_extraction_success_and_failure_do_not_log_full_resume_text(
     assert len(audits) == 2
     assert {audit.outcome for audit in audits} == {AuditOutcome.SUCCESS.value, AuditOutcome.FAILURE.value}
     assert any(audit.details_json["skills_count"] >= 1 for audit in audits if audit.outcome == "SUCCESS")
-    assert any(audit.details_json == {"reason": "parser_failed"} for audit in audits if audit.outcome == "FAILURE")
+    assert any(
+        audit.details_json == {"reason": "parser_failed"} for audit in audits if audit.outcome == "FAILURE"
+    ), f"unexpected failure audit details: {[a.details_json for a in audits if a.outcome == 'FAILURE']}"
     assert_sensitive_sentinels_absent(
         sentinels=[success_sentinel, failure_sentinel],
         audits=audits,
