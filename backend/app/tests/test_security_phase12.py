@@ -568,6 +568,9 @@ def test_resume_extraction_success_and_failure_do_not_log_full_resume_text(
 ) -> None:
     settings = get_settings()
     monkeypatch.setattr(settings, "resume_extraction_provider", "local")
+    # This test checks log redaction, not timeouts: give slow CI runners headroom so a
+    # corrupt PDF is reported as parser_failed rather than racing the 10s parser limit.
+    monkeypatch.setattr(settings, "resume_parser_timeout_seconds", 60)
     user = create_user(db_session, email="resume-log-regression@example.com")
     success_sentinel = "PHASE12_RESUME_SUCCESS_SENTINEL_3537"
     failure_sentinel = "PHASE12_RESUME_FAILURE_SENTINEL_9712"
