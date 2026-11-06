@@ -28,7 +28,7 @@ make_dummy_cert() {
 wait_for_nginx() {
   i=0
   while [ "$i" -lt 30 ]; do
-    if curl -s -o /dev/null --max-time 3 "http://127.0.0.1/.well-known/acme-challenge/ping"; then
+    if curl -s -o /dev/null --max-time 3 -H "Host: $DOMAIN" "http://127.0.0.1/.well-known/acme-challenge/ping"; then
       return 0
     fi
     i=$((i+1)); sleep 2
