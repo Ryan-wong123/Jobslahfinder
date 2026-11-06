@@ -740,50 +740,50 @@ A task is only done when:
 ## Phase 15: Deployment
 
 ### AWS VM Preparation
-- [ ] Configure provided AWS VM.
-- [ ] Ensure SSH access works with provided key.
-- [ ] Update system packages.
-- [ ] Install Docker and Docker Compose.
-- [ ] Configure firewall/security group.
-- [ ] Verify only required ports are open.
-- [ ] Ensure web frontend is served from provided AWS VM.
+- [x] Configure provided AWS VM.
+- [x] Ensure SSH access works with provided key.
+- [x] Update system packages.
+- [x] Install Docker and Docker Compose.
+- [x] Configure firewall/security group.
+- [~] Verify only required ports are open. (verify-deploy.sh run on the VM; repeat from an external machine and restrict SSH to a trusted IP.)
+- [x] Ensure web frontend is served from provided AWS VM.
 
 ### Nginx and TLS
-- [ ] Configure Nginx reverse proxy.
-- [~] Configure HTTPS/TLS. (Config and scripts added; verify on the VM with a real domain.)
-- [~] Add HTTP to HTTPS redirect if domain/cert setup allows. (In production template; verify on the VM.)
+- [x] Configure Nginx reverse proxy.
+- [x] Configure HTTPS/TLS. (Let's Encrypt certificate issued and verified on jobs.jobslahfinder.com.)
+- [x] Add HTTP to HTTPS redirect if domain/cert setup allows. (301 verified by infra/scripts/verify-deploy.sh.)
 - [x] Add Nginx request size limits.
 - [x] Add Nginx security headers.
 
 ### Application Deployment
 - [x] Configure Docker Compose production profile.
-- [ ] Configure environment variables on AWS VM.
-- [ ] Run database migrations.
-- [ ] Create initial admin account securely.
-- [ ] Verify backend healthcheck.
-- [ ] Verify frontend loads.
-- [ ] Verify background worker is running.
-- [ ] Verify Redis is internal.
-- [ ] Verify PostgreSQL is internal.
-- [ ] Verify uploaded files are stored in protected storage.
+- [x] Configure environment variables on AWS VM.
+- [x] Run database migrations.
+- [x] Create initial admin account securely.
+- [x] Verify backend healthcheck.
+- [x] Verify frontend loads.
+- [x] Verify background worker is running.
+- [x] Verify Redis is internal.
+- [x] Verify PostgreSQL is internal.
+- [x] Verify uploaded files are stored in protected storage.
 
 ### Scheduled Jobs and Backups
-- [ ] Verify scraping schedule.
-- [ ] Verify scraping run logs.
-- [ ] Verify backup schedule.
-- [ ] Verify backup location is protected.
-- [ ] Run restore test or document restore test result.
+- [~] Verify scraping schedule. (Beat is running; weekly run Sunday 18:00 UTC not yet observed.)
+- [x] Verify scraping run logs.
+- [~] Verify backup schedule. (Cron installed; first scheduled run not yet observed. Off-box S3 copy not configured yet.)
+- [x] Verify backup location is protected.
+- [x] Run restore test or document restore test result.
 
 ### Post-Deployment Verification
-- [ ] Run smoke tests after deployment.
-- [ ] Test registration/login/logout.
-- [ ] Test job browsing.
-- [ ] Test resume upload.
-- [ ] Test recommendation generation.
-- [ ] Test cover letter draft generation.
-- [ ] Test admin dashboard access.
+- [~] Run smoke tests after deployment. (infra/scripts/verify-deploy.sh passes 19/19; full user-journey checklist still to do.)
+- [x] Test registration/login/logout.
+- [x] Test job browsing.
+- [x] Test resume upload.
+- [x] Test recommendation generation.
+- [x] Test cover letter draft generation.
+- [x] Test admin dashboard access.
 - [ ] Test normal user cannot access admin dashboard.
-- [ ] Verify logs and audit events.
+- [~] Verify logs and audit events. (Risk-engine and extraction audit rows seen; full review pending.)
 - [ ] Verify no stack traces are exposed to users.
 
 ---
@@ -792,7 +792,7 @@ A task is only done when:
 
 ### Developer Documentation
 - [ ] Update README with setup instructions.
-- [ ] Document environment variables.
+- [x] Document environment variables.
 - [x] Document database migration commands.
 - [x] Document test commands.
 - [x] Document deployment commands.
