@@ -70,15 +70,15 @@ New users receive a limited setup session after their first successful password 
 
 Trusted device cookies are issued and learned only after successful two-factor setup or successful two-factor verification. Password-only setup login does not mark a device as trusted. Pending two-factor login challenges are stored in Redis with a short TTL and are consumed after successful verification to prevent replay.
 
-The risk engine has its own separate admin surface at `/risk-engine/admin`. This is intentionally separate from the resume analysis platform admin dashboard at `/admin`.
+The risk engine has its own separate admin surface at `/risk-engine/admin`. This is intentionally separate from the resume analysis platform admin dashboard at `/admin`. Access uses the main application's admin session: sign in at `/login` as an `ADMIN` user with two-factor enabled (and a login less than `ADMIN_SESSION_MAX_AGE_MINUTES` old), then open `/risk-engine/admin`. `/risk-engine/admin/login` only redirects to the main sign-in page.
 
-Initialize the risk engine once per environment:
+The main application calls the risk engine in-process, so login scoring works without any extra setup. Initializing the engine is only needed if you want the separate machine-to-machine API (protected by an API key):
 
 ```powershell
 Invoke-RestMethod -Method Post http://localhost:8080/risk-engine/setup
 ```
 
-Store the returned API key in a protected deployment secret or password manager. Do not commit it. Use that key to sign in to `/risk-engine/admin/login`.
+Store the returned API key in a protected deployment secret or password manager. Do not commit it. The key is shown once and does not sign you in to the dashboard.
 
 The risk engine configuration page allows for configuration of device, IP-prefix, impossible-travel, missing-user-agent, rate-limit, baseline-size, and decision-threshold settings.
 
