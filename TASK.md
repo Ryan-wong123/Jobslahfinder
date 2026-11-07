@@ -84,7 +84,7 @@ Goal: merging to `main` deploys automatically while SSH stays closed. About 20 m
     "Condition": {
       "StringEquals": {
         "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-        "token.actions.githubusercontent.com:sub": "repo:Ryan-wong123/Jobslahfinder:environment:production"
+        "token.actions.githubusercontent.com:sub": "repo:Ryan-wong123@42606643/Jobslahfinder@1241196453:environment:production"
       }
     }
   }]
@@ -127,28 +127,35 @@ Repository -> Settings -> Secrets and variables -> Actions -> **Secrets** -> New
 | `DEPLOY_PATH` | `/opt/jobslahfinder` |
 
 - [x] All three secrets saved. (Optional repository **variable** `AWS_REGION`; defaults to `ap-southeast-1`.)
-- [ ] Old secrets `EC2_HOST`, `EC2_USER`, `EC2_PORT`, `EC2_SSH_KEY` may be deleted (unused).
+- [x] Old secrets `EC2_HOST`, `EC2_USER`, `EC2_PORT`, `EC2_SSH_KEY` deleted (unused); only the three secrets above remain.
+
+> **Note - this repository's OIDC subject claim is customised.** GitHub issues the token subject as
+> `repo:Ryan-wong123@42606643/Jobslahfinder@1241196453:environment:production` (owner ID and repo ID included),
+> not the default `repo:OWNER/REPO:environment:production`. The trust policy above uses the real value. If the
+> deploy fails with `Not authorized to perform sts:AssumeRoleWithWebIdentity`, read the exact `sub` from AWS
+> CloudTrail (Event history -> `AssumeRoleWithWebIdentity` -> the "User name" field) and match the trust policy to it.
 
 ---
 
 ## Phase B - First test deploy (from the `production` branch)
 
-**STATUS: DONE** - run #155 (commit `e7e7dcd`) succeeded. Still worth confirming on the server (the two checks below).
+**STATUS: DONE** - run #155 (commit `e7e7dcd`) succeeded, and the server checks below are verified.
 
 - [x] GitHub -> Actions -> **CI/CD** -> **Run workflow** -> branch **`production`** -> Run.
       (The deploy job runs on `workflow_dispatch` and on pushes to `main`.)
       If the `production` environment requires approval, the user approves it.
 - [x] Watch the **Deploy To EC2** job. Expected log: `SSM command id: ...`, status lines
       `Pending/InProgress ... Success`, then `Deploy succeeded.`
-- [ ] On the server: `cd /opt/jobslahfinder && git log -1 --oneline` shows the deployed commit, and
-      `bash infra/scripts/verify-deploy.sh` still passes 19/19.
-- [ ] The pre-deploy backup was created: `sudo ls -1 /var/backups/jobapp | tail -3`.
+- [x] On the server: `cd /opt/jobslahfinder && git log -1 --oneline` shows the deployed commit, and
+      `bash infra/scripts/verify-deploy.sh` still passes 19/19. (Verified after run #155 and after the merge deploy.)
+- [x] The pre-deploy backup was created: `sudo ls -1 /var/backups/jobapp | tail -3`. (Verified.)
 
 ### If the deploy job fails
 
 | Symptom | Likely cause / fix |
 | --- | --- |
-| `Not authorized to perform sts:AssumeRoleWithWebIdentity` | Trust policy `sub` does not match. It must be exactly `repo:Ryan-wong123/Jobslahfinder:environment:production`; check the OIDC provider exists and the audience is `sts.amazonaws.com`. |
+| `Not authorized to perform sts:AssumeRoleWithWebIdentity` | Trust policy `sub` does not match. For this repo it must be exactly `repo:Ryan-wong123@42606643/Jobslahfinder@1241196453:environment:production` (customised claim, see the note in Phase A); check the OIDC provider exists and the audience is `sts.amazonaws.com`. CloudTrail shows the `sub` GitHub actually sent. |
+| Status `Failed`, `set: Illegal option -o pipefail` in the remote errors | SSM runs the command lines with `/bin/sh` (dash). Keep those lines POSIX (`set -eu`); bash-only code belongs in the decoded script. Fixed in `ssm-deploy.sh`. |
 | `AccessDeniedException ... ssm:SendCommand` | Inline policy has the wrong account ID / instance ID / region in the ARNs. |
 | `InvalidInstanceId` | Instance not Online in Fleet Manager: instance role missing `AmazonSSMManagedInstanceCore`, or the SSM agent is not running. |
 | Status `Failed`, output shows `Permission denied` on `/var/backups/jobapp` | Should not happen (deploy.sh uses sudo). Check that `ubuntu` has passwordless sudo: `sudo -n true`. |
@@ -159,14 +166,14 @@ Repository -> Settings -> Secrets and variables -> Actions -> **Secrets** -> New
 
 ## Phase C - Lock it down and merge
 
-- [ ] GitHub -> Settings -> **Environments** -> `production` -> Deployment branches and tags ->
+- [x] (Done) GitHub -> Settings -> **Environments** -> `production` -> Deployment branches and tags ->
       **Selected branches: `main`** (so only `main` can assume the AWS role). Do this **after** the Phase B test,
       because the test runs from the `production` branch.
 - [ ] (Optional) Environments -> `production` -> Required reviewers: add the user for a manual approval step.
 - [ ] (Optional) Settings -> Branches -> protect `main`: require pull request and passing checks.
-- [ ] **With the user's explicit confirmation:** take PR #61 out of draft and merge it. The merge triggers
-      the first automatic deploy to production.
-- [ ] After the merge deploy finishes: run `bash infra/scripts/verify-deploy.sh` on the server (must be 19/19).
+- [x] **With the user's explicit confirmation:** take PR #61 out of draft and merge it. The merge triggers
+      the first automatic deploy to production. (Done: merged as `cb23dd1`, run #156 on `main` succeeded.)
+- [x] After the merge deploy finishes: run `bash infra/scripts/verify-deploy.sh` on the server (must be 19/19). (19/19.)
 
 ---
 
@@ -174,12 +181,12 @@ Repository -> Settings -> Secrets and variables -> Actions -> **Secrets** -> New
 
 - [x] **External port scan** (done: 5432, 6379, 8000 reported `filtered` on 18.138.7.111 from an external tool;
       SSH rule limited to the user's own IP, 80/443 public).
-- [ ] Observe the first scheduled backup (cron 02:30 UTC): `sudo ls -lt /var/backups/jobapp | head` the next day,
-      and `sudo tail /var/log/jobapp-backup.log`.
-- [ ] Observe the weekly scraping run (Sundays 18:00 UTC) in `/admin` -> scraping runs.
-- [ ] Certificate renewal cron exists (`sudo crontab -l`); optionally dry run:
-      `cd /opt/jobslahfinder && docker compose run --rm certbot renew --dry-run`.
-- [ ] Update `docs/TASKS.md` (tick what was verified), commit as the user, push to `production`.
+- [x] Observe the first scheduled backup (cron 02:30 UTC): `sudo ls -lt /var/backups/jobapp | head` the next day,
+      and `sudo tail /var/log/jobapp-backup.log`. (Verified: the 2026-11-07 02:30 UTC run logged "Backup complete".)
+- [ ] Observe the weekly scraping run (Sundays 18:00 UTC) in `/admin` -> scraping runs. (Not yet observable.)
+- [x] Certificate renewal cron exists (`sudo crontab -l`); optionally dry run:
+      `cd /opt/jobslahfinder && docker compose run --rm certbot renew --dry-run`. (Cron at 03:17 and 15:17 UTC; dry run succeeded.)
+- [x] Update `docs/TASKS.md` (tick what was verified), commit as the user, push to `production`.
 
 Already verified by the user: a normal (non-admin) account cannot use `/admin`; unknown API paths return a
 generic `{"detail":"Not Found"}` with no stack trace.

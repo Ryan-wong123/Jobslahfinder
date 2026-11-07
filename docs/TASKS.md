@@ -770,12 +770,12 @@ A task is only done when:
 ### Scheduled Jobs and Backups
 - [~] Verify scraping schedule. (Beat is running; weekly run Sunday 18:00 UTC not yet observed.)
 - [x] Verify scraping run logs.
-- [~] Verify backup schedule. (Cron installed; first scheduled run not yet observed. Off-box S3 copy not configured yet.)
+- [~] Verify backup schedule. (Cron installed and the first scheduled run, 2026-11-07 02:30 UTC, was observed to complete. Off-box S3 copy not configured yet.)
 - [x] Verify backup location is protected.
 - [x] Run restore test or document restore test result.
 
 ### Post-Deployment Verification
-- [~] Run smoke tests after deployment. (infra/scripts/verify-deploy.sh passes 19/19; full user-journey checklist still to do.)
+- [~] Run smoke tests after deployment. (infra/scripts/verify-deploy.sh passes 19/19, including after the first automatic deploy from main via SSM; full user-journey checklist still to do.)
 - [x] Test registration/login/logout.
 - [x] Test job browsing.
 - [x] Test resume upload.
