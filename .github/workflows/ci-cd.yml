@@ -347,56 +347,37 @@ jobs:
       - docker
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     environment: production
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
       - name: Validate required deployment secrets
         env:
-          EC2_HOST: ${{ secrets.EC2_HOST }}
-          EC2_USER: ${{ secrets.EC2_USER }}
-          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          AWS_DEPLOY_ROLE_ARN: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          EC2_INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
         run: |
-          test -n "$EC2_HOST"
-          test -n "$EC2_USER"
-          test -n "$EC2_SSH_KEY"
+          test -n "$AWS_DEPLOY_ROLE_ARN"
+          test -n "$EC2_INSTANCE_ID"
           test -n "$DEPLOY_PATH"
 
-      - name: Configure SSH
-        env:
-          EC2_HOST: ${{ secrets.EC2_HOST }}
-          EC2_PORT: ${{ secrets.EC2_PORT || '22' }}
-          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
-        run: |
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-          printf '%s\n' "$EC2_SSH_KEY" > ~/.ssh/ec2_deploy_key
-          chmod 600 ~/.ssh/ec2_deploy_key
-          ssh-keyscan -p "$EC2_PORT" -H "$EC2_HOST" >> ~/.ssh/known_hosts
+      - name: Configure AWS credentials (OIDC, short-lived)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'ap-southeast-1' }}
+          role-session-name: github-deploy
 
-      - name: Deploy over SSH
+      - name: Deploy through AWS Systems Manager
         env:
-          EC2_HOST: ${{ secrets.EC2_HOST }}
-          EC2_USER: ${{ secrets.EC2_USER }}
-          EC2_PORT: ${{ secrets.EC2_PORT || '22' }}
+          INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
           DEPLOY_SHA: ${{ github.sha }}
-        run: |
-          ssh -i ~/.ssh/ec2_deploy_key -p "$EC2_PORT" "$EC2_USER@$EC2_HOST" \
-            "DEPLOY_PATH='$DEPLOY_PATH' DEPLOY_SHA='$DEPLOY_SHA' bash -s" <<'EOF'
-          set -Eeuo pipefail
-
-          cd "$DEPLOY_PATH"
-
-          if [ ! -f .env ]; then
-            echo "Missing $DEPLOY_PATH/.env on EC2. Create it before deploying." >&2
-            exit 1
-          fi
-
-          PREVIOUS_SHA="$(git rev-parse HEAD)"
-          git fetch --prune origin
-          git checkout --force "$DEPLOY_SHA"
-          # Pre-deploy backup, build, migrate, HTTPS smoke test and automatic rollback.
-          PREVIOUS_SHA="$PREVIOUS_SHA" DEPLOY_SHA="$DEPLOY_SHA" bash infra/scripts/deploy.sh
-          EOF
+          AWS_REGION: ${{ vars.AWS_REGION || 'ap-southeast-1' }}
+        run: bash infra/scripts/ssm-deploy.sh

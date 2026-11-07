@@ -10,6 +10,7 @@
 - Startup validation tests for production configuration.
 
 ### Changed
+- Deploy job now uses AWS Systems Manager with GitHub OIDC (`infra/scripts/ssm-deploy.sh`) instead of SSH, so port 22 stays restricted to a trusted IP.
 - `FRONTEND_BASE_URL` no longer defaults to a public IP; production requires an https, non-localhost URL.
 - Production refuses placeholder secrets and identical session/reset secrets.
 - Deploy job now uses `infra/scripts/deploy.sh` with automatic code rollback.

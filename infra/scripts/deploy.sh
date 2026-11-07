@@ -28,14 +28,16 @@ deploy_ref() {
   $COMPOSE build backend worker beat frontend
   $COMPOSE up -d postgres redis
   if [ "${2:-migrate}" = "migrate" ]; then
-    $COMPOSE run --rm backend alembic upgrade head
+    $COMPOSE run --rm -T backend alembic upgrade head
   fi
   $COMPOSE up -d --remove-orphans
 }
 
 if [ "${SKIP_BACKUP:-0}" != "1" ] && $COMPOSE ps --status running postgres 2>/dev/null | grep -q postgres; then
   echo "Taking pre-deploy backup..."
-  bash infra/scripts/backup-prod.sh
+  SUDO=""
+  [ "$(id -u)" -ne 0 ] && SUDO="sudo"
+  $SUDO bash infra/scripts/backup-prod.sh
 fi
 
 git fetch --prune origin
