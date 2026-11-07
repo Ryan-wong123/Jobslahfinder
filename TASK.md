@@ -204,10 +204,13 @@ generic `{"detail":"Not Found"}` with no stack trace.
 - [x] Bucket versioning is Enabled, and lifecycle rule `expire-old-backups` (prefix `jobapp/`) is Enabled: current versions
       expire after 30 days, noncurrent versions are permanently deleted after 7 days, incomplete multipart uploads
       are aborted after 7 days. The instance role cannot delete objects, so this rule is the only S3 pruning.
-- [ ] **Backups are not GPG-encrypted yet.** `BACKUP_PASSPHRASE_FILE` is not set in `.env` or cron, so `backup-prod.sh`
-      uploads plain `postgres.dump` / `*.tar.gz` (local copies are root-only, S3 uses AES256 server-side encryption).
-      To enable: create a root-only passphrase file on the server, set `BACKUP_PASSPHRASE_FILE=` in `.env`, store the
-      passphrase in a password manager (without it the backups cannot be restored), run a backup and a test restore.
+- [x] **Backups are GPG-encrypted (AES256, symmetric).** `BACKUP_PASSPHRASE_FILE=/etc/jobapp/backup-passphrase` is set in the
+      server `.env` (root-only file, mode 600, in a mode-700 directory). `backup-prod.sh` now produces
+      `postgres.dump.gpg`, `resume_storage.tar.gz.gpg`, `risk_engine_data.tar.gz.gpg` plus `SHA256SUMS`, locally and in S3.
+      Verified with a backup run and `sudo BACKUP_PASSPHRASE_FILE=/etc/jobapp/backup-passphrase bash infra/scripts/restore-test.sh <dir>`
+      (decrypted, checksums OK, restored 16 tables). The passphrase itself is not stored in the repo or in S3: keep a copy in
+      a password manager, because without it the encrypted backups cannot be restored. Backups made before this change
+      (for example `20261107T063533Z`) are plaintext; local ones expire after 14 days, S3 ones after 30 days.
 - [ ] Add the risk-engine API key to a password manager only if the machine API is needed
       (`curl -X POST https://jobs.jobslahfinder.com/risk-engine/setup`, shown once). The risk dashboard itself uses
       the normal admin login: `https://jobs.jobslahfinder.com/risk-engine/admin/dashboard`.
