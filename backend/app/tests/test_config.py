@@ -55,3 +55,43 @@ def test_config_accepts_explicit_trust_proxy_setting() -> None:
     settings = Settings(**kwargs)
 
     assert settings.trust_proxy_headers is True
+
+
+def production_kwargs() -> dict[str, object]:
+    kwargs = base_settings_kwargs()
+    kwargs.update(
+        {
+            "APP_ENV": "production",
+            "FRONTEND_BASE_URL": "https://jobs.mycompany.sg",
+            "SESSION_SECRET": "s" * 40,
+            "PASSWORD_RESET_SECRET": "r" * 40,
+            "SMTP_HOST": "email-smtp.ap-southeast-1.amazonaws.com",
+            "SMTP_FROM_EMAIL": "noreply@mycompany.sg",
+            "GEMINI_API_KEY": "real-looking-key-123",
+        }
+    )
+    return kwargs
+
+
+def test_production_accepts_valid_configuration() -> None:
+    settings = Settings(_env_file=None, **production_kwargs())
+    assert settings.secure_cookies is True
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("FRONTEND_BASE_URL", "http://jobs.mycompany.sg"),
+        ("FRONTEND_BASE_URL", "https://localhost"),
+        ("SESSION_SECRET", "change-me-generate-with-openssl-rand-base64-48"),
+        ("PASSWORD_RESET_SECRET", "replace-with-a-real-secret-value-0000000"),
+        ("GEMINI_API_KEY", "change-me"),
+        ("DATABASE_URL", "postgresql+psycopg://jobapp:change-me@postgres:5432/jobapp"),
+        ("PASSWORD_RESET_SECRET", "s" * 40),
+    ],
+)
+def test_production_rejects_unsafe_configuration(field: str, value: str) -> None:
+    kwargs = production_kwargs()
+    kwargs[field] = value
+    with pytest.raises(ValueError):
+        Settings(_env_file=None, **kwargs)

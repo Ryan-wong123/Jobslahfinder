@@ -1,0 +1,170 @@
+# Production Nginx config. Rendered by the nginx image's envsubst entrypoint.
+proxy_cache_path /var/cache/nginx/static levels=1:2 keys_zone=static_cache:10m max_size=200m inactive=7d use_temp_path=off;
+# Required env: DOMAIN (public hostname that has a Let's Encrypt certificate).
+
+limit_req_zone $binary_remote_addr zone=auth_zone:10m rate=30r/m;
+limit_req_zone $binary_remote_addr zone=api_zone:10m rate=20r/s;
+limit_conn_zone $binary_remote_addr zone=conn_zone:10m;
+limit_req_status 429;
+limit_conn_status 429;
+
+server {
+    listen 80;
+    server_name ${DOMAIN};
+    server_tokens off;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location = /health {
+        proxy_pass http://backend:8000/health;
+        add_header Cache-Control "no-store" always;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+# Reject requests that arrive on the IP address or an unknown Host header.
+server {
+    listen 80 default_server;
+    listen 443 ssl default_server;
+    server_name _;
+    server_tokens off;
+    ssl_certificate /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
+    return 444;
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name ${DOMAIN};
+    server_tokens off;
+
+    ssl_certificate /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 1d;
+    ssl_session_tickets off;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers "ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256";
+    ssl_prefer_server_ciphers off;
+
+    client_max_body_size 5m;
+    client_body_timeout 30s;
+    client_header_timeout 15s;
+    send_timeout 60s;
+    keepalive_timeout 30s;
+    limit_conn conn_zone 50;
+
+    gzip on;
+    gzip_comp_level 5;
+    gzip_min_length 1024;
+    gzip_vary on;
+    gzip_types text/plain text/css application/json application/javascript text/javascript image/svg+xml;
+
+    resolver 127.0.0.11 valid=10s ipv6=off;
+    set $backend_upstream backend:8000;
+    set $frontend_upstream frontend:3000;
+
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+    add_header Cross-Origin-Opener-Policy "same-origin" always;
+    # 'unsafe-inline' for scripts is required by Next.js inline hydration scripts.
+    # Accepted risk, documented in docs/security-hardening.md.
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'" always;
+
+    # Brute-force protection for authentication endpoints (in addition to app-level limits).
+    location /api/auth/ {
+        limit_req zone=auth_zone burst=10 nodelay;
+        rewrite ^/api/(.*)$ /$1 break;
+        proxy_pass http://$backend_upstream;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 30s;
+        proxy_connect_timeout 5s;
+        add_header Cache-Control "no-store" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    }
+
+    location /api/ {
+        limit_req zone=api_zone burst=40 nodelay;
+        rewrite ^/api/(.*)$ /$1 break;
+        proxy_pass http://$backend_upstream;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 120s;
+        proxy_connect_timeout 5s;
+        add_header Cache-Control "no-store" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    }
+
+    location = /health {
+        proxy_pass http://$backend_upstream/health;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        add_header Cache-Control "no-store" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    }
+
+    location /risk-engine/ {
+        limit_req zone=auth_zone burst=20 nodelay;
+        proxy_pass http://$backend_upstream;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        add_header Cache-Control "no-store" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    }
+
+    location = /risk-engine {
+        return 301 /risk-engine/;
+    }
+
+    # Hashed Next.js assets are immutable; cache them in Nginx to spare the Node server.
+    location /_next/static/ {
+        proxy_cache static_cache;
+        proxy_cache_valid 200 365d;
+        proxy_cache_use_stale error timeout updating;
+        proxy_pass http://$frontend_upstream;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options "nosniff" always;
+    }
+
+    location / {
+        proxy_pass http://$frontend_upstream;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 60s;
+        add_header Cache-Control "no-store" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "DENY" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'" always;
+    }
+}

@@ -72,7 +72,7 @@ jobs:
           ALLOWED_JOB_SOURCE_DOMAINS: sg.jobstreet.com,www.mycareersfuture.gov.sg,www.jobslah.com,www.fastjobs.sg
           RESUME_EXTRACTION_PROVIDER: local
           COVER_LETTER_GENERATION_PROVIDER: local
-        run: python -m pytest --cov=app --cov-report=term-missing
+        run: python -m pytest --cov=app --cov-report=term-missing --cov-fail-under=70
 
   migrations:
     name: Database Migration Check
@@ -299,6 +299,30 @@ jobs:
           UPLOAD_DIR: /var/lib/jobapp/uploads
           ALLOWED_JOB_SOURCE_DOMAINS: sg.jobstreet.com,www.mycareersfuture.gov.sg,www.jobslah.com,www.fastjobs.sg
 
+      - name: Validate production compose profile
+        run: docker compose -f docker-compose.yml -f docker-compose.prod.yml config > /dev/null
+        env:
+          POSTGRES_DB: jobapp
+          POSTGRES_USER: jobapp
+          POSTGRES_PASSWORD: compose_config_placeholder
+          DOMAIN: ci.example.test
+
+      - name: Validate production Nginx config
+        run: |
+          DOMAIN=ci.example.test
+          mkdir -p ci-nginx/certs/live/$DOMAIN ci-nginx/conf
+          openssl req -x509 -nodes -newkey rsa:2048 -days 1 -subj "/CN=$DOMAIN" \
+            -keyout ci-nginx/certs/live/$DOMAIN/privkey.pem -out ci-nginx/certs/live/$DOMAIN/fullchain.pem
+          docker run --rm -e DOMAIN=$DOMAIN \
+            -v "$PWD/infra/nginx/templates:/etc/nginx/templates:ro" \
+            -v "$PWD/ci-nginx/certs:/etc/letsencrypt:ro" \
+            --add-host backend:127.0.0.1 --add-host frontend:127.0.0.1 \
+            --entrypoint sh nginx:1.27-alpine -c \
+            'envsubst "\$DOMAIN" < /etc/nginx/templates/production.conf.template > /etc/nginx/conf.d/default.conf && nginx -t'
+
+      - name: Syntax-check deployment scripts
+        run: for f in infra/scripts/*.sh; do bash -n "$f"; done
+
       - name: Build application images
         run: docker compose build backend frontend worker beat
         env:
@@ -323,61 +347,37 @@ jobs:
       - docker
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     environment: production
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
       - name: Validate required deployment secrets
         env:
-          EC2_HOST: ${{ secrets.EC2_HOST }}
-          EC2_USER: ${{ secrets.EC2_USER }}
-          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          AWS_DEPLOY_ROLE_ARN: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          EC2_INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
         run: |
-          test -n "$EC2_HOST"
-          test -n "$EC2_USER"
-          test -n "$EC2_SSH_KEY"
+          test -n "$AWS_DEPLOY_ROLE_ARN"
+          test -n "$EC2_INSTANCE_ID"
           test -n "$DEPLOY_PATH"
 
-      - name: Configure SSH
-        env:
-          EC2_HOST: ${{ secrets.EC2_HOST }}
-          EC2_PORT: ${{ secrets.EC2_PORT || '22' }}
-          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
-        run: |
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-          printf '%s\n' "$EC2_SSH_KEY" > ~/.ssh/ec2_deploy_key
-          chmod 600 ~/.ssh/ec2_deploy_key
-          ssh-keyscan -p "$EC2_PORT" -H "$EC2_HOST" >> ~/.ssh/known_hosts
+      - name: Configure AWS credentials (OIDC, short-lived)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'ap-southeast-1' }}
+          role-session-name: github-deploy
 
-      - name: Deploy over SSH
+      - name: Deploy through AWS Systems Manager
         env:
-          EC2_HOST: ${{ secrets.EC2_HOST }}
-          EC2_USER: ${{ secrets.EC2_USER }}
-          EC2_PORT: ${{ secrets.EC2_PORT || '22' }}
+          INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
           DEPLOY_SHA: ${{ github.sha }}
-        run: |
-          ssh -i ~/.ssh/ec2_deploy_key -p "$EC2_PORT" "$EC2_USER@$EC2_HOST" \
-            "DEPLOY_PATH='$DEPLOY_PATH' DEPLOY_SHA='$DEPLOY_SHA' bash -s" <<'EOF'
-          set -Eeuo pipefail
-
-          cd "$DEPLOY_PATH"
-
-          if [ ! -f .env ]; then
-            echo "Missing $DEPLOY_PATH/.env on EC2. Create it before deploying." >&2
-            exit 1
-          fi
-
-          git fetch --prune origin
-          git checkout --force "$DEPLOY_SHA"
-
-          COMPOSE="docker compose -f docker-compose.yml -f docker-compose.local-tls.yml"
-
-          $COMPOSE build backend worker beat frontend
-          $COMPOSE up -d postgres redis
-          $COMPOSE run --rm backend alembic upgrade head
-          $COMPOSE up -d --force-recreate --remove-orphans
-          $COMPOSE ps
-          EOF
+          AWS_REGION: ${{ vars.AWS_REGION || 'ap-southeast-1' }}
+        run: bash infra/scripts/ssm-deploy.sh

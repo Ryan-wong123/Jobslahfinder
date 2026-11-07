@@ -70,15 +70,15 @@ New users receive a limited setup session after their first successful password 
 
 Trusted device cookies are issued and learned only after successful two-factor setup or successful two-factor verification. Password-only setup login does not mark a device as trusted. Pending two-factor login challenges are stored in Redis with a short TTL and are consumed after successful verification to prevent replay.
 
-The risk engine has its own separate admin surface at `/risk-engine/admin`. This is intentionally separate from the resume analysis platform admin dashboard at `/admin`.
+The risk engine has its own separate admin surface under `/risk-engine/admin/*`. This is intentionally separate from the resume analysis platform admin dashboard at `/admin`. Access uses the main application's admin session: sign in at `/login` as an `ADMIN` user with two-factor enabled (and a login less than `ADMIN_SESSION_MAX_AGE_MINUTES` old), then open `/risk-engine/admin/dashboard` (also linked from the scraping panel in `/admin`). `/risk-engine/admin` and `/risk-engine/admin/login` only redirect to the main sign-in page.
 
-Initialize the risk engine once per environment:
+The main application calls the risk engine in-process, so login scoring works without any extra setup. Initializing the engine is only needed if you want the separate machine-to-machine API (protected by an API key):
 
 ```powershell
 Invoke-RestMethod -Method Post http://localhost:8080/risk-engine/setup
 ```
 
-Store the returned API key in a protected deployment secret or password manager. Do not commit it. Use that key to sign in to `/risk-engine/admin/login`.
+Store the returned API key in a protected deployment secret or password manager. Do not commit it. The key is shown once and does not sign you in to the dashboard.
 
 The risk engine configuration page allows for configuration of device, IP-prefix, impossible-travel, missing-user-agent, rate-limit, baseline-size, and decision-threshold settings.
 
@@ -200,7 +200,7 @@ Resume skill, education, and experience extraction uses Gemini suggestions plus 
 
 ```text
 RESUME_EXTRACTION_PROVIDER=gemini
-GEMINI_RESUME_MODEL=gemini-2.5-flash-lite
+GEMINI_RESUME_MODEL=gemini-3.5-flash-lite
 GEMINI_API_KEY=replace-with-your-google-ai-api-key
 ```
 
@@ -212,7 +212,7 @@ Cover letter drafts use Gemini by default when `GEMINI_API_KEY` is configured:
 
 ```text
 COVER_LETTER_GENERATION_PROVIDER=gemini
-GEMINI_COVER_LETTER_MODEL=gemini-2.5-flash-lite
+GEMINI_COVER_LETTER_MODEL=gemini-3.5-flash-lite
 GEMINI_COVER_LETTER_MAX_OUTPUT_TOKENS=2048
 ```
 
@@ -329,8 +329,9 @@ docker compose logs --tail=80 backend
 Run backend tests:
 
 ```powershell
-$env:PYTHONPATH='C:\Users\Downloads\SSD-project\backend\.test-deps;C:\Users\Downloads\SSD-project\backend'
-& 'C:\Users\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' -m pytest
+cd backend
+python -m pip install -e ".[dev]"
+python -m pytest --cov=app --cov-fail-under=70
 ```
 
 ### Backend API Or Model Change With Migration
@@ -514,6 +515,10 @@ cd ..
 ```
 
 For container images, build first and then scan the produced images with Trivy.
+
+## Production Deployment
+
+See `docs/DEPLOYMENT.md` for the full guide: domain + Let's Encrypt HTTPS (`docker-compose.prod.yml`), required `.env` values, encrypted/off-box backups, restore testing, and rollback-capable deploys. In production the backend validates its configuration at startup and refuses placeholder secrets.
 
 ## CI/CD
 

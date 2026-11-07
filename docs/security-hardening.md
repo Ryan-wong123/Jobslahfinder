@@ -71,3 +71,19 @@ BACKUP_PATH=/var/backups/jobapp/20260502T120000Z docker compose exec postgres sh
 ```
 
 Mount the scripts and backup directory into the appropriate maintenance container before running these commands in production.
+
+## Production Profile Controls
+
+- **TLS:** `infra/nginx/templates/production.conf.template` serves HTTPS (TLS 1.2/1.3) with Let's Encrypt certificates, redirects HTTP to HTTPS, sends HSTS, and returns 444 for requests that do not use the configured hostname.
+- **Rate limiting:** Nginx limits `/api/auth/*` (30 req/min per IP, burst 10) and `/api/*` (20 req/s), on top of application-level limits. Requests over the limit get HTTP 429.
+- **Proxy trust:** Nginx overwrites `X-Forwarded-For` with the real client address, and the backend trusts only the Compose subnet (`172.28.0.0/24`).
+- **Startup validation:** in `APP_ENV=production` the backend refuses to start with placeholder or short secrets, identical session/reset secrets, non-HTTPS or localhost `FRONTEND_BASE_URL`, `DEBUG=true`, or missing SMTP/Gemini configuration.
+- **Resource safety:** per-service memory limits, log rotation (10 MB x 5), and healthchecks for every service.
+
+## Accepted Risks And Limitations
+
+- **CSP `script-src 'unsafe-inline'`:** required by Next.js inline hydration scripts. Mitigated by output encoding of untrusted content, `object-src 'none'`, `frame-ancestors 'none'` and `base-uri 'self'`. A nonce-based CSP via Next.js middleware is a future hardening item.
+- **Migrations are not auto-reverted on rollback:** deploy.sh restores code only; use the pre-deploy backup for schema recovery.
+- **Image tags are pinned by version, not digest.**
+- **Scraping depends on third-party site layout and terms:** review each source's terms of service/robots.txt before enabling it in production and monitor scraping runs in `/admin`.
+- **GeoLite2 database is optional** and must be downloaded by the operator.
