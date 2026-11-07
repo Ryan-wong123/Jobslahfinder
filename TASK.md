@@ -168,9 +168,8 @@ Repository -> Settings -> Secrets and variables -> Actions -> **Secrets** -> New
 
 ## Phase D - Remaining verification (small)
 
-- [ ] **External port scan** from the user's PC (not the server): `nmap -Pn -p 22,80,443,5432,6379,8000 18.138.7.111`
-      or https://www.yougetsignal.com/tools/open-ports/ . Only 80 and 443 should be open to the world
-      (22 is visible only from the user's IP).
+- [x] **External port scan** (done: 5432, 6379, 8000 reported `filtered` on 18.138.7.111 from an external tool;
+      SSH rule limited to the user's own IP, 80/443 public).
 - [ ] Observe the first scheduled backup (cron 02:30 UTC): `sudo ls -lt /var/backups/jobapp | head` the next day,
       and `sudo tail /var/log/jobapp-backup.log`.
 - [ ] Observe the weekly scraping run (Sundays 18:00 UTC) in `/admin` -> scraping runs.

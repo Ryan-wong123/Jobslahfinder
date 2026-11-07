@@ -745,7 +745,7 @@ A task is only done when:
 - [x] Update system packages.
 - [x] Install Docker and Docker Compose.
 - [x] Configure firewall/security group.
-- [~] Verify only required ports are open. (verify-deploy.sh run on the VM; repeat from an external machine and restrict SSH to a trusted IP.)
+- [x] Verify only required ports are open. (External check: 5432, 6379 and 8000 filtered on the public IP; security group allows 80/443 publicly and SSH only from a trusted /32.)
 - [x] Ensure web frontend is served from provided AWS VM.
 
 ### Nginx and TLS
