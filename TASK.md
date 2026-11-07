@@ -1,7 +1,7 @@
 # TASK.md - Remaining deployment work (handoff for a local Claude session)
 
 This file lets a new Claude session (running locally, able to use the user's browser/computer) finish the
-remaining production-deployment work for **Jobslahfinder**. Read `AGENTS.md` and `docs/DEPLOYMENT.md` first.
+remaining production-deployment work for **Jobslahfinder**. Read `AGENTS.md` first; `docs/DEPLOYMENT.md` is the full start-to-finish runbook (with troubleshooting).
 
 ## Current state (verified)
 
