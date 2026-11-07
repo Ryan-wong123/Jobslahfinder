@@ -47,28 +47,30 @@ remaining production-deployment work for **Jobslahfinder**. Read `AGENTS.md` and
 
 ## Phase A - Let GitHub deploy without SSH (AWS Systems Manager + OIDC)
 
+**STATUS: DONE** (verified: workflow run #155 on `production` assumed the AWS role and deployed via SSM successfully).
+
 Goal: merging to `main` deploys automatically while SSH stays closed. About 20 minutes in the AWS console
 (region **Asia Pacific (Singapore)**). The user must be signed in to AWS.
 
 ### A1. Let the instance accept SSM commands
-- [ ] AWS console -> EC2 -> select the instance -> **Security** tab -> note the **IAM role** (if none, create one:
+- [x] AWS console -> EC2 -> select the instance -> **Security** tab -> note the **IAM role** (if none, create one:
       IAM -> Roles -> Create role -> AWS service -> **EC2**, name e.g. `jobapp-ec2-role`).
-- [ ] IAM -> Roles -> that role -> **Add permissions -> Attach policies** -> attach **AmazonSSMManagedInstanceCore**.
-- [ ] If the instance had no role: EC2 -> instance -> **Actions -> Security -> Modify IAM role** -> select it -> Update.
-- [ ] Wait ~5 minutes, then Systems Manager -> **Fleet Manager** must list the instance as **Online**.
+- [x] IAM -> Roles -> that role -> **Add permissions -> Attach policies** -> attach **AmazonSSMManagedInstanceCore**.
+- [x] If the instance had no role: EC2 -> instance -> **Actions -> Security -> Modify IAM role** -> select it -> Update.
+- [x] Wait ~5 minutes, then Systems Manager -> **Fleet Manager** must list the instance as **Online**.
       (Ubuntu 24.04 AWS images include the SSM agent. If it stays missing, on the server run
       `sudo snap list amazon-ssm-agent` and `sudo systemctl status snap.amazon-ssm-agent.amazon-ssm-agent`.)
-- [ ] Record the **instance ID** (`i-...`) and the **AWS account ID** (top-right menu in the console).
+- [x] Record the **instance ID** (`i-...`) and the **AWS account ID** (top-right menu in the console).
 
 ### A2. GitHub identity provider (once per AWS account)
-- [ ] IAM -> **Identity providers** -> Add provider -> **OpenID Connect**.
+- [x] IAM -> **Identity providers** -> Add provider -> **OpenID Connect**.
       Provider URL: `https://token.actions.githubusercontent.com`  Audience: `sts.amazonaws.com`.
       (Skip if it already exists.)
 
 ### A3. Deploy role
-- [ ] IAM -> Roles -> Create role -> **Web identity** -> provider `token.actions.githubusercontent.com`,
+- [x] IAM -> Roles -> Create role -> **Web identity** -> provider `token.actions.githubusercontent.com`,
       audience `sts.amazonaws.com` -> skip permissions -> name `github-deploy-jobslahfinder` -> create.
-- [ ] Open the role -> **Trust relationships -> Edit trust policy** and set it to the following
+- [x] Open the role -> **Trust relationships -> Edit trust policy** and set it to the following
       (replace `ACCOUNT_ID`). The `sub` claim is the **production environment** because the deploy job uses
       `environment: production`:
 
@@ -89,7 +91,7 @@ Goal: merging to `main` deploys automatically while SSH stays closed. About 20 m
 }
 ```
 
-- [ ] Role -> **Add permissions -> Create inline policy -> JSON**, name `ssm-deploy-jobslahfinder`
+- [x] Role -> **Add permissions -> Create inline policy -> JSON**, name `ssm-deploy-jobslahfinder`
       (replace `ACCOUNT_ID` and `INSTANCE_ID`):
 
 ```json
@@ -113,7 +115,7 @@ Goal: merging to `main` deploys automatically while SSH stays closed. About 20 m
 }
 ```
 
-- [ ] Copy the role's **ARN** (`arn:aws:iam::ACCOUNT_ID:role/github-deploy-jobslahfinder`).
+- [x] Copy the role's **ARN** (`arn:aws:iam::ACCOUNT_ID:role/github-deploy-jobslahfinder`).
 
 ### A4. GitHub secrets (the user must confirm before saving)
 Repository -> Settings -> Secrets and variables -> Actions -> **Secrets** -> New repository secret:
@@ -124,17 +126,19 @@ Repository -> Settings -> Secrets and variables -> Actions -> **Secrets** -> New
 | `EC2_INSTANCE_ID` | the `i-...` instance ID |
 | `DEPLOY_PATH` | `/opt/jobslahfinder` |
 
-- [ ] All three secrets saved. (Optional repository **variable** `AWS_REGION`; defaults to `ap-southeast-1`.)
+- [x] All three secrets saved. (Optional repository **variable** `AWS_REGION`; defaults to `ap-southeast-1`.)
 - [ ] Old secrets `EC2_HOST`, `EC2_USER`, `EC2_PORT`, `EC2_SSH_KEY` may be deleted (unused).
 
 ---
 
 ## Phase B - First test deploy (from the `production` branch)
 
-- [ ] GitHub -> Actions -> **CI/CD** -> **Run workflow** -> branch **`production`** -> Run.
+**STATUS: DONE** - run #155 (commit `e7e7dcd`) succeeded. Still worth confirming on the server (the two checks below).
+
+- [x] GitHub -> Actions -> **CI/CD** -> **Run workflow** -> branch **`production`** -> Run.
       (The deploy job runs on `workflow_dispatch` and on pushes to `main`.)
       If the `production` environment requires approval, the user approves it.
-- [ ] Watch the **Deploy To EC2** job. Expected log: `SSM command id: ...`, status lines
+- [x] Watch the **Deploy To EC2** job. Expected log: `SSM command id: ...`, status lines
       `Pending/InProgress ... Success`, then `Deploy succeeded.`
 - [ ] On the server: `cd /opt/jobslahfinder && git log -1 --oneline` shows the deployed commit, and
       `bash infra/scripts/verify-deploy.sh` still passes 19/19.
