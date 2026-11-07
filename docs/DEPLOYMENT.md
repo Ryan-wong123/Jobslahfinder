@@ -449,11 +449,33 @@ Expected from the restore test (it restores into a throwaway container and never
 Restore OK: 16 public tables, 2 users.
 ```
 
-`<newest-folder>` in older notes is a placeholder: the `NEWEST=` line fills it in.
+For encrypted backups the file names end in `.gpg` and the test needs the passphrase (see 12.3). `<newest-folder>` in
+older notes is a placeholder: the `NEWEST=` line fills it in.
 
-### 12.3 Optional settings
+### 12.3 Encrypt the backups (recommended)
 
-Set in `.env`: `BACKUP_RETENTION_DAYS`, `BACKUP_PASSPHRASE_FILE` (GPG AES-256 encryption of the dump and archives).
+Backups contain user data and resume files. Encrypt them with a passphrase that lives only on the server and in
+your password manager (never in git, S3 or chat).
+
+```bash
+sudo mkdir -p /etc/jobapp && sudo chmod 700 /etc/jobapp
+sudo sh -c 'umask 077; openssl rand -base64 32 > /etc/jobapp/backup-passphrase'
+sudo cat /etc/jobapp/backup-passphrase          # copy it into your password manager NOW
+echo 'BACKUP_PASSPHRASE_FILE=/etc/jobapp/backup-passphrase' >> .env
+sudo bash infra/scripts/backup-prod.sh
+```
+
+Without that passphrase an encrypted backup **cannot** be restored, so store a copy somewhere that survives the
+server. Encrypted backups contain `postgres.dump.gpg`, `resume_storage.tar.gz.gpg` and
+`risk_engine_data.tar.gz.gpg` (plus `SHA256SUMS`). Backups made before you turned encryption on stay plaintext until
+they expire. `restore-test.sh` does not read `.env`, so pass the passphrase file explicitly:
+
+```bash
+NEWEST=$(sudo ls -1 /var/backups/jobapp | tail -1)
+sudo BACKUP_PASSPHRASE_FILE=/etc/jobapp/backup-passphrase bash infra/scripts/restore-test.sh /var/backups/jobapp/$NEWEST
+```
+
+Other optional settings in `.env`: `BACKUP_RETENTION_DAYS` (default 14).
 
 ### 12.4 Optional: off-server backups to S3
 
@@ -467,14 +489,15 @@ Without this, backups only protect against mistakes, not against losing the whol
     {"Effect":"Allow","Action":["s3:PutObject"],"Resource":"arn:aws:s3:::YOUR-BUCKET-NAME/jobapp/*"},
     {"Effect":"Allow","Action":["s3:ListBucket"],"Resource":"arn:aws:s3:::YOUR-BUCKET-NAME","Condition":{"StringLike":{"s3:prefix":["jobapp/*"]}}}]}
    ```
-3. **Check the bucket really exists before using it:**
+3. Recommended bucket settings: **Versioning on**, and a **lifecycle rule** (Management -> Create lifecycle rule, prefix `jobapp/`) that expires current versions after 30 days and permanently deletes noncurrent versions after 7 days, plus "delete incomplete multipart uploads" after 7 days. The instance role cannot delete or read objects, so this rule is the only S3 pruning, and **restoring from S3 needs different credentials** (for example your own admin user) or a temporary read policy.
+4. **Check the bucket really exists before using it:**
 
    ```bash
    curl -sI https://YOUR-BUCKET-NAME.s3.amazonaws.com | head -1
    ```
 
    `404 Not Found` means no such bucket (a typo, or a policy name used instead of the bucket name). `403` or `301` means it exists.
-4. In `.env` set `BACKUP_S3_URI=s3://YOUR-BUCKET-NAME/jobapp`, then:
+5. In `.env` set `BACKUP_S3_URI=s3://YOUR-BUCKET-NAME/jobapp`, then:
 
    ```bash
    sudo bash infra/scripts/backup-prod.sh
@@ -513,14 +536,26 @@ change must be undone.)
        "Condition": {
          "StringEquals": {
            "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-           "token.actions.githubusercontent.com:sub": "repo:Ryan-wong123/Jobslahfinder:environment:production"
+           "token.actions.githubusercontent.com:sub": "<EXACT SUBJECT, see below>"
          }
        }
      }]
    }
    ```
 
-   The `sub` has the `environment:production` form because the deploy job declares `environment: production`.
+   The subject ends in `:environment:production` because the deploy job declares `environment: production`. **The
+   part before it depends on your repository**, and GitHub may include numeric IDs. Two forms exist:
+
+   | Form | Example |
+   | --- | --- |
+   | Default | `repo:OWNER/REPO:environment:production` |
+   | With IDs (newer or customised repositories) | `repo:OWNER@OWNER_ID/REPO@REPO_ID:environment:production` |
+
+   Do not guess: use the value GitHub really sends. The reliable way is to run the deploy once (it will be refused),
+   then open **CloudTrail -> Event history**, filter on Event name `AssumeRoleWithWebIdentity`, open the failed event
+   and copy the **User name** field. That string is the exact subject; paste it into the trust policy, save, and run
+   the workflow again. (The subject setting itself can be read with
+   `gh api repos/OWNER/REPO/actions/oidc/customization/sub` if you use the GitHub CLI.) Keep the capitalisation exactly as shown.
 4. **Give the role only what it needs:** Role -> Add permissions -> Create inline policy -> JSON (replace `ACCOUNT_ID` and `INSTANCE_ID`):
 
    ```json
@@ -679,7 +714,7 @@ Find your symptom. Each entry says what it means and how to fix it.
 | Symptom | Cause and fix |
 | --- | --- |
 | All jobs fail in about two seconds with no log | A GitHub account problem (Actions spending limit or minutes, billing) rather than the code: check Settings -> Billing and Actions. |
-| `Could not assume role with OIDC: Not authorized to perform sts:AssumeRoleWithWebIdentity` | The role's trust policy does not match. The `sub` must be exactly `repo:<Owner>/<Repo>:environment:production` with the right capitalisation (not `ref:refs/heads/main` and not an old repository name); `aud` must be `sts.amazonaws.com`; the `Principal` must contain your real account ID; the OIDC provider must exist. The secret `AWS_DEPLOY_ROLE_ARN` must point at this role. |
+| `Could not assume role with OIDC: Not authorized to perform sts:AssumeRoleWithWebIdentity` | The role's trust policy does not match what GitHub sent. Most often the **`sub` form is wrong**: some repositories send numeric IDs (`repo:OWNER@OWNER_ID/REPO@REPO_ID:environment:production`) instead of `repo:OWNER/REPO:environment:production`. Read the exact subject from CloudTrail (Event history -> `AssumeRoleWithWebIdentity` -> **User name**) and paste it into the trust policy. Also check: the subject is not `ref:refs/heads/main` or an old repository name; `aud` is `sts.amazonaws.com`; the `Principal` has your real account ID; the OIDC provider exists; `AWS_DEPLOY_ROLE_ARN` points at this role. |
 | `AccessDeniedException ... ssm:SendCommand` | The inline policy has a wrong account ID, instance ID or region in its ARNs. |
 | `InvalidInstanceId` / the command never starts | The instance is not **Online** in Fleet Manager: the instance role lacks `AmazonSSMManagedInstanceCore` or is not attached, or the SSM agent is not running (`sudo snap list amazon-ssm-agent`). |
 | Remote error `set: Illegal option -o pipefail` | SSM runs command lines with `sh` (dash), which has no `pipefail`. Fixed in `infra/scripts/ssm-deploy.sh` (POSIX wrapper; the real script runs under `bash`). Make sure you are running a commit that includes the fix, and start a **new** workflow run. |
