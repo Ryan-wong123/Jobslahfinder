@@ -35,11 +35,12 @@ B64="$(printf '%s\n' "$REMOTE_SCRIPT" | base64 -w0)"
 PARAMS_FILE="$(mktemp)"
 trap 'rm -f "$PARAMS_FILE"' EXIT
 
-# SSM runs commands as root; drop to the deploy user so repo files keep the right owner.
+# SSM runs these lines with /bin/sh (dash on Ubuntu): keep them POSIX (no pipefail). The real work runs
+# under bash in the decoded script. Drop to the deploy user so repo files keep the right owner.
 jq -n --arg b64 "$B64" --arg user "$REMOTE_USER" '{
   commands: [
-    "set -Eeuo pipefail",
-    "trap \"rm -f /tmp/jobslah-deploy.sh\" EXIT",
+    "set -eu",
+    "trap '"'"'rm -f /tmp/jobslah-deploy.sh'"'"' EXIT",
     ("echo " + $b64 + " | base64 -d > /tmp/jobslah-deploy.sh"),
     "chmod 755 /tmp/jobslah-deploy.sh",
     ("sudo -u " + $user + " -H bash /tmp/jobslah-deploy.sh </dev/null")
