@@ -1,7 +1,7 @@
 # TASK.md - Remaining deployment work (handoff for a local Claude session)
 
 This file lets a new Claude session (running locally, able to use the user's browser/computer) finish the
-remaining production-deployment work for **Jobslahfinder**. Read `AGENTS.md` and `docs/DEPLOYMENT.md` first.
+remaining production-deployment work for **Jobslahfinder**. Read `AGENTS.md` first; `docs/DEPLOYMENT.md` is the full start-to-finish runbook (with troubleshooting).
 
 ## Current state (verified)
 
@@ -47,28 +47,30 @@ remaining production-deployment work for **Jobslahfinder**. Read `AGENTS.md` and
 
 ## Phase A - Let GitHub deploy without SSH (AWS Systems Manager + OIDC)
 
+**STATUS: DONE** (verified: workflow run #155 on `production` assumed the AWS role and deployed via SSM successfully).
+
 Goal: merging to `main` deploys automatically while SSH stays closed. About 20 minutes in the AWS console
 (region **Asia Pacific (Singapore)**). The user must be signed in to AWS.
 
 ### A1. Let the instance accept SSM commands
-- [ ] AWS console -> EC2 -> select the instance -> **Security** tab -> note the **IAM role** (if none, create one:
+- [x] AWS console -> EC2 -> select the instance -> **Security** tab -> note the **IAM role** (if none, create one:
       IAM -> Roles -> Create role -> AWS service -> **EC2**, name e.g. `jobapp-ec2-role`).
-- [ ] IAM -> Roles -> that role -> **Add permissions -> Attach policies** -> attach **AmazonSSMManagedInstanceCore**.
-- [ ] If the instance had no role: EC2 -> instance -> **Actions -> Security -> Modify IAM role** -> select it -> Update.
-- [ ] Wait ~5 minutes, then Systems Manager -> **Fleet Manager** must list the instance as **Online**.
+- [x] IAM -> Roles -> that role -> **Add permissions -> Attach policies** -> attach **AmazonSSMManagedInstanceCore**.
+- [x] If the instance had no role: EC2 -> instance -> **Actions -> Security -> Modify IAM role** -> select it -> Update.
+- [x] Wait ~5 minutes, then Systems Manager -> **Fleet Manager** must list the instance as **Online**.
       (Ubuntu 24.04 AWS images include the SSM agent. If it stays missing, on the server run
       `sudo snap list amazon-ssm-agent` and `sudo systemctl status snap.amazon-ssm-agent.amazon-ssm-agent`.)
-- [ ] Record the **instance ID** (`i-...`) and the **AWS account ID** (top-right menu in the console).
+- [x] Record the **instance ID** (`i-...`) and the **AWS account ID** (top-right menu in the console).
 
 ### A2. GitHub identity provider (once per AWS account)
-- [ ] IAM -> **Identity providers** -> Add provider -> **OpenID Connect**.
+- [x] IAM -> **Identity providers** -> Add provider -> **OpenID Connect**.
       Provider URL: `https://token.actions.githubusercontent.com`  Audience: `sts.amazonaws.com`.
       (Skip if it already exists.)
 
 ### A3. Deploy role
-- [ ] IAM -> Roles -> Create role -> **Web identity** -> provider `token.actions.githubusercontent.com`,
+- [x] IAM -> Roles -> Create role -> **Web identity** -> provider `token.actions.githubusercontent.com`,
       audience `sts.amazonaws.com` -> skip permissions -> name `github-deploy-jobslahfinder` -> create.
-- [ ] Open the role -> **Trust relationships -> Edit trust policy** and set it to the following
+- [x] Open the role -> **Trust relationships -> Edit trust policy** and set it to the following
       (replace `ACCOUNT_ID`). The `sub` claim is the **production environment** because the deploy job uses
       `environment: production`:
 
@@ -82,14 +84,14 @@ Goal: merging to `main` deploys automatically while SSH stays closed. About 20 m
     "Condition": {
       "StringEquals": {
         "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-        "token.actions.githubusercontent.com:sub": "repo:Ryan-wong123/Jobslahfinder:environment:production"
+        "token.actions.githubusercontent.com:sub": "repo:Ryan-wong123@42606643/Jobslahfinder@1241196453:environment:production"
       }
     }
   }]
 }
 ```
 
-- [ ] Role -> **Add permissions -> Create inline policy -> JSON**, name `ssm-deploy-jobslahfinder`
+- [x] Role -> **Add permissions -> Create inline policy -> JSON**, name `ssm-deploy-jobslahfinder`
       (replace `ACCOUNT_ID` and `INSTANCE_ID`):
 
 ```json
@@ -113,7 +115,7 @@ Goal: merging to `main` deploys automatically while SSH stays closed. About 20 m
 }
 ```
 
-- [ ] Copy the role's **ARN** (`arn:aws:iam::ACCOUNT_ID:role/github-deploy-jobslahfinder`).
+- [x] Copy the role's **ARN** (`arn:aws:iam::ACCOUNT_ID:role/github-deploy-jobslahfinder`).
 
 ### A4. GitHub secrets (the user must confirm before saving)
 Repository -> Settings -> Secrets and variables -> Actions -> **Secrets** -> New repository secret:
@@ -124,27 +126,36 @@ Repository -> Settings -> Secrets and variables -> Actions -> **Secrets** -> New
 | `EC2_INSTANCE_ID` | the `i-...` instance ID |
 | `DEPLOY_PATH` | `/opt/jobslahfinder` |
 
-- [ ] All three secrets saved. (Optional repository **variable** `AWS_REGION`; defaults to `ap-southeast-1`.)
-- [ ] Old secrets `EC2_HOST`, `EC2_USER`, `EC2_PORT`, `EC2_SSH_KEY` may be deleted (unused).
+- [x] All three secrets saved. (Optional repository **variable** `AWS_REGION`; defaults to `ap-southeast-1`.)
+- [x] Old secrets `EC2_HOST`, `EC2_USER`, `EC2_PORT`, `EC2_SSH_KEY` deleted (unused); only the three secrets above remain.
+
+> **Note - this repository's OIDC subject claim is customised.** GitHub issues the token subject as
+> `repo:Ryan-wong123@42606643/Jobslahfinder@1241196453:environment:production` (owner ID and repo ID included),
+> not the default `repo:OWNER/REPO:environment:production`. The trust policy above uses the real value. If the
+> deploy fails with `Not authorized to perform sts:AssumeRoleWithWebIdentity`, read the exact `sub` from AWS
+> CloudTrail (Event history -> `AssumeRoleWithWebIdentity` -> the "User name" field) and match the trust policy to it.
 
 ---
 
 ## Phase B - First test deploy (from the `production` branch)
 
-- [ ] GitHub -> Actions -> **CI/CD** -> **Run workflow** -> branch **`production`** -> Run.
+**STATUS: DONE** - run #155 (commit `e7e7dcd`) succeeded, and the server checks below are verified.
+
+- [x] GitHub -> Actions -> **CI/CD** -> **Run workflow** -> branch **`production`** -> Run.
       (The deploy job runs on `workflow_dispatch` and on pushes to `main`.)
       If the `production` environment requires approval, the user approves it.
-- [ ] Watch the **Deploy To EC2** job. Expected log: `SSM command id: ...`, status lines
+- [x] Watch the **Deploy To EC2** job. Expected log: `SSM command id: ...`, status lines
       `Pending/InProgress ... Success`, then `Deploy succeeded.`
-- [ ] On the server: `cd /opt/jobslahfinder && git log -1 --oneline` shows the deployed commit, and
-      `bash infra/scripts/verify-deploy.sh` still passes 19/19.
-- [ ] The pre-deploy backup was created: `sudo ls -1 /var/backups/jobapp | tail -3`.
+- [x] On the server: `cd /opt/jobslahfinder && git log -1 --oneline` shows the deployed commit, and
+      `bash infra/scripts/verify-deploy.sh` still passes 19/19. (Verified after run #155 and after the merge deploy.)
+- [x] The pre-deploy backup was created: `sudo ls -1 /var/backups/jobapp | tail -3`. (Verified.)
 
 ### If the deploy job fails
 
 | Symptom | Likely cause / fix |
 | --- | --- |
-| `Not authorized to perform sts:AssumeRoleWithWebIdentity` | Trust policy `sub` does not match. It must be exactly `repo:Ryan-wong123/Jobslahfinder:environment:production`; check the OIDC provider exists and the audience is `sts.amazonaws.com`. |
+| `Not authorized to perform sts:AssumeRoleWithWebIdentity` | Trust policy `sub` does not match. For this repo it must be exactly `repo:Ryan-wong123@42606643/Jobslahfinder@1241196453:environment:production` (customised claim, see the note in Phase A); check the OIDC provider exists and the audience is `sts.amazonaws.com`. CloudTrail shows the `sub` GitHub actually sent. |
+| Status `Failed`, `set: Illegal option -o pipefail` in the remote errors | SSM runs the command lines with `/bin/sh` (dash). Keep those lines POSIX (`set -eu`); bash-only code belongs in the decoded script. Fixed in `ssm-deploy.sh`. |
 | `AccessDeniedException ... ssm:SendCommand` | Inline policy has the wrong account ID / instance ID / region in the ARNs. |
 | `InvalidInstanceId` | Instance not Online in Fleet Manager: instance role missing `AmazonSSMManagedInstanceCore`, or the SSM agent is not running. |
 | Status `Failed`, output shows `Permission denied` on `/var/backups/jobapp` | Should not happen (deploy.sh uses sudo). Check that `ubuntu` has passwordless sudo: `sudo -n true`. |
@@ -155,14 +166,14 @@ Repository -> Settings -> Secrets and variables -> Actions -> **Secrets** -> New
 
 ## Phase C - Lock it down and merge
 
-- [ ] GitHub -> Settings -> **Environments** -> `production` -> Deployment branches and tags ->
+- [x] (Done) GitHub -> Settings -> **Environments** -> `production` -> Deployment branches and tags ->
       **Selected branches: `main`** (so only `main` can assume the AWS role). Do this **after** the Phase B test,
       because the test runs from the `production` branch.
 - [ ] (Optional) Environments -> `production` -> Required reviewers: add the user for a manual approval step.
 - [ ] (Optional) Settings -> Branches -> protect `main`: require pull request and passing checks.
-- [ ] **With the user's explicit confirmation:** take PR #61 out of draft and merge it. The merge triggers
-      the first automatic deploy to production.
-- [ ] After the merge deploy finishes: run `bash infra/scripts/verify-deploy.sh` on the server (must be 19/19).
+- [x] **With the user's explicit confirmation:** take PR #61 out of draft and merge it. The merge triggers
+      the first automatic deploy to production. (Done: merged as `cb23dd1`, run #156 on `main` succeeded.)
+- [x] After the merge deploy finishes: run `bash infra/scripts/verify-deploy.sh` on the server (must be 19/19). (19/19.)
 
 ---
 
@@ -170,24 +181,36 @@ Repository -> Settings -> Secrets and variables -> Actions -> **Secrets** -> New
 
 - [x] **External port scan** (done: 5432, 6379, 8000 reported `filtered` on 18.138.7.111 from an external tool;
       SSH rule limited to the user's own IP, 80/443 public).
-- [ ] Observe the first scheduled backup (cron 02:30 UTC): `sudo ls -lt /var/backups/jobapp | head` the next day,
-      and `sudo tail /var/log/jobapp-backup.log`.
-- [ ] Observe the weekly scraping run (Sundays 18:00 UTC) in `/admin` -> scraping runs.
-- [ ] Certificate renewal cron exists (`sudo crontab -l`); optionally dry run:
-      `cd /opt/jobslahfinder && docker compose run --rm certbot renew --dry-run`.
-- [ ] Update `docs/TASKS.md` (tick what was verified), commit as the user, push to `production`.
+- [x] Observe the first scheduled backup (cron 02:30 UTC): `sudo ls -lt /var/backups/jobapp | head` the next day,
+      and `sudo tail /var/log/jobapp-backup.log`. (Verified: the 2026-11-07 02:30 UTC run logged "Backup complete".)
+- [ ] Observe the weekly scraping run (Sundays 18:00 UTC) in `/admin` -> scraping runs. (Not yet observable.)
+- [x] Certificate renewal cron exists (`sudo crontab -l`); optionally dry run:
+      `cd /opt/jobslahfinder && docker compose run --rm certbot renew --dry-run`. (Cron at 03:17 and 15:17 UTC; dry run succeeded.)
+- [x] Update `docs/TASKS.md` (tick what was verified), commit as the user, push to `production`.
 
 Already verified by the user: a normal (non-admin) account cannot use `/admin`; unknown API paths return a
 generic `{"detail":"Not Found"}` with no stack trace.
 
 ## Phase E - Optional / later
 
-- [ ] **Off-server backups (S3).** The bucket `jobslahfinderapp-backup-upload` does **not** exist (S3 returned
-      404). To enable: create the bucket in Singapore (Block all public access ON, versioning ON); grant the
-      instance role `s3:PutObject` on `arn:aws:s3:::BUCKET/jobapp/*` and `s3:ListBucket` on the bucket with prefix
-      `jobapp/*`; then on the server uncomment/set `BACKUP_S3_URI=s3://BUCKET/jobapp` in `.env`, run
-      `sudo bash infra/scripts/backup-prod.sh`, and check `aws s3 ls s3://BUCKET/jobapp/`.
-      (Currently `BACKUP_S3_URI` is commented out; backups are kept locally for 14 days.)
+- [x] **Off-server backups (S3).** Done. The bucket is `jobslahfinder-backups-ryan` (Singapore, Block all public
+      access ON, no bucket policy). The earlier `jobslahfinderapp-backup-upload` name in the instance role policy
+      `jobslahfinder_s3` was wrong (that bucket never existed); the policy now allows `s3:PutObject` on
+      `arn:aws:s3:::jobslahfinder-backups-ryan/jobapp/*` and `s3:ListBucket` on the bucket with prefix `jobapp/*`.
+      The server `.env` has `BACKUP_S3_URI=s3://jobslahfinder-backups-ryan/jobapp`. Verified with
+      `sudo bash infra/scripts/backup-prod.sh` (4 files uploaded) and `aws s3 ls s3://jobslahfinder-backups-ryan/jobapp/<stamp>/`.
+      The role cannot read objects back (no `s3:GetObject`) by design, so test restores must be done with other
+      credentials. Local copies are still kept for 14 days.
+- [x] Bucket versioning is Enabled, and lifecycle rule `expire-old-backups` (prefix `jobapp/`) is Enabled: current versions
+      expire after 30 days, noncurrent versions are permanently deleted after 7 days, incomplete multipart uploads
+      are aborted after 7 days. The instance role cannot delete objects, so this rule is the only S3 pruning.
+- [x] **Backups are GPG-encrypted (AES256, symmetric).** `BACKUP_PASSPHRASE_FILE=/etc/jobapp/backup-passphrase` is set in the
+      server `.env` (root-only file, mode 600, in a mode-700 directory). `backup-prod.sh` now produces
+      `postgres.dump.gpg`, `resume_storage.tar.gz.gpg`, `risk_engine_data.tar.gz.gpg` plus `SHA256SUMS`, locally and in S3.
+      Verified with a backup run and `sudo BACKUP_PASSPHRASE_FILE=/etc/jobapp/backup-passphrase bash infra/scripts/restore-test.sh <dir>`
+      (decrypted, checksums OK, restored 16 tables). The passphrase itself is not stored in the repo or in S3: keep a copy in
+      a password manager, because without it the encrypted backups cannot be restored. Backups made before this change
+      (for example `20261107T063533Z`) are plaintext; local ones expire after 14 days, S3 ones after 30 days.
 - [ ] Add the risk-engine API key to a password manager only if the machine API is needed
       (`curl -X POST https://jobs.jobslahfinder.com/risk-engine/setup`, shown once). The risk dashboard itself uses
       the normal admin login: `https://jobs.jobslahfinder.com/risk-engine/admin/dashboard`.
