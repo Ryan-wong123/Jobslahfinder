@@ -770,7 +770,7 @@ A task is only done when:
 ### Scheduled Jobs and Backups
 - [~] Verify scraping schedule. (Beat is running; weekly run Sunday 18:00 UTC not yet observed.)
 - [x] Verify scraping run logs.
-- [~] Verify backup schedule. (Cron installed and the first scheduled run, 2026-11-07 02:30 UTC, was observed to complete. Off-box S3 copy not configured yet.)
+- [x] Verify backup schedule. (Cron installed and the first scheduled run, 2026-11-07 02:30 UTC, was observed to complete. Off-box S3 copy configured to s3://jobslahfinder-backups-ryan/jobapp and a test upload of 4 files verified.)
 - [x] Verify backup location is protected.
 - [x] Run restore test or document restore test result.
 

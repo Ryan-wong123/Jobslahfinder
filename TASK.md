@@ -193,12 +193,15 @@ generic `{"detail":"Not Found"}` with no stack trace.
 
 ## Phase E - Optional / later
 
-- [ ] **Off-server backups (S3).** The bucket `jobslahfinderapp-backup-upload` does **not** exist (S3 returned
-      404). To enable: create the bucket in Singapore (Block all public access ON, versioning ON); grant the
-      instance role `s3:PutObject` on `arn:aws:s3:::BUCKET/jobapp/*` and `s3:ListBucket` on the bucket with prefix
-      `jobapp/*`; then on the server uncomment/set `BACKUP_S3_URI=s3://BUCKET/jobapp` in `.env`, run
-      `sudo bash infra/scripts/backup-prod.sh`, and check `aws s3 ls s3://BUCKET/jobapp/`.
-      (Currently `BACKUP_S3_URI` is commented out; backups are kept locally for 14 days.)
+- [x] **Off-server backups (S3).** Done. The bucket is `jobslahfinder-backups-ryan` (Singapore, Block all public
+      access ON, no bucket policy). The earlier `jobslahfinderapp-backup-upload` name in the instance role policy
+      `jobslahfinder_s3` was wrong (that bucket never existed); the policy now allows `s3:PutObject` on
+      `arn:aws:s3:::jobslahfinder-backups-ryan/jobapp/*` and `s3:ListBucket` on the bucket with prefix `jobapp/*`.
+      The server `.env` has `BACKUP_S3_URI=s3://jobslahfinder-backups-ryan/jobapp`. Verified with
+      `sudo bash infra/scripts/backup-prod.sh` (4 files uploaded) and `aws s3 ls s3://jobslahfinder-backups-ryan/jobapp/<stamp>/`.
+      The role cannot read objects back (no `s3:GetObject`) by design, so test restores must be done with other
+      credentials. Local copies are still kept for 14 days.
+- [ ] (Optional) Turn on bucket versioning and add a lifecycle rule to expire old S3 backups. Not yet confirmed or set.
 - [ ] Add the risk-engine API key to a password manager only if the machine API is needed
       (`curl -X POST https://jobs.jobslahfinder.com/risk-engine/setup`, shown once). The risk dashboard itself uses
       the normal admin login: `https://jobs.jobslahfinder.com/risk-engine/admin/dashboard`.
