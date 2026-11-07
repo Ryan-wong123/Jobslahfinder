@@ -201,7 +201,13 @@ generic `{"detail":"Not Found"}` with no stack trace.
       `sudo bash infra/scripts/backup-prod.sh` (4 files uploaded) and `aws s3 ls s3://jobslahfinder-backups-ryan/jobapp/<stamp>/`.
       The role cannot read objects back (no `s3:GetObject`) by design, so test restores must be done with other
       credentials. Local copies are still kept for 14 days.
-- [ ] (Optional) Turn on bucket versioning and add a lifecycle rule to expire old S3 backups. Not yet confirmed or set.
+- [x] Bucket versioning is Enabled, and lifecycle rule `expire-old-backups` (prefix `jobapp/`) is Enabled: current versions
+      expire after 30 days, noncurrent versions are permanently deleted after 7 days, incomplete multipart uploads
+      are aborted after 7 days. The instance role cannot delete objects, so this rule is the only S3 pruning.
+- [ ] **Backups are not GPG-encrypted yet.** `BACKUP_PASSPHRASE_FILE` is not set in `.env` or cron, so `backup-prod.sh`
+      uploads plain `postgres.dump` / `*.tar.gz` (local copies are root-only, S3 uses AES256 server-side encryption).
+      To enable: create a root-only passphrase file on the server, set `BACKUP_PASSPHRASE_FILE=` in `.env`, store the
+      passphrase in a password manager (without it the backups cannot be restored), run a backup and a test restore.
 - [ ] Add the risk-engine API key to a password manager only if the machine API is needed
       (`curl -X POST https://jobs.jobslahfinder.com/risk-engine/setup`, shown once). The risk dashboard itself uses
       the normal admin login: `https://jobs.jobslahfinder.com/risk-engine/admin/dashboard`.
