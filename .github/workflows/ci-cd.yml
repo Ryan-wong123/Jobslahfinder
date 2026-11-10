@@ -473,7 +473,7 @@ jobs:
           test -n "$DEPLOY_PATH"
 
       - name: Configure AWS credentials (OIDC, short-lived)
-        uses: aws-actions/configure-aws-credentials@ff717079ee2060e4bcee96c4779b553acc87447c
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a
         with:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION || 'ap-southeast-1' }}
