@@ -177,6 +177,15 @@ remain operator deployment checks. They have not been represented as completed
 by local tests. Registration email verification and a nonce-based CSP remain
 separate hardening items; the existing CSP limitation is documented below.
 
+The Linux CI compatibility repair was verified in
+[GitHub Actions run 42829760254](https://github.com/Ryan-wong123/Jobslahfinder/actions/runs/42829760254):
+backend, frontend, migrations, security, and container verification/scanning all
+passed. The parser profile was loaded and confirmed in enforce mode on the
+runner; empty-procfs isolation and real DOCX extraction passed alongside the
+native Chromium sandbox. EC2 deployment was intentionally skipped for this pull
+request. The CI fix also supplies the image digests required by SSM deployment
+and loads the worker policy during deployment preflight.
+
 Use `infra/scripts/test-backend.py` with the locked test environment. Coverage
 excludes tests themselves and CI enforces 70%. The additional infrastructure
 tests exercise real Nginx responses, PostgreSQL privileges/concurrent resets/
