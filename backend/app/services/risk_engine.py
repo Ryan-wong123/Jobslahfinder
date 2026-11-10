@@ -48,6 +48,11 @@ class DeviceCookieIssue:
 def init_risk_engine_storage() -> None:
     Base.metadata.create_all(bind=engine)
     AuditBase.metadata.create_all(bind=audit_engine)
+    from risk_engine.config import DATA_DIR
+    for name in ("rba.db", "audit.db"):
+        path = DATA_DIR / name
+        if path.exists():
+            path.chmod(0o600)
 
 
 def get_or_create_app_device_id(request: Request) -> tuple[str, bool]:

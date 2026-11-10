@@ -835,7 +835,18 @@ A task is only done when:
 
 ---
 
+## Security review remediation — November 2026
+
+- [x] Atomic password-reset consumption, verified email changes, encrypted mail outbox, and session revocation.
+- [x] Shared fail-closed rate limits, bounded upload quotas, private parser sandbox, and sensitive-log filtering.
+- [x] Restricted database/Redis credentials, separate private/scraping workers, browser sandbox, and egress allowlist.
+- [x] Effective Nginx security headers, protected risk-engine initialization, readiness, and production resource limits.
+- [x] Hashed dependency locks, pinned base images/actions, scheduled scanning, encrypted restore drill, and guarded digest-based deployment/rollback.
+- [x] Application regressions, real database/Redis/sandbox/header checks, production-profile HTTPS workflow, and browser checks verified locally.
+- [ ] Apply the release on AWS and verify the target kernel, real SMTP, registry access, backup-key escrow/S3 policy, and subscribed monitoring alarms using `SECURITY_REMEDIATION.md`.
+
 ## MVP Definition
+
 The MVP is complete when:
 
 - Account registration/login/logout/password reset works securely.

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { FormMessage, SubmitButton, TextField } from "./FormControls";
@@ -10,12 +10,20 @@ export function PasswordResetConfirmForm({ initialToken = "" }: { initialToken?:
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [resetToken, setResetToken] = useState(initialToken);
+  useEffect(() => {
+    const value = new URLSearchParams(window.location.hash.slice(1)).get("token");
+    if (value) {
+      setResetToken(value);
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+  }, []);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
     const formData = new FormData(form);
-    const submittedToken = initialToken || String(formData.get("token") ?? "");
+    const submittedToken = resetToken || String(formData.get("token") ?? "");
     const newPassword = String(formData.get("new_password") ?? "");
 
     if (!/^[A-Za-z0-9_-]{43}$/.test(submittedToken)) {
@@ -55,8 +63,8 @@ export function PasswordResetConfirmForm({ initialToken = "" }: { initialToken?:
       <FormMessage message={message} tone="success" />
       <FormMessage message={error} tone="error" />
 
-      {initialToken ? (
-        <input type="hidden" name="token" value={initialToken} />
+      {resetToken ? (
+        <input type="hidden" name="token" value={resetToken} />
       ) : (
         <TextField
           label="Reset token"

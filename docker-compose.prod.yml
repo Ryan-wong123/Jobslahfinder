@@ -11,26 +11,87 @@ x-logging: &default-logging
     max-size: "10m"
     max-file: "5"
 
+# Explicit lists keep database-admin, backup, cloud, and certificate credentials
+# out of application processes. The scraper never receives authentication keys.
+x-public-environment: &public-environment
+  APP_ENV: production
+  DEBUG: "false"
+  FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:?FRONTEND_BASE_URL is required}
+  REDIS_URL: ${REDIS_URL:?REDIS_URL is required}
+  UPLOAD_DIR: /var/lib/jobapp/uploads
+  ALLOWED_JOB_SOURCE_DOMAINS: ${ALLOWED_JOB_SOURCE_DOMAINS:?source domains are required}
+  SCRAPING_REQUEST_TIMEOUT_SECONDS: ${SCRAPING_REQUEST_TIMEOUT_SECONDS:-120}
+  SCRAPING_MAX_RETRIES: ${SCRAPING_MAX_RETRIES:-0}
+
+x-private-environment: &private-environment
+  <<: *public-environment
+  DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+  SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required}
+  PASSWORD_RESET_SECRET: ${PASSWORD_RESET_SECRET:?PASSWORD_RESET_SECRET is required}
+  DATA_ENCRYPTION_SECRET: ${DATA_ENCRYPTION_SECRET:?DATA_ENCRYPTION_SECRET is required}
+  SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-job_platform_session}
+  SESSION_EXPIRE_MINUTES: ${SESSION_EXPIRE_MINUTES:-480}
+  PASSWORD_RESET_EXPIRE_MINUTES: ${PASSWORD_RESET_EXPIRE_MINUTES:-30}
+  SMTP_HOST: ${SMTP_HOST:?SMTP_HOST is required}
+  SMTP_PORT: ${SMTP_PORT:-587}
+  SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:?SMTP_FROM_EMAIL is required}
+  SMTP_USE_TLS: "true"
+  RESUME_EXTRACTION_PROVIDER: ${RESUME_EXTRACTION_PROVIDER:-gemini}
+  COVER_LETTER_GENERATION_PROVIDER: ${COVER_LETTER_GENERATION_PROVIDER:-gemini}
+  GEMINI_API_KEY: ${GEMINI_API_KEY:?GEMINI_API_KEY is required}
+  GEMINI_RESUME_MODEL: ${GEMINI_RESUME_MODEL:-gemini-3.5-flash-lite}
+  GEMINI_COVER_LETTER_MODEL: ${GEMINI_COVER_LETTER_MODEL:-gemini-3.5-flash-lite}
+  GEMINI_RESUME_MAX_OUTPUT_TOKENS: ${GEMINI_RESUME_MAX_OUTPUT_TOKENS:-8192}
+  RESUME_PARSER_TIMEOUT_SECONDS: ${RESUME_PARSER_TIMEOUT_SECONDS:-60}
+  RESUME_PARSER_MAX_TEXT_CHARS: ${RESUME_PARSER_MAX_TEXT_CHARS:-8000}
+  MAX_RESUMES_PER_USER: ${MAX_RESUMES_PER_USER:-20}
+  MAX_RESUME_STORAGE_BYTES: ${MAX_RESUME_STORAGE_BYTES:-52428800}
+
 services:
   postgres:
+    networks: !override [data]
     logging: *default-logging
     deploy:
       resources:
         limits:
+          cpus: "1.0"
+          pids: 128
           memory: 1g
 
   redis:
+    user: redis
+    networks: !override [data]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      AUTH_REDIS_PASSWORD: ${AUTH_REDIS_PASSWORD:?AUTH_REDIS_PASSWORD is required}
+    command: ["sh", "/etc/redis/start.sh"]
+    volumes:
+      - ./infra/redis/start.sh:/etc/redis/start.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$$AUTH_REDIS_PASSWORD redis-cli --user auth ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     logging: *default-logging
     deploy:
       resources:
         limits:
+          cpus: "1.0"
+          pids: 128
           memory: 256m
 
   backend:
+    read_only: true
+    tmpfs: ["/tmp:size=64m,mode=1777"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks: !override [ingress, data, outbound]
+    env_file: !reset []
     logging: *default-logging
-    environment:
-      APP_ENV: production
-      DEBUG: "false"
+    environment: !override
+      <<: *private-environment
+      SERVICE_ROLE: api
+      AUTH_REDIS_URL: ${AUTH_REDIS_URL:?AUTH_REDIS_URL is required}
       RISK_ENGINE_DATA_DIR: /var/lib/jobapp/risk-engine
       RISK_ENGINE_BASE_PATH: /risk-engine
       TRUST_PROXY_HEADERS: "true"
@@ -43,13 +104,37 @@ services:
     deploy:
       resources:
         limits:
+          cpus: "1.0"
+          pids: 128
           memory: 1g
 
   worker:
+    read_only: true
+    tmpfs: ["/tmp:size=64m,mode=1777"]
+    volumes: !override ["resume_storage:/var/lib/jobapp/uploads:ro"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true", "seccomp=./infra/security/parser-seccomp.json"]
+    networks: !override [data, outbound]
+    env_file: !reset []
     logging: *default-logging
-    environment:
-      APP_ENV: production
-      DEBUG: "false"
+    environment: !override
+      <<: *public-environment
+      SERVICE_ROLE: worker
+      DATABASE_URL: ${WORKER_DATABASE_URL:?WORKER_DATABASE_URL is required}
+      DATA_ENCRYPTION_SECRET: ${DATA_ENCRYPTION_SECRET:?DATA_ENCRYPTION_SECRET is required}
+      RESUME_EXTRACTION_PROVIDER: ${RESUME_EXTRACTION_PROVIDER:-gemini}
+      COVER_LETTER_GENERATION_PROVIDER: local
+      GEMINI_API_KEY: ${GEMINI_API_KEY:?GEMINI_API_KEY is required}
+      GEMINI_RESUME_MODEL: ${GEMINI_RESUME_MODEL:-gemini-3.5-flash-lite}
+      GEMINI_RESUME_MAX_OUTPUT_TOKENS: ${GEMINI_RESUME_MAX_OUTPUT_TOKENS:-8192}
+      RESUME_PARSER_TIMEOUT_SECONDS: ${RESUME_PARSER_TIMEOUT_SECONDS:-60}
+      RESUME_PARSER_MAX_TEXT_CHARS: ${RESUME_PARSER_MAX_TEXT_CHARS:-8000}
+      SMTP_HOST: ${SMTP_HOST:?SMTP_HOST is required}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:?SMTP_FROM_EMAIL is required}
+      SMTP_USE_TLS: "true"
+      SMTP_USERNAME: ${SMTP_USERNAME:?SMTP_USERNAME is required}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:?SMTP_PASSWORD is required}
     healthcheck:
       test: ["CMD-SHELL", "celery -A app.workers.celery_app inspect ping -d celery@$$HOSTNAME -t 10 || exit 1"]
       interval: 60s
@@ -59,15 +144,26 @@ services:
     deploy:
       resources:
         limits:
+          cpus: "1.0"
+          pids: 128
           memory: 1536m
 
   beat:
+    read_only: true
+    tmpfs: ["/tmp:size=16m,mode=1777"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks: !override [data]
+    env_file: !reset []
     logging: *default-logging
-    environment:
-      APP_ENV: production
-      DEBUG: "false"
+    environment: !override
+      <<: *public-environment
+      SERVICE_ROLE: beat
+      DATABASE_URL: ${SCRAPER_DATABASE_URL:?SCRAPER_DATABASE_URL is required}
+      RESUME_EXTRACTION_PROVIDER: local
+      COVER_LETTER_GENERATION_PROVIDER: local
     healthcheck:
-      test: ["CMD-SHELL", "test -f /tmp/celerybeat-schedule || exit 1"]
+      test: ["CMD-SHELL", "test -n \"$$(find /tmp -maxdepth 1 -name 'celerybeat-heartbeat' -mmin -2 -print -quit)\""]
       interval: 60s
       timeout: 5s
       retries: 3
@@ -75,16 +171,55 @@ services:
     deploy:
       resources:
         limits:
+          cpus: "1.0"
+          pids: 128
           memory: 256m
 
+  scraper:
+    read_only: true
+    tmpfs: ["/tmp:size=128m,mode=1777", "/home/appuser:size=128m,mode=0700,uid=1000,gid=1000"]
+    init: true
+    networks: !override [data, scrape]
+    env_file: !reset []
+    logging: *default-logging
+    environment: !override
+      <<: *public-environment
+      SERVICE_ROLE: scraper
+      SCRAPER_PROXY_URL: http://scraper-proxy:3128
+      HTTPS_PROXY: http://scraper-proxy:3128
+      HTTP_PROXY: http://scraper-proxy:3128
+      NO_PROXY: postgres,redis,localhost,127.0.0.1
+      DATABASE_URL: ${SCRAPER_DATABASE_URL:?SCRAPER_DATABASE_URL is required}
+      RESUME_EXTRACTION_PROVIDER: local
+      COVER_LETTER_GENERATION_PROVIDER: local
+    shm_size: 256m
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.workers.celery_app inspect ping -d celery@$$HOSTNAME -t 10"]
+      interval: 60s
+      timeout: 20s
+      retries: 3
+    mem_limit: 1536m
+    cpus: 1.5
+    pids_limit: 256
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true", "seccomp=./infra/security/chromium-seccomp.json"]
+
   frontend:
+    read_only: true
+    tmpfs: ["/tmp:size=32m,mode=1777", "/app/.next/cache:size=32m,mode=1777"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks: !override [web]
     logging: *default-logging
     deploy:
       resources:
         limits:
+          cpus: "1.0"
+          pids: 128
           memory: 512m
 
   nginx:
+    networks: !override [web, ingress, edge]
     logging: *default-logging
     ports: !override
       - "80:80"
@@ -98,22 +233,49 @@ services:
     deploy:
       resources:
         limits:
+          cpus: "1.0"
+          pids: 128
           memory: 192m
+
+  scraper-proxy:
+    image: ubuntu/squid@sha256:6a097f68bae708cedbabd6188d68c7e2e7a38cedd05a176e1cc0ba29e3bbe029
+    restart: unless-stopped
+    entrypoint: ["squid", "-N", "-f", "/etc/squid/squid.conf"]
+    user: "13:13"
+    read_only: true
+    tmpfs: [/tmp, /var/log/squid, /var/spool/squid, /run]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 32
+    mem_limit: 128m
+    cpus: 0.5
+    networks: [scrape, outbound]
+    volumes: ["./infra/squid/squid.conf:/etc/squid/squid.conf:ro"]
+    logging: *default-logging
 
   # One-shot tool container for certificate issuance/renewal (never runs by default).
   certbot:
-    image: certbot/certbot:v2.11.0
+    image: certbot/certbot@sha256:bc93cb710b413e6b456d622f9b0133b3e109c0a78c2ed9976af43d209b0a1805
     profiles: ["tools"]
     entrypoint: ["certbot"]
     volumes:
       - ./infra/certbot/conf:/etc/letsencrypt
       - ./infra/certbot/www:/var/www/certbot
     networks:
-      - internal
+      - outbound
 
 networks:
-  internal:
-    driver: bridge
+  internal: {}
+  data:
+    internal: true
+  web:
+    internal: true
+  ingress:
+    internal: true
     ipam:
       config:
         - subnet: 172.28.0.0/24
+  outbound: {}
+  edge: {}
+  scrape:
+    internal: true

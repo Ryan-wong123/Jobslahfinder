@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import getpass
 import sys
+import secrets
 
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -42,7 +43,21 @@ def build_parser() -> argparse.ArgumentParser:
     create_admin.add_argument("--email", required=True, help="Email address for the initial admin.")
     create_admin.set_defaults(func=create_initial_admin_command)
 
+    initialize = subparsers.add_parser("initialize-risk-engine", help="Initialize protected risk-engine state once.")
+    initialize.set_defaults(func=initialize_risk_engine_command)
+
     return parser
+
+
+def initialize_risk_engine_command(args: argparse.Namespace) -> int:
+    from risk_engine import config
+    try:
+        config.write_engine_state_atomically(secrets.token_urlsafe(32))
+    except FileExistsError:
+        print("Risk engine already initialized or initialization locked.", file=sys.stderr)
+        return 1
+    print("Risk engine initialized. Credential stored in protected storage; no secret printed.")
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:

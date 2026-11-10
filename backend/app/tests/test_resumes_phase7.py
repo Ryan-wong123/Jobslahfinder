@@ -625,7 +625,8 @@ def test_gemini_resume_suggestions_are_backend_verified(monkeypatch: pytest.Monk
             return SimpleNamespace(text=json.dumps(gemini_payload))
 
     class FakeClient:
-        def __init__(self, *, api_key: str) -> None:
+        def __init__(self, *, api_key: str, http_options: dict) -> None:
+            assert http_options["timeout"] > 0
             captured["api_key"] = api_key
             self.models = FakeModels()
 

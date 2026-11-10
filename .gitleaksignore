@@ -5,3 +5,23 @@
 # not a real credential. The inline `# gitleaks:allow` annotation was added in a
 # later commit; this entry suppresses the finding in the original commit.
 4872f71d5256a194c357aa2df783746cb51dd2bc:backend/app/tests/test_two_factor.py:generic-api-key:19
+
+# Full-history review, 2026-11-10: these 16 fingerprints are test-only password
+# fixtures (StrongPass123/AdminPass123 and equivalents), never live credentials.
+# Suppress exact fingerprints rather than excluding test files or generic rules.
+d8f2b7289c6639f89fb58c6c43bec32b34bf2b4a:backend/app/tests/test_backend_api_contracts_extra.py:generic-api-key:28
+d8f2b7289c6639f89fb58c6c43bec32b34bf2b4a:backend/app/tests/test_integration_saved_job_flow_extra.py:generic-api-key:18
+cf51fa89ef96d96bcdac9cdbb40c0ae8fd67f394:backend/app/tests/test_authorization.py:generic-api-key:22
+cf51fa89ef96d96bcdac9cdbb40c0ae8fd67f394:backend/app/tests/test_security_phase12.py:generic-api-key:45
+eaa1fdf227bff356b647e6bf6c536daf392f1dd6:backend/app/tests/test_two_factor.py:generic-api-key:19
+54cc7855b38ae19dcd6ae7e35c6cb3ecd305add6:backend/app/tests/test_roadmaps.py:generic-api-key:18
+98bfd4045608c414281c3a4b0867f696b3bd0b61:backend/app/tests/test_admin_phase11.py:generic-api-key:25
+79ef760a95e4b41a572146ba494d465ff9173444:backend/app/tests/test_application_history_phase10.py:generic-api-key:21
+e730d219f68291bc51baf6c3f674db39812df3be:backend/app/tests/test_cover_letters_phase9.py:generic-api-key:22
+30fc5002235fcfe52185e4cd4f5981e8d8d95982:backend/app/tests/test_recommendations_phase8.py:generic-api-key:22
+76fbe2b9dd5ea649a1f4f9cc39e7c65cc04db2bb:backend/app/tests/test_activity_authorization.py:generic-api-key:21
+d62750e232017dac8ab7af5e3480bc583b3d24a6:backend/app/tests/test_resumes_phase7.py:generic-api-key:22
+c66878c4ad3fa648cca8fbe38a7af38e9a4a592b:backend/app/tests/test_jobs_phase6.py:generic-api-key:21
+980baf415817bc9fc5b6c663eaa708b5eb57bdeb:backend/app/tests/test_jobs_phase5.py:generic-api-key:30
+274c0ea7c4284324eebf0a946af2f5b3ea6e29e6:backend/app/tests/test_authorization.py:generic-api-key:20
+274c0ea7c4284324eebf0a946af2f5b3ea6e29e6:backend/app/tests/test_auth.py:generic-api-key:21

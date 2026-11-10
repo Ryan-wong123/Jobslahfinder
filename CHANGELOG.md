@@ -1,5 +1,17 @@
 # Changelog
 
+## Security remediation (unreleased)
+
+- Added atomic password recovery, verified email changes, encrypted asynchronous
+  mail, shared Redis rate limits, upload quotas, and sensitive-log suppression.
+- Restricted database/Redis roles and container environments; separated scraping
+  from private processing and isolated resume parsers and Chromium.
+- Fixed Nginx header inheritance, disabled public risk-engine initialization,
+  and added dependency locks, image scanning, protected backups, readiness,
+  monitoring, and guarded digest-based releases/rollback.
+- Added application and real infrastructure regression tests. See
+  `docs/SECURITY_REMEDIATION.md` for verification and required host configuration.
+
 ## Production readiness (branch `production`)
 
 ### Added

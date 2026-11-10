@@ -19,6 +19,11 @@ WAIT_SECONDS="${DEPLOY_WAIT_SECONDS:-2400}"
 [[ "$DEPLOY_PATH" =~ ^/[A-Za-z0-9._/-]+$ ]] || { echo "DEPLOY_PATH must be a simple absolute path." >&2; exit 1; }
 [[ "$REMOTE_USER" =~ ^[a-z_][a-z0-9_-]*$ ]] || { echo "REMOTE_USER looks invalid." >&2; exit 1; }
 
+for name in BACKEND_IMAGE FRONTEND_IMAGE SCRAPER_IMAGE; do
+  value="${!name:?A scanned image digest is required}"
+  [[ "$value" =~ ^ghcr\.io/[a-z0-9._/-]+@sha256:[0-9a-f]{64}$ ]] || { echo "Invalid image reference" >&2; exit 1; }
+done
+
 REMOTE_SCRIPT=$(cat <<REMOTE
 set -Eeuo pipefail
 cd "$DEPLOY_PATH"
@@ -26,7 +31,10 @@ cd "$DEPLOY_PATH"
 PREVIOUS_SHA="\$(git rev-parse HEAD)"
 git fetch --prune origin
 git checkout --force "$DEPLOY_SHA"
-# Pre-deploy backup, build, migrate, HTTPS smoke test and automatic code rollback.
+export BACKEND_IMAGE="$BACKEND_IMAGE"
+export FRONTEND_IMAGE="$FRONTEND_IMAGE"
+export SCRAPER_IMAGE="$SCRAPER_IMAGE"
+# Pull the exact scanned release, then back up, migrate and verify.
 PREVIOUS_SHA="\$PREVIOUS_SHA" DEPLOY_SHA="$DEPLOY_SHA" bash infra/scripts/deploy.sh
 REMOTE
 )

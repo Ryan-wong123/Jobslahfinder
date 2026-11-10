@@ -24,3 +24,13 @@ def verify_password(password: str, password_hash: str) -> bool:
 
 def needs_rehash(password_hash: str) -> bool:
     return _PASSWORD_HASHER.check_needs_rehash(password_hash)
+
+
+# Match the cost of an existing account without generating a new hash on every
+# unknown-account login. The random value is never a valid account credential.
+import secrets
+_DUMMY_HASH = hash_password(secrets.token_urlsafe(32))
+
+
+def dummy_password_verification(password: str) -> None:
+    verify_password(password, _DUMMY_HASH)

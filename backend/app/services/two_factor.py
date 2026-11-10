@@ -28,7 +28,7 @@ class PendingTwoFactorChallenge:
 
 def _redis(settings: Settings) -> Redis:
     return Redis.from_url(
-        settings.redis_url,
+        settings.auth_redis_url or settings.redis_url,
         socket_connect_timeout=2,
         socket_timeout=2,
         decode_responses=True,

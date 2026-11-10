@@ -1,5 +1,7 @@
 # Secure AI-Assisted Job Aggregation and Application Support Platform
 
+> **Security upgrade (10 November 2026):** follow [the remediation and upgrade runbook](docs/SECURITY_REMEDIATION.md) before using older build/migration examples below. Production now deploys scanned image digests, uses restricted database/Redis roles, and requires encrypted backups. Administrator credentials belong only in one-shot migration processes.
+
 This project is a secure job aggregation and application support platform. It uses a Next.js frontend, FastAPI backend, PostgreSQL database, Redis queue/cache, worker processes, and Nginx reverse proxy.
 
 ## What The Website Can Do

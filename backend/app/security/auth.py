@@ -52,6 +52,7 @@ def require_authenticated_session(
     ):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Two-factor setup required.")
 
+    request.state.user_id = session.user.id
     return AuthenticatedSession(user=session.user, session=session)
 
 

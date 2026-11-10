@@ -35,6 +35,8 @@ from app.schemas.jobs import (
     ScrapingRunTriggerRequest,
 )
 from app.security.auth import require_admin
+from app.core.rate_limit import rate_limit_auth
+from app.services.scraping import queue_scraping_run
 from app.services.audit import SENSITIVE_DETAIL_KEYS, create_audit_log
 from app.services.jobs import (
     DEFAULT_PAGE_SIZE,
@@ -516,11 +518,12 @@ def trigger_scraping_run(
     current_admin: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> ScrapingRun:
+    rate_limit_auth(request, "admin-scraping-trigger", limit=5, window_seconds=300)
     source = db.scalar(select(JobSource).where(JobSource.id == payload.source_id))
     if source is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resource not found.")
     try:
-        return run_scraper_for_source(db, source=source, request=request, user_id=current_admin.id)
+        return queue_scraping_run(db, source=source, request=request, user_id=current_admin.id)
     except ScrapingError as exc:
         create_audit_log(
             db,

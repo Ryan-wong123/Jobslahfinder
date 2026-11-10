@@ -1,3 +1,7 @@
+# Omit query strings, Referer, cookies, and request bodies from access logs.
+log_format jobapp_privacy '$remote_addr [$time_local] "$request_method $uri $server_protocol" $status $body_bytes_sent';
+access_log /var/log/nginx/access.log jobapp_privacy;
+
 # Production Nginx config. Rendered by the nginx image's envsubst entrypoint.
 proxy_cache_path /var/cache/nginx/static levels=1:2 keys_zone=static_cache:10m max_size=200m inactive=7d use_temp_path=off;
 # Required env: DOMAIN (public hostname that has a Let's Encrypt certificate).
@@ -18,8 +22,15 @@ server {
     }
 
     location = /health {
-        proxy_pass http://backend:8000/health;
+        return 301 https://$host$request_uri;
         add_header Cache-Control "no-store" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "DENY" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+        add_header Cross-Origin-Opener-Policy "same-origin" always;
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'" always;
     }
 
     location / {
@@ -53,7 +64,7 @@ server {
     ssl_ciphers "ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256";
     ssl_prefer_server_ciphers off;
 
-    client_max_body_size 5m;
+    client_max_body_size 6m;
     client_body_timeout 30s;
     client_header_timeout 15s;
     send_timeout 60s;
@@ -70,15 +81,8 @@ server {
     set $backend_upstream backend:8000;
     set $frontend_upstream frontend:3000;
 
-    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header X-Frame-Options "DENY" always;
-    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
-    add_header Cross-Origin-Opener-Policy "same-origin" always;
     # 'unsafe-inline' for scripts is required by Next.js inline hydration scripts.
     # Accepted risk, documented in docs/security-hardening.md.
-    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'" always;
 
     # Brute-force protection for authentication endpoints (in addition to app-level limits).
     location /api/auth/ {
@@ -94,6 +98,12 @@ server {
         proxy_connect_timeout 5s;
         add_header Cache-Control "no-store" always;
         add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "DENY" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+        add_header Cross-Origin-Opener-Policy "same-origin" always;
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'" always;
     }
 
     location /api/ {
@@ -109,6 +119,12 @@ server {
         proxy_connect_timeout 5s;
         add_header Cache-Control "no-store" always;
         add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "DENY" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+        add_header Cross-Origin-Opener-Policy "same-origin" always;
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'" always;
     }
 
     location = /health {
@@ -119,6 +135,12 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
         add_header Cache-Control "no-store" always;
         add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "DENY" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+        add_header Cross-Origin-Opener-Policy "same-origin" always;
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'" always;
     }
 
     location /risk-engine/ {
@@ -131,6 +153,12 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
         add_header Cache-Control "no-store" always;
         add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "DENY" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+        add_header Cross-Origin-Opener-Policy "same-origin" always;
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'" always;
     }
 
     location = /risk-engine {
@@ -148,6 +176,11 @@ server {
         add_header Cache-Control "public, max-age=31536000, immutable" always;
         add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
         add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "DENY" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+        add_header Cross-Origin-Opener-Policy "same-origin" always;
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'" always;
     }
 
     location / {
@@ -165,6 +198,8 @@ server {
         add_header X-Content-Type-Options "nosniff" always;
         add_header X-Frame-Options "DENY" always;
         add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+        add_header Cross-Origin-Opener-Policy "same-origin" always;
         add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'" always;
     }
 }

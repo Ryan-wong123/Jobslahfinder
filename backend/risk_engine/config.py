@@ -10,7 +10,8 @@ BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = Path(os.getenv("RISK_ENGINE_DATA_DIR", "risk_engine_data"))
 if not DATA_DIR.is_absolute():
     DATA_DIR = Path.cwd() / DATA_DIR
-DATA_DIR.mkdir(parents=True, exist_ok=True)
+DATA_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
+DATA_DIR.chmod(0o700)
 
 ENV_PATH = DATA_DIR / ".env"
 ENGINE_STATE_PATH = DATA_DIR / "engine_state.json"
@@ -42,14 +43,24 @@ def write_engine_state_atomically(api_key: str) -> None:
         "api_key": api_key,
     }
 
+    # An exclusive creation lock covers the existence check and atomic rename.
+    # Leave a lock after a crash: operators must inspect before retrying.
+    lock_path = ENGINE_STATE_PATH.with_suffix(".lock")
+    fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    os.close(fd)
     tmp_path = ENGINE_STATE_PATH.with_suffix(".json.tmp")
-
-    with open(tmp_path, "w", encoding="utf-8") as f:
-        json.dump(payload, f)
-        f.flush()
-        os.fsync(f.fileno())
-
-    os.replace(tmp_path, ENGINE_STATE_PATH)
+    try:
+        if ENGINE_STATE_PATH.exists():
+            raise FileExistsError("Risk engine is already initialized")
+        fd = os.open(tmp_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(payload, f)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, ENGINE_STATE_PATH)
+    finally:
+        tmp_path.unlink(missing_ok=True)
+        lock_path.unlink(missing_ok=True)
 
 
 def is_sealed() -> bool:

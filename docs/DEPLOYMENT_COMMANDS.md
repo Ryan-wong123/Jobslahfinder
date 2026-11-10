@@ -1,5 +1,7 @@
 # Deployment Commands
 
+> **Security upgrade (10 November 2026):** follow [the remediation and upgrade runbook](SECURITY_REMEDIATION.md) before using older build/migration examples below. Production now deploys scanned image digests, uses restricted database/Redis roles, and requires encrypted backups. Administrator credentials belong only in one-shot migration processes.
+
 Short command reference for deploying the app on the Ubuntu EC2 instance.
 
 ## EC2 Project Directory

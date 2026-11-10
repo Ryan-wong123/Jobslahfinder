@@ -18,7 +18,7 @@ fi
 
 NAME="restore-test-$$"
 trap 'docker rm -f "$NAME" >/dev/null 2>&1 || true; [ -n "$CLEANUP" ] && rm -f "$CLEANUP"' EXIT
-docker run -d --name "$NAME" -e POSTGRES_PASSWORD=restoretest -e POSTGRES_DB=restore postgres:16-alpine >/dev/null
+docker run -d --name "$NAME" -e POSTGRES_PASSWORD=restoretest -e POSTGRES_DB=restore postgres:16-alpine@sha256:aa6cb33cf4c19c765cefcf48d96176258800870a9a1e930ad126200f9d825139 >/dev/null
 for _ in $(seq 1 30); do docker exec "$NAME" pg_isready -U postgres >/dev/null 2>&1 && break; sleep 1; done
 docker exec -i "$NAME" pg_restore -U postgres -d restore --no-owner --exit-on-error < "$DUMP"
 

@@ -1012,3 +1012,11 @@ Prefer:
 - explicit validation over implicit trust
 - auditability over silent changes
 - fail-closed behavior over fail-open behavior
+
+## Security remediation maintenance
+
+- Preserve the controls and upgrade ordering documented in [SECURITY_REMEDIATION.md](SECURITY_REMEDIATION.md).
+- Regenerate hash-locked runtime, scraper, and test dependencies together; scan every release image.
+- Exercise real Nginx responses, PostgreSQL roles/token races, Redis ACLs/Celery, and Chromium sandbox startup when changing deployment controls.
+- Keep recovery mail in the encrypted transactional outbox, not synchronous requests or plaintext Celery messages.
+- Never replace production Redis limits with the test-only in-memory limiter or broaden scraper privileges to make tests pass.

@@ -59,9 +59,11 @@ def chrome_driver_path() -> str | None:
 def create_driver():
     ensure_scraper_dependencies()
     options = Options()
+    proxy = os.getenv("SCRAPER_PROXY_URL")
+    if proxy:
+        options.add_argument(f"--proxy-server={proxy}")
     options.add_argument("--headless=new")
     options.add_argument("--disable-gpu")
-    options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--window-size=1920,1080")
     options.add_argument(

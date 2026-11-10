@@ -1122,3 +1122,7 @@ Any extension must preserve:
 - least privilege
 - secure configuration
 - safe error handling
+
+## Security review implementation (10 November 2026)
+
+See [SECURITY_REMEDIATION.md](SECURITY_REMEDIATION.md) for implemented trust boundaries and the upgrade procedure. New `email_change_tokens` and `email_deliveries` tables support verified email changes and an encrypted transactional mail outbox. Authentication state uses a separate Redis ACL identity; scraping uses a dedicated worker, queue, restricted PostgreSQL role, and HTTPS egress proxy. Production containers have read-only roots and explicit writable storage. Release images are scanned before publication and deployed by digest; database administration credentials are used only in operator processes.

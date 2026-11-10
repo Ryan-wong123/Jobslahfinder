@@ -250,20 +250,19 @@ def test_account_update_changes_allowed_fields_and_audits(
     response = client.patch(
         "/me",
         json={
-            "email": "new@example.com",
             "full_name": "New Name",
         },
     )
 
     assert response.status_code == 200
-    assert response.json()["email"] == "new@example.com"
-    user = db_session.scalar(select(User).where(User.email == "new@example.com"))
+    assert response.json()["email"] == "user@example.com"
+    user = db_session.scalar(select(User).where(User.email == "user@example.com"))
     assert user is not None
     assert user.profile is not None
     assert user.profile.full_name == "New Name"
     audit = db_session.scalar(select(AuditLog).where(AuditLog.event_type == "account.update"))
     assert audit is not None
-    assert audit.details_json == {"changed_fields": ["email", "full_name"]}
+    assert audit.details_json == {"changed_fields": ["full_name"]}
 
 
 def test_account_deletion_requires_password(client: TestClient, db_session: Session) -> None:
@@ -380,6 +379,10 @@ def test_password_reset_request_is_generic_for_existing_and_missing_accounts(
     assert existing.status_code == 200
     assert missing.status_code == 200
     assert existing.json() == missing.json()
+    assert sent_emails == []  # SMTP is never called on the request thread.
+    from app.services.mail_outbox import deliver_pending_mail
+    monkeypatch.setattr("app.services.mail_outbox.send_password_reset_email", fake_send_password_reset_email)
+    assert deliver_pending_mail(db_session, get_settings()) == 1
     assert sent_emails == ["user@example.com"]
 
     reset_tokens = db_session.scalars(select(PasswordResetToken)).all()
@@ -408,7 +411,7 @@ def test_password_reset_request_does_not_print_raw_token_when_email_unconfigured
     combined = f"{stdio.out}\n{stdio.err}\n{audit.details_json}"
     assert known_token not in combined
     assert "/reset-password?token=" not in combined
-    assert audit.details_json == {"account_matched": True, "delivery": "not_configured"}
+    assert audit.details_json == {"account_matched": True, "delivery": "queued"}
 
 
 @pytest.mark.parametrize(

@@ -231,6 +231,20 @@ class AccountDeletionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class EmailChangeRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=255)
+    current_password: str = Field(min_length=1, max_length=128)
+    code: str = Field(pattern=r"^\d{6}$")
+    model_config = ConfigDict(extra="forbid")
+    _email = field_validator("email")(validate_email)
+
+
+class EmailChangeConfirmRequest(BaseModel):
+    token: str = Field(min_length=DEFAULT_TOKEN_URLSAFE_LENGTH,
+                       max_length=DEFAULT_TOKEN_URLSAFE_LENGTH, pattern=PASSWORD_RESET_TOKEN_PATTERN.pattern)
+    model_config = ConfigDict(extra="forbid")
+
+
 class UserResponse(BaseModel):
     id: int
     email: str

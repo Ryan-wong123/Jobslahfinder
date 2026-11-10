@@ -127,22 +127,11 @@ def update_account_for_user(
 ) -> User:
     changed_fields: list[str] = []
     if "email" in payload.model_fields_set and payload.email is not None and payload.email != user.email:
-        existing_user = db.scalar(select(User).where(User.email == payload.email, User.id != user.id))
-        if existing_user is not None:
-            create_audit_log(
-                db,
-                event_type="account.update",
-                outcome=AuditOutcome.FAILURE,
-                request=request,
-                user_id=user.id,
-                target_type="user",
-                target_id=user.id,
-                details={"reason": "duplicate_email"},
-            )
-            db.commit()
-            raise ValueError(GENERIC_ACCOUNT_UPDATE_ERROR)
-        user.email = payload.email
-        changed_fields.append("email")
+        create_audit_log(db, event_type="account.email_change_denied", outcome=AuditOutcome.DENIED,
+            request=request, user_id=user.id, target_type="user", target_id=user.id,
+            details={"reason": "verification_required"})
+        db.commit()
+        raise ValueError(GENERIC_ACCOUNT_UPDATE_ERROR)
 
     profile = get_or_create_profile(db, user)
     changed_fields.extend(_apply_profile_updates(profile, payload))
@@ -207,6 +196,9 @@ def delete_account_for_user(
     resumes = list(db.scalars(select(Resume).where(Resume.user_id == user.id)).all())
     resume_ids = [resume.id for resume in resumes]
     resume_files_deleted = _unlink_resume_files(resumes)
+    from app.models.security import EmailChangeToken, EmailDelivery
+    db.execute(delete(EmailChangeToken).where(EmailChangeToken.user_id == user.id))
+    db.execute(delete(EmailDelivery).where(EmailDelivery.user_id == user.id))
 
     if resume_ids:
         db.execute(delete(ResumeExtraction).where(ResumeExtraction.resume_id.in_(resume_ids)))

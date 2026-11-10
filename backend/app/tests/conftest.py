@@ -1,6 +1,18 @@
 import os
 import pytest
 
+
+@pytest.fixture(autouse=True)
+def isolated_rate_limit_redis(monkeypatch):
+    import fakeredis
+    from app.core import rate_limit
+    from app.services import two_factor
+    client = fakeredis.FakeRedis()
+    monkeypatch.setattr(rate_limit, "_redis", lambda url: client)
+    monkeypatch.setattr(two_factor, "_redis", lambda settings: client)
+    yield client
+    client.close()
+
 os.environ.setdefault("APP_ENV", "test")
 os.environ.setdefault("DEBUG", "false")
 os.environ.setdefault("DATABASE_URL", "postgresql+psycopg://test_user:test_password@localhost:5432/test_db")

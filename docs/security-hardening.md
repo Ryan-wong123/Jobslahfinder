@@ -83,7 +83,30 @@ Mount the scripts and backup directory into the appropriate maintenance containe
 ## Accepted Risks And Limitations
 
 - **CSP `script-src 'unsafe-inline'`:** required by Next.js inline hydration scripts. Mitigated by output encoding of untrusted content, `object-src 'none'`, `frame-ancestors 'none'` and `base-uri 'self'`. A nonce-based CSP via Next.js middleware is a future hardening item.
-- **Migrations are not auto-reverted on rollback:** deploy.sh restores code only; use the pre-deploy backup for schema recovery.
-- **Image tags are pinned by version, not digest.**
+- **Migrations are not auto-reverted on rollback:** compatible `security-v1` application images can roll back under the audited infrastructure. The first legacy upgrade requires roll-forward or protected backup recovery on failure; see `SECURITY_REMEDIATION.md`.
+- **Release supply chain:** base images are pinned by digest, signed distribution updates are installed at build time, and scanned release images are deployed by digest.
 - **Scraping depends on third-party site layout and terms:** review each source's terms of service/robots.txt before enabling it in production and monitor scraping runs in `/admin`.
 - **GeoLite2 database is optional** and must be downloaded by the operator.
+
+
+## Contextual Bandit Findings — Review By 10 February 2027
+
+The high-severity gate passes. The remaining medium findings are retained in
+scanner output rather than hidden with broad exclusions:
+
+- B104: binding the internal API to all container interfaces is required for
+  Nginx routing; the other match is a forbidden-host validation literal. The
+  production API port is unpublished and its ingress network is internal.
+- B108: scraper logs and parser temporary paths live in private ephemeral
+  container storage. The parser gets its own mount namespace and private tmpfs;
+  these literals do not create public shared files.
+- B310: the FastJobs HTTP helper validates the approved HTTPS domain/path. The
+  production adapter uses the browser through the allowlisted egress proxy.
+  Reassess redirects before wiring that helper into a different request path.
+- B314: DOCX XML is untrusted. ZIP/member/XML sizes are bounded; production
+  parsing runs without network or protected volumes in a disposable sandbox
+  with memory/CPU/output limits and a killable timeout. Reassess the XML parser
+  when extending supported formats or moving parsing outside that sandbox.
+
+These are contextual findings, not evidence that arbitrary XML or URLs are safe.
+Re-review after network, upload, container, or parser architecture changes.

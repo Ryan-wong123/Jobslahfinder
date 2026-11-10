@@ -61,5 +61,25 @@ if is_placeholder PASSWORD_RESET_SECRET; then
   echo "Generated PASSWORD_RESET_SECRET."
 fi
 
+# Preserve the existing administrator DSN before switching application roles.
+if is_placeholder MIGRATION_DATABASE_URL; then
+  existing_dsn="$(get_env DATABASE_URL)"
+  case "$existing_dsn" in
+    *change-me*|*jobapp_runtime*|'')
+      encoded_password="$(POSTGRES_PASSWORD="$(get_env POSTGRES_PASSWORD)" python3 -c 'import os,urllib.parse;print(urllib.parse.quote(os.environ["POSTGRES_PASSWORD"],safe=""))')"
+      set_env MIGRATION_DATABASE_URL "postgresql+psycopg://$(get_env POSTGRES_USER):$encoded_password@postgres:5432/$(get_env POSTGRES_DB)"
+      ;;
+    *) set_env MIGRATION_DATABASE_URL "$existing_dsn" ;;
+  esac
+fi
+for key in APP_DB_PASSWORD SCRAPER_DB_PASSWORD WORKER_DB_PASSWORD DATA_ENCRYPTION_SECRET REDIS_PASSWORD AUTH_REDIS_PASSWORD; do
+  if is_placeholder "$key"; then set_env "$key" "$(openssl rand -hex 32)"; fi
+done
+set_env DATABASE_URL "postgresql+psycopg://jobapp_runtime:$(get_env APP_DB_PASSWORD)@postgres:5432/$(get_env POSTGRES_DB)"
+set_env SCRAPER_DATABASE_URL "postgresql+psycopg://jobapp_scraper:$(get_env SCRAPER_DB_PASSWORD)@postgres:5432/$(get_env POSTGRES_DB)"
+set_env WORKER_DATABASE_URL "postgresql+psycopg://jobapp_worker:$(get_env WORKER_DB_PASSWORD)@postgres:5432/$(get_env POSTGRES_DB)"
+set_env REDIS_URL "redis://broker:$(get_env REDIS_PASSWORD)@redis:6379/0"
+set_env AUTH_REDIS_URL "redis://auth:$(get_env AUTH_REDIS_PASSWORD)@redis:6379/1"
+
 echo "Done. These settings still hold placeholders and need your real values (values hidden):"
 grep -nE 'change-me|your-domain|example' .env | sed -E 's/=.*/=<hidden>/' || echo "  (none)"

@@ -66,9 +66,11 @@ def ensure_scraper_dependencies():
 def create_driver():
     ensure_scraper_dependencies()
     options = Options()
+    proxy = os.getenv("SCRAPER_PROXY_URL")
+    if proxy:
+        options.add_argument(f"--proxy-server={proxy}")
     options.add_argument('--headless')  # Run Chromium in headless mode
     options.add_argument('--disable-gpu')  # Disable GPU acceleration
-    options.add_argument('--no-sandbox')  # Bypass OS security model
     options.add_argument('--disable-dev-shm-usage')  # Overcome limited resource problems
     options.add_argument('--window-size=1920x1080')  # Set window size to avoid issues with elements not being visible
     

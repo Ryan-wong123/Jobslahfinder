@@ -44,7 +44,7 @@ if [ ! -f "$LIVE_DIR/fullchain.pem" ]; then
   make_dummy_cert
 fi
 
-$COMPOSE up -d postgres redis backend frontend
+$COMPOSE up -d --no-deps frontend
 # Recreate Nginx so its bind mounts point at the current certificate folder.
 $COMPOSE up -d --no-deps --force-recreate nginx
 wait_for_nginx

@@ -36,6 +36,8 @@ def is_sensitive_log_key(key: str) -> bool:
 
 
 def redact_log_value(value: object) -> object:
+    if isinstance(value, BaseException):
+        return f"[exception={type(value).__name__}]"
     if isinstance(value, Mapping):
         return {
             key: "[REDACTED]" if is_sensitive_log_key(str(key)) else redact_log_value(item)
@@ -55,6 +57,16 @@ class RedactingFilter(logging.Filter):
         record.msg = redact_log_value(record.msg)
         if record.args:
             record.args = redact_log_value(record.args)
+        # Exception messages may include SQL parameters, document text, or provider
+        # responses. Never format arbitrary exception values into production logs.
+        if record.exc_info:
+            record.msg = f"Operation failed [exception={record.exc_info[0].__name__}]"
+            record.args = ()
+            record.exc_info = None
+            record.exc_text = None
+        for key, value in list(vars(record).items()):
+            if key not in {"msg", "args", "exc_info", "exc_text"} and is_sensitive_log_key(key):
+                setattr(record, key, "[REDACTED]")
         return True
 
 
@@ -69,6 +81,10 @@ def configure_logging(app_env: str) -> None:
     root_logger.addFilter(redacting_filter)
     for handler in root_logger.handlers:
         handler.addFilter(redacting_filter)
+    for instance in logging.root.manager.loggerDict.values():
+        if isinstance(instance, logging.Logger):
+            for handler in instance.handlers:
+                handler.addFilter(redacting_filter)
 
 
 def get_logger(name: str) -> logging.Logger:

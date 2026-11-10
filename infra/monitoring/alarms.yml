@@ -1,0 +1,23 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Alert on failed or absent Jobslahfinder monitoring heartbeats.
+Parameters:
+  NotificationTopicArn:
+    Type: String
+    Description: Existing SNS topic with confirmed operator subscriptions.
+Resources:
+  PlatformAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Health, certificate, backup freshness check failed or monitoring stopped.
+      Namespace: Jobslahfinder/Operations
+      MetricName: Unhealthy
+      Dimensions:
+        - Name: Platform
+          Value: jobslahfinder
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref NotificationTopicArn]

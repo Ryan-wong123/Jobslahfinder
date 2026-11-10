@@ -13,7 +13,7 @@ from app.core.config import Settings
 from app.core.logging import get_logger
 from app.models.account import PasswordResetToken, Session as UserSession, User, UserProfile
 from app.models.enums import AuditOutcome, UserRole
-from app.security.passwords import hash_password, needs_rehash, verify_password
+from app.security.passwords import dummy_password_verification, hash_password, needs_rehash, verify_password
 from app.security.tokens import generate_token, hash_token
 from app.services.audit import create_audit_log
 
@@ -99,6 +99,7 @@ def register_user(db: Session, request: Request, *, email: str, password: str) -
 def authenticate_user(db: Session, request: Request, *, email: str, password: str) -> User:
     user = db.scalar(select(User).where(User.email == email))
     if user is None or not user.is_active:
+        dummy_password_verification(password)
         create_audit_log(
             db,
             event_type="auth.login",
@@ -111,6 +112,7 @@ def authenticate_user(db: Session, request: Request, *, email: str, password: st
         raise ValueError(GENERIC_LOGIN_ERROR)
 
     if user.locked_until is not None and not is_expired(user.locked_until):
+        dummy_password_verification(password)
         create_audit_log(
             db,
             event_type="auth.login",
@@ -122,7 +124,7 @@ def authenticate_user(db: Session, request: Request, *, email: str, password: st
             details={"reason": "account_locked"},
         )
         db.commit()
-        raise AccountLockedError(TOO_MANY_LOGIN_ATTEMPTS_ERROR)
+        raise ValueError(GENERIC_LOGIN_ERROR)
 
     if not verify_password(password, user.password_hash):
         user.failed_login_count += 1
@@ -139,8 +141,6 @@ def authenticate_user(db: Session, request: Request, *, email: str, password: st
             details={"reason": "invalid_credentials"},
         )
         db.commit()
-        if user.failed_login_count >= MAX_FAILED_LOGINS:
-            raise AccountLockedError(TOO_MANY_LOGIN_ATTEMPTS_ERROR)
         raise ValueError(GENERIC_LOGIN_ERROR)
 
     if needs_rehash(user.password_hash):
@@ -265,14 +265,9 @@ def request_password_reset(db: Session, request: Request, settings: Settings, *,
     )
     db.add(reset_token)
 
-    delivery = "email"
-    try:
-        send_password_reset_email(settings, to_email=user.email, token=token)
-    except RuntimeError:
-        delivery = "not_configured"
-    except Exception as exc:
-        logger.warning("Password reset email delivery failed", extra={"error_type": type(exc).__name__})
-        delivery = "failed"
+    from app.services.mail_outbox import queue_mail
+    queue_mail(db, settings, user_id=user.id, kind="password_reset", to_email=user.email, token=token)
+    delivery = "queued"
 
     create_audit_log(
         db,
@@ -316,7 +311,24 @@ def confirm_password_reset(
         db.commit()
         raise ValueError(GENERIC_RESET_ERROR)
 
-    user = reset_token.user
+    user = db.scalar(select(User).where(User.id == reset_token.user_id).with_for_update()
+                     .execution_options(populate_existing=True))
+    result = db.execute(update(PasswordResetToken).where(
+        PasswordResetToken.id == reset_token.id,
+        PasswordResetToken.used_at.is_(None),
+        PasswordResetToken.expires_at > utc_now(),
+    ).values(used_at=utc_now()).returning(PasswordResetToken.id)
+        .execution_options(synchronize_session=False))
+    consumed = result.scalar_one_or_none()
+    result.close()
+    if consumed is None or user is None or not user.is_active:
+        db.rollback()
+        create_audit_log(db, event_type="auth.password_reset_confirm", outcome=AuditOutcome.FAILURE,
+            request=request, target_type="password_reset_token", details={"reason": "invalid_or_expired"})
+        db.commit()
+        raise ValueError(GENERIC_RESET_ERROR)
+    db.execute(update(PasswordResetToken).where(PasswordResetToken.user_id == user.id,
+        PasswordResetToken.used_at.is_(None)).values(used_at=utc_now()))
     user.password_hash = hash_password(new_password)
     user.failed_login_count = 0
     user.locked_until = None

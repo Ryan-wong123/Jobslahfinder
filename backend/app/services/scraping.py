@@ -7,7 +7,7 @@ import inspect
 import threading
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
@@ -38,6 +38,13 @@ SCRAPER_ADAPTERS: dict[str, ScraperFetcher] = {
 }
 LIVE_BROWSER_SOURCES = frozenset(SCRAPER_ADAPTERS)
 LIVE_BROWSER_SOURCE_LOCKS = {source_name: threading.Lock() for source_name in LIVE_BROWSER_SOURCES}
+
+
+def lock_job_source(db: Session, source_id: int) -> None:
+    # Advisory transaction locks avoid granting UPDATE on source configuration
+    # to the scraper merely to use SELECT ... FOR UPDATE.
+    if db.get_bind().dialect.name == "postgresql":
+        db.execute(select(func.pg_advisory_xact_lock(source_id)))
 
 
 def utc_now() -> datetime:
@@ -106,11 +113,27 @@ def start_scraping_run(db: Session, *, source: JobSource) -> ScrapingRun:
     return run
 
 
+def queue_scraping_run(db: Session, *, source: JobSource, request=None, user_id=None) -> ScrapingRun:
+    settings = get_settings()
+    validate_source_base_url(source.source_name, source.base_url, settings)
+    lock_job_source(db, source.id)
+    if not source.is_enabled or has_running_scrape_for_source(db, source=source):
+        raise ScrapingError("Source unavailable.")
+    run = ScrapingRun(source_id=source.id, status=ScrapingRunStatus.PENDING.value, jobs_retrieved=0)
+    db.add(run)
+    db.flush()
+    create_audit_log(db, event_type="admin.scraping_run.trigger", outcome=AuditOutcome.SUCCESS,
+        request=request, user_id=user_id, target_type="scraping_run", target_id=run.id,
+        details={"source_id": source.id, "status": "PENDING"})
+    db.commit()
+    return run
+
+
 def has_running_scrape_for_source(db: Session, *, source: JobSource) -> bool:
     running_run = db.scalar(
         select(ScrapingRun.id).where(
             ScrapingRun.source_id == source.id,
-            ScrapingRun.status == ScrapingRunStatus.RUNNING.value,
+            ScrapingRun.status.in_([ScrapingRunStatus.RUNNING.value, ScrapingRunStatus.PENDING.value]),
         )
     )
     return running_run is not None
@@ -179,6 +202,7 @@ def run_scraper_for_source(
     settings: Settings | None = None,
     timeout_seconds: int | None = None,
     max_retries: int | None = None,
+    existing_run: ScrapingRun | None = None,
 ) -> ScrapingRun:
     if not source.is_enabled:
         raise ScrapingError("Source is disabled.")
@@ -202,10 +226,12 @@ def run_scraper_for_source(
     if is_live_browser_scraper:
         retry_limit = 0
 
-    if has_running_scrape_for_source(db, source=source):
+    # Serialize scheduling across API and worker processes, not just local threads.
+    lock_job_source(db, source.id)
+    if existing_run is None and has_running_scrape_for_source(db, source=source):
         raise ScrapingError("A scraping run is already running for this source.")
 
-    run = start_scraping_run(db, source=source)
+    run = existing_run or start_scraping_run(db, source=source)
     lock_acquired = False
     source_lock = LIVE_BROWSER_SOURCE_LOCKS.get(source.source_name)
     try:

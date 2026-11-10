@@ -1,9 +1,11 @@
 from functools import lru_cache
 from pathlib import Path
 import re
+import secrets
+from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import Field, SecretStr, field_validator, model_validator
+from pydantic import Field, SecretStr, ValidationError, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 COOKIE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$")
@@ -37,17 +39,20 @@ def validate_hostname(value: str, *, field_name: str) -> str:
 
 
 class Settings(BaseSettings):
+    service_role: Literal["api", "worker", "scraper", "beat"] = Field(default="api", validation_alias="SERVICE_ROLE")
     app_name: str = "Secure Job Platform API"
-    app_env: str = Field(default="development", validation_alias="APP_ENV")
+    app_env: Literal["development", "test", "production"] = Field(default="development", validation_alias="APP_ENV")
     debug: bool = Field(default=False, validation_alias="DEBUG")
     api_host: str = Field(default="0.0.0.0", validation_alias="API_HOST")
     api_port: int = Field(default=8000, validation_alias="API_PORT")
 
     database_url: str = Field(validation_alias="DATABASE_URL")
     redis_url: str = Field(validation_alias="REDIS_URL")
+    auth_redis_url: str | None = Field(default=None, validation_alias="AUTH_REDIS_URL")
 
     session_secret: SecretStr = Field(validation_alias="SESSION_SECRET")
     password_reset_secret: SecretStr = Field(validation_alias="PASSWORD_RESET_SECRET")
+    data_encryption_secret: SecretStr | None = Field(default=None, validation_alias="DATA_ENCRYPTION_SECRET")
     session_cookie_name: str = Field(default="job_platform_session", validation_alias="SESSION_COOKIE_NAME")
     session_expire_minutes: int = Field(default=60 * 8, validation_alias="SESSION_EXPIRE_MINUTES")
     trust_proxy_headers: bool = Field(default=False, validation_alias="TRUST_PROXY_HEADERS")
@@ -67,7 +72,10 @@ class Settings(BaseSettings):
     smtp_use_tls: bool = Field(default=True, validation_alias="SMTP_USE_TLS")
 
     upload_dir: Path = Field(validation_alias="UPLOAD_DIR")
-    max_upload_bytes: int = Field(default=5 * 1024 * 1024, validation_alias="MAX_UPLOAD_BYTES")
+    max_upload_bytes: int = Field(default=5 * 1024 * 1024, ge=1024, le=5 * 1024 * 1024, validation_alias="MAX_UPLOAD_BYTES")
+    max_resumes_per_user: int = Field(default=20, ge=1, le=100, validation_alias="MAX_RESUMES_PER_USER")
+    max_resume_storage_bytes: int = Field(default=50 * 1024 * 1024, ge=1024, le=1024 * 1024 * 1024,
+                                         validation_alias="MAX_RESUME_STORAGE_BYTES")
     resume_parser_timeout_seconds: int = Field(
         default=10, validation_alias="RESUME_PARSER_TIMEOUT_SECONDS"
     )
@@ -110,6 +118,18 @@ class Settings(BaseSettings):
         case_sensitive=False,
     )
 
+    @model_validator(mode="before")
+    @classmethod
+    def isolated_service_credentials(cls, values):
+        if isinstance(values, dict) and values.get("SERVICE_ROLE", values.get("service_role")) in {"worker", "scraper", "beat"}:
+            # These processes cannot authenticate users or decrypt account mail.
+            # Bootstrap imports still construct Settings; give them independent,
+            # ephemeral keys rather than the API's signing/encryption material.
+            values = dict(values)
+            values["SESSION_SECRET"] = secrets.token_urlsafe(48)
+            values["PASSWORD_RESET_SECRET"] = secrets.token_urlsafe(48)
+        return values
+
     @field_validator("allowed_job_source_domains")
     @classmethod
     def normalize_allowed_domains(cls, value: str) -> str:
@@ -125,6 +145,11 @@ class Settings(BaseSettings):
     @classmethod
     def redis_url_is_valid(cls, value: str) -> str:
         return validate_url(value, field_name="REDIS_URL", allowed_schemes={"redis", "rediss"})
+
+    @field_validator("auth_redis_url")
+    @classmethod
+    def auth_redis_url_is_valid(cls, value: str | None) -> str | None:
+        return validate_url(value, field_name="REDIS_URL", allowed_schemes={"redis", "rediss"}) if value else None
 
     @field_validator("frontend_base_url")
     @classmethod
@@ -202,6 +227,18 @@ class Settings(BaseSettings):
             raise ValueError("GEMINI_COVER_LETTER_MAX_OUTPUT_TOKENS must be between 256 and 8192.")
 
         if self.app_env.lower() == "production":
+            if self.service_role in {"api", "worker"} and (
+                self.data_encryption_secret is None or len(self.data_encryption_secret.get_secret_value()) < 32
+            ):
+                raise ValueError("DATA_ENCRYPTION_SECRET must be independently generated and at least 32 characters.")
+            if self.service_role == "api" and self.data_encryption_secret.get_secret_value() in {
+                self.session_secret.get_secret_value(), self.password_reset_secret.get_secret_value()
+            }:
+                raise ValueError("DATA_ENCRYPTION_SECRET must differ from authentication secrets.")
+            if self.service_role == "api" and (not self.auth_redis_url or self.auth_redis_url == self.redis_url):
+                raise ValueError("A separate AUTH_REDIS_URL is required for authentication state.")
+            if self.service_role in {"api", "worker"} and not self.smtp_use_tls:
+                raise ValueError("SMTP_USE_TLS must be true in production.")
             if self.debug:
                 raise ValueError("DEBUG must be false in production.")
             if not self.frontend_base_url.lower().startswith("https://"):
@@ -214,6 +251,8 @@ class Settings(BaseSettings):
                 "PASSWORD_RESET_SECRET": self.password_reset_secret.get_secret_value(),
                 "DATABASE_URL": self.database_url,
             }
+            if self.data_encryption_secret is not None:
+                sensitive_values["DATA_ENCRYPTION_SECRET"] = self.data_encryption_secret.get_secret_value()
             if self.smtp_password is not None:
                 sensitive_values["SMTP_PASSWORD"] = self.smtp_password.get_secret_value()
             if self.gemini_api_key is not None:
@@ -228,11 +267,11 @@ class Settings(BaseSettings):
                 raise ValueError("SESSION_SECRET must be at least 32 characters.")
             if len(self.password_reset_secret.get_secret_value()) < 32:
                 raise ValueError("PASSWORD_RESET_SECRET must be at least 32 characters.")
-            if not self.smtp_host or not self.smtp_from_email:
+            if self.service_role in {"api", "worker"} and (not self.smtp_host or not self.smtp_from_email):
                 raise ValueError("SMTP_HOST and SMTP_FROM_EMAIL are required in production.")
-            if self.resume_extraction_provider == "gemini" and self.gemini_api_key is None:
+            if self.service_role in {"api", "worker"} and self.resume_extraction_provider == "gemini" and self.gemini_api_key is None:
                 raise ValueError("GEMINI_API_KEY is required when Gemini resume extraction is enabled.")
-            if self.cover_letter_generation_provider == "gemini" and self.gemini_api_key is None:
+            if self.service_role in {"api", "worker"} and self.cover_letter_generation_provider == "gemini" and self.gemini_api_key is None:
                 raise ValueError("GEMINI_API_KEY is required when Gemini cover letter generation is enabled.")
 
         return self
@@ -254,4 +293,9 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    try:
+        return Settings()
+    except ValidationError:
+        # Pydantic's default exception text can include raw environment inputs.
+        # This also runs before logging is configured during server startup.
+        raise RuntimeError("Invalid application configuration. Check the required settings and production security rules.") from None

@@ -62,6 +62,8 @@ def production_kwargs() -> dict[str, object]:
     kwargs.update(
         {
             "APP_ENV": "production",
+            "AUTH_REDIS_URL": "redis://auth:auth-password@localhost:6379/1",
+            "DATA_ENCRYPTION_SECRET": "d" * 40,
             "FRONTEND_BASE_URL": "https://jobs.mycompany.sg",
             "SESSION_SECRET": "s" * 40,
             "PASSWORD_RESET_SECRET": "r" * 40,

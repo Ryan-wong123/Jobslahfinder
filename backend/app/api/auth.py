@@ -3,7 +3,9 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
 from app.core.database import get_db
-from app.core.rate_limit import rate_limit_auth
+from app.core.rate_limit import rate_limit_auth, check_rate_limit
+from app.schemas.auth import EmailChangeRequest, EmailChangeConfirmRequest
+from app.services.email_change import request_email_change, confirm_email_change
 from app.schemas.auth import (
     AccountDeletionRequest,
     AccountUpdateRequest,
@@ -174,6 +176,7 @@ def login(
     settings: Settings = Depends(get_settings),
 ) -> LoginResponse:
     rate_limit_auth(request, "login", limit=10, window_seconds=60)
+    check_rate_limit(f"login:account:{payload.email}", 20, 300)
     risk = evaluate_login_risk(
         request,
         username=payload.email,
@@ -467,6 +470,7 @@ def password_reset_request(
     settings: Settings = Depends(get_settings),
 ) -> MessageResponse:
     rate_limit_auth(request, "password-reset-request", limit=10, window_seconds=300)
+    check_rate_limit(f"reset:account:{payload.email}", 3, 900)
     request_password_reset(db, request, settings, email=payload.email)
     return MessageResponse(message=GENERIC_RESET_MESSAGE)
 
@@ -495,6 +499,31 @@ def password_reset_confirm(
 @router.get("/me", response_model=UserResponse)
 def me(current_user: User = Depends(require_authenticated_user)) -> User:
     return current_user
+
+
+@router.post("/auth/email-change/request", response_model=MessageResponse)
+def email_change_request(payload: EmailChangeRequest, request: Request,
+    user: User = Depends(require_authenticated_user), db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings)) -> MessageResponse:
+    rate_limit_auth(request, "email-change-request", limit=3, window_seconds=900)
+    try:
+        request_email_change(db, request, settings, user, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Unable to change email.") from exc
+    return MessageResponse(message="If this change can be completed, a verification link will be sent to the new address.")
+
+
+@router.post("/auth/email-change/confirm", response_model=MessageResponse)
+def email_change_confirm(payload: EmailChangeConfirmRequest, request: Request, response: Response,
+    user: User = Depends(require_authenticated_user), db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings)) -> MessageResponse:
+    rate_limit_auth(request, "email-change-confirm", limit=5, window_seconds=300)
+    try:
+        confirm_email_change(db, request, settings, user, payload.token)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Unable to change email.") from exc
+    clear_session_cookie(response, settings)
+    return MessageResponse(message="Email verified and changed. Sign in with your new address.")
 
 
 @router.patch("/me", response_model=UserResponse)

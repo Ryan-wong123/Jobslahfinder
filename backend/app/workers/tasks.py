@@ -5,12 +5,40 @@ from sqlalchemy import select
 from app.workers.celery_app import celery_app
 from app.core.config import get_settings
 from app.core.database import SessionLocal
-from app.models.job import JobSource
+from app.models.job import JobSource, ScrapingRun
+from app.models.enums import ScrapingRunStatus
 from app.services.resumes import run_resume_extraction
 from app.services.scraping import ScrapingError, run_scraper_for_source
 
 
 MAX_WEEKLY_SCRAPE_WORKERS = 3
+
+
+@celery_app.task(name="app.workers.tasks.run_pending_scraping")
+def run_pending_scraping():
+    with SessionLocal() as db:
+        run = db.scalar(select(ScrapingRun).where(ScrapingRun.status == ScrapingRunStatus.PENDING.value)
+            .order_by(ScrapingRun.id).with_for_update(skip_locked=True).limit(1))
+        if run is None:
+            return
+        run.status = ScrapingRunStatus.RUNNING.value
+        db.commit()
+        source = db.get(JobSource, run.source_id)
+        try:
+            run_scraper_for_source(db, source=source, existing_run=run)
+        except Exception:
+            from app.services.scraping import fail_scraping_run
+            db.rollback()
+            fail_scraping_run(db, run=run)
+
+
+@celery_app.task(name="app.workers.tasks.deliver_mail", ignore_result=True)
+def deliver_mail() -> None:
+    if get_settings().service_role not in {"api", "worker"}:
+        raise PermissionError("Task not permitted for this service")
+    from app.services.mail_outbox import deliver_pending_mail
+    with SessionLocal() as db:
+        deliver_pending_mail(db, get_settings())
 
 
 @celery_app.task(name="app.workers.tasks.healthcheck")
@@ -78,5 +106,7 @@ def run_weekly_scraping() -> dict[str, int | list[dict[str, int | str]]]:
     time_limit=get_settings().resume_parser_timeout_seconds + 15,
 )
 def extract_resume(resume_id: int) -> dict[str, int | str]:
+    if get_settings().service_role not in {"api", "worker"}:
+        raise PermissionError("Task not permitted for this service")
     with SessionLocal() as db:
         return run_resume_extraction(db, resume_id=resume_id, settings=get_settings())

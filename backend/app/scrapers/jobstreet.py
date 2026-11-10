@@ -115,9 +115,11 @@ def ensure_selenium_dependencies() -> None:
 def create_selenium_driver():
     ensure_selenium_dependencies()
     options = Options()
+    proxy = os.getenv("SCRAPER_PROXY_URL")
+    if proxy:
+        options.add_argument(f"--proxy-server={proxy}")
     options.add_argument("--headless=new")
     options.add_argument("--disable-gpu")
-    options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--window-size=1920,1080")
     options.add_argument(
@@ -321,7 +323,7 @@ async def scrape_jobstreet_jobs(*, timeout_seconds: int) -> list[dict[str, Any]]
 
     launch_options: dict[str, Any] = {
         "headless": True,
-        "args": ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+        "args": [ "--disable-dev-shm-usage", "--disable-gpu"],
     }
     executable_path = chromium_executable_path()
     if executable_path:

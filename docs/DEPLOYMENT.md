@@ -1,5 +1,7 @@
 # Production Deployment Runbook (AWS EC2 + Docker Compose + Let's Encrypt)
 
+> **Security upgrade (10 November 2026):** follow [the remediation and upgrade runbook](SECURITY_REMEDIATION.md) before using older build/migration examples below. Production now deploys scanned image digests, uses restricted database/Redis roles, and requires encrypted backups. Administrator credentials belong only in one-shot migration processes.
+
 A start-to-finish guide for putting Jobslahfinder on the internet, from creating the accounts to automatic
 deploys from GitHub. It contains no secrets: wherever a value is secret you generate or paste it yourself on
 the server, and it never goes into git or chat.
@@ -350,13 +352,14 @@ see [Certificates](#certificates-and-the-browser).
 
 ```bash
 cd /opt/jobslahfinder
-docker compose run --rm backend alembic upgrade head
+DATABASE_URL="$MIGRATION_DATABASE_URL" docker compose run --rm --no-deps -e DATABASE_URL backend alembic upgrade head
+bash infra/scripts/provision-db-roles.sh
 docker compose run --rm backend python -m app.cli create-initial-admin --email you@yourmail.com
 docker compose up -d --build
 docker compose ps
 ```
 
-- `alembic upgrade head` prints a series of `Running upgrade ... -> 0009_merge_remaining_heads` lines and ends without error.
+- `alembic upgrade head` prints a series of `Running upgrade ... -> 0010_security_recovery` lines and ends without error.
 - `create-initial-admin` asks for a password twice (nothing is echoed) and prints `Initial admin created for you@yourmail.com.` Choose a long password and store it in a password manager. There is no default password.
 - `docker compose ps` shows every service `Up` and `healthy` (nginx has no health status).
 
@@ -516,7 +519,7 @@ every nightly backup fail at the upload step before the old-backup cleanup runs.
 The deploy job does **not** use SSH, so port 22 stays restricted to your own IP. GitHub assumes a short-lived AWS
 role through OpenID Connect (no long-lived AWS keys), then tells the instance, through Systems Manager (SSM), to
 run `infra/scripts/deploy.sh` as the `ubuntu` user. `deploy.sh` takes a pre-deploy backup, checks out the commit,
-builds, runs `alembic upgrade head`, restarts, smoke-tests `https://$DOMAIN/health` and **rolls the code back
+pulls scanned image digests, runs migrations and role provisioning, waits for readiness, and verifies HTTPS and **rolls the code back
 automatically** if the smoke test fails. (Migrations are not reverted: restore the pre-deploy backup if a schema
 change must be undone.)
 

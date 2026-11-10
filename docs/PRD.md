@@ -624,3 +624,7 @@ A feature is done only when:
 - Tests cover success and failure cases.
 - Documentation is updated where architecture or behaviour changes.
 - No secrets are committed.
+
+## Verified account email changes
+
+Changing the sign-in/recovery email requires the current password, TOTP verification, and a single-use link delivered to the replacement address. The original address receives notices and remains active until confirmation. Confirmation revokes sessions and recovery tokens. Delivery runs asynchronously through a protected outbox with safe audit metadata.

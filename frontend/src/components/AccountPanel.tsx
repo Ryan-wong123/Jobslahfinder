@@ -4,6 +4,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch, formatDateTime, type Profile, type User } from "@/lib/api";
 import { FormMessage, SubmitButton, TextField } from "./FormControls";
+import { EmailChangePanel } from "./EmailChangePanel";
 
 type ProfileForm = {
   full_name: string;
@@ -180,6 +181,7 @@ export function AccountPanel() {
 
   return (
     <div className="space-y-6">
+      <EmailChangePanel />
       <section className="rounded border border-zinc-200 bg-white p-6 shadow-sm">
         <form method="post" onSubmit={onProfileUpdate}>
           <div className="flex flex-wrap items-start justify-between gap-4">

@@ -4,7 +4,6 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
-import secrets
 import os
 
 # db import
@@ -24,13 +23,17 @@ from risk_engine.routes.dashboard_route import dashboard_router
 from risk_engine import config
 
 
-app = FastAPI(title="RBA Risk Engine")
+from app.core.config import get_settings
+_production = get_settings().app_env.lower() == "production"
+app = FastAPI(title="RBA Risk Engine", docs_url=None if _production else "/docs",
+              redoc_url=None if _production else "/redoc",
+              openapi_url=None if _production else "/openapi.json")
 
 app.add_middleware(
     SessionMiddleware,
     secret_key=config.SESSION_SECRET,
     session_cookie="risk_engine_admin_session",
-    https_only=os.getenv("RISK_ENGINE_HTTPS_ONLY", "false").lower() == "true",
+    https_only=_production or os.getenv("RISK_ENGINE_HTTPS_ONLY", "false").lower() == "true",
     max_age=int(os.getenv("RISK_ENGINE_ADMIN_SESSION_TIMEOUT_SEC", "900")),
     same_site="strict",  # CSRF protection via cookie policy
 )
@@ -39,8 +42,9 @@ app.add_middleware(
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
-app.include_router(cookie_router)
-app.include_router(risk_router)
+if not _production:
+    app.include_router(cookie_router)
+    app.include_router(risk_router)
 app.include_router(dashboard_router)
 
 
@@ -58,21 +62,6 @@ def read_root():
 
 @app.post("/setup")
 def setup():
-    try:
-        if config.is_sealed():
-            raise HTTPException(status_code=410, detail="Already initialized")
-    except RuntimeError:
-        # State exists but is corrupt: fail closed
-        raise HTTPException(status_code=500, detail="Engine misconfigured")
-
-    api_key = secrets.token_urlsafe(32)
-
-    try:
-        config.write_engine_state_atomically(api_key)
-    except FileExistsError:
-        # If you implement locking via O_EXCL and it already exists
-        raise HTTPException(status_code=410, detail="Already initialized")
-    except Exception:
-        raise HTTPException(status_code=500, detail="Failed to initialize")
-
-    return {"api_key": api_key}
+    # Initialization is an operator-only CLI operation. Keep a safe response for
+    # old clients without exposing an initialization race or returning a secret.
+    raise HTTPException(status_code=404, detail="Not found.")

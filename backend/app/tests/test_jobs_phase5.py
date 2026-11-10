@@ -513,8 +513,12 @@ def test_admin_can_seed_sources_and_trigger_mock_scraping(
     run_response = client.post("/admin/scraping-runs", json={"source_id": source.id})
 
     assert run_response.status_code == 201
-    assert run_response.json()["status"] == ScrapingRunStatus.SUCCESS.value
-    assert run_response.json()["jobs_retrieved"] == 2
+    assert run_response.json()["status"] == ScrapingRunStatus.PENDING.value
+    assert run_response.json()["jobs_retrieved"] == 0
+    pending = db_session.get(ScrapingRun, run_response.json()["id"])
+    assert pending is not None
+    completed = run_scraper_for_source(db_session, source=source, existing_run=pending)
+    assert completed.status == ScrapingRunStatus.SUCCESS.value
     assert db_session.scalar(select(JobPosting).where(JobPosting.source_id == source.id)) is not None
 
     audit_events = {

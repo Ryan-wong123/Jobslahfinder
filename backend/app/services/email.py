@@ -3,13 +3,14 @@ from __future__ import annotations
 from email.message import EmailMessage
 import smtplib
 from urllib.parse import quote
+import ssl
 
 from app.core.config import Settings
 
 
 def build_password_reset_url(settings: Settings, token: str) -> str:
     base_url = settings.frontend_base_url.rstrip("/")
-    return f"{base_url}/reset-password?token={quote(token, safe='')}"
+    return f"{base_url}/reset-password#token={quote(token, safe='')}"
 
 
 def send_password_reset_email(settings: Settings, *, to_email: str, token: str) -> None:
@@ -37,7 +38,23 @@ def send_password_reset_email(settings: Settings, *, to_email: str, token: str) 
 
     with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=10) as smtp:
         if settings.smtp_use_tls:
-            smtp.starttls()
+            smtp.starttls(context=ssl.create_default_context())
+        if settings.smtp_username and settings.smtp_password:
+            smtp.login(settings.smtp_username, settings.smtp_password.get_secret_value())
+        smtp.send_message(message)
+
+
+def send_account_email(settings: Settings, *, to_email: str, subject: str, body: str) -> None:
+    if not settings.smtp_host or not settings.smtp_from_email:
+        raise RuntimeError("Mail delivery not configured")
+    message = EmailMessage()
+    message["From"] = settings.smtp_from_email
+    message["To"] = to_email
+    message["Subject"] = subject
+    message.set_content(body)
+    with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=10) as smtp:
+        if settings.smtp_use_tls:
+            smtp.starttls(context=ssl.create_default_context())
         if settings.smtp_username and settings.smtp_password:
             smtp.login(settings.smtp_username, settings.smtp_password.get_secret_value())
         smtp.send_message(message)

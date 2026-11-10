@@ -5,6 +5,7 @@ from app.models.audit import AuditLog
 from app.models.job import JobPosting, JobSource, ScrapingRun
 from app.models.roadmap import JobRoleRoadmap
 from app.models.resume import Resume, ResumeExtraction
+from app.models.security import EmailChangeToken, EmailDelivery
 
 __all__ = [
     "ApplicationHistory",

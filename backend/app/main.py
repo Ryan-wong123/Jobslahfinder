@@ -1,4 +1,5 @@
 from urllib.parse import urlsplit
+import os
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -90,6 +91,14 @@ async def csrf_origin_middleware(request: Request, call_next):
 
 @app.on_event("startup")
 def startup() -> None:
+    os.umask(0o077)
+    if settings.app_env.lower() == "production":
+        from sqlalchemy import text
+        from app.core.database import SessionLocal
+        with SessionLocal() as db:
+            privileged = db.scalar(text("SELECT rolsuper OR rolcreatedb OR rolcreaterole OR rolbypassrls FROM pg_roles WHERE rolname = current_user"))
+            if privileged is not False:
+                raise RuntimeError("A restricted runtime database role is required.")
     init_risk_engine_storage()
 
 

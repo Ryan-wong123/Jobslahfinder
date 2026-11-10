@@ -68,3 +68,7 @@ backend/risk_engine/GeoLite2-City.mmdb
 infra/geoip/*.mmdb
 infra/geoip/GeoLite2*
 !infra/geoip/.gitkeep
+
+# Local release manifests and integration-test state
+.release.env
+.releases/
