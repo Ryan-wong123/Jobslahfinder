@@ -37,7 +37,9 @@ modify the deployed AWS VM, IAM policies, registry permissions, DNS, or producti
   Linux memory/CPU limits, bounded input/output, and synthetic bootstrap settings.
   Linux production adds a Bubblewrap filesystem/PID/network sandbox, exposing
   only read-only code/libraries and the single document on stdin. Parent process
-  environments and uploaded volumes are hidden. It receives no real database,
+  environments and uploaded volumes are hidden.
+  `/proc` stays empty, preserving Docker system-path masks without exposing
+  inherited process information. The parser receives no real database,
   session, SMTP, or AI credentials. Gemini calls
   use transport timeouts rather than unkillable timeout threads.
 

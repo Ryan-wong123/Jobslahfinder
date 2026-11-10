@@ -30,8 +30,8 @@ Docker's `docker-default` AppArmor policy denies mounts even inside a new user
 namespace. The parser worker therefore uses `jobslahfinder-parser.apparmor`,
 based on the same pinned Moby AppArmor template. It retains the proc/sys
 protections, limits networking to Unix/IP sockets plus the netlink socket needed
-to configure private loopback, and permits only the tmpfs,
-proc/devpts, bind/remount, propagation, and pivot operations Bubblewrap needs.
+to configure private loopback, and permits only the tmpfs/devpts,
+bind/remount, propagation, and pivot operations Bubblewrap needs.
 Container capabilities stay dropped; kernel namespace ownership still constrains
 every mount. The profile is applied only to the private worker.
 
@@ -49,6 +49,12 @@ insufficient. Docker Desktop engines without AppArmor still test the same
 seccomp, capabilities, namespaces, and filesystem restrictions; they cannot
 validate AppArmor enforcement. Production Compose targets the Ubuntu VM and
 explicitly requires the named profile.
+
+The sandbox leaves `/proc` empty: extraction needs no procfs, and parent process
+information is unavailable there. Docker's masked system paths remain intact;
+no `systempaths=unconfined` or inherited worker `/proc` bind is used. The probe
+checks the empty proc directory, private PID namespace, sanitized environment,
+private loopback-only network, and real DOCX extraction together.
 
 References: [Docker AppArmor policy loading](https://docs.docker.com/engine/security/apparmor/),
 [pinned Moby baseline](https://github.com/moby/profiles/blob/4b8214fc4971e06172938a1f1554ccff6647ee80/apparmor/template.go).

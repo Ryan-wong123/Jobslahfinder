@@ -20,7 +20,7 @@ profile jobslahfinder-parser flags=(attach_disconnected,mediate_deleted) {
 
   # Bubblewrap creates these mounts only after entering its own user/mount
   # namespaces. The container still has no capabilities in its parent namespace.
-  mount fstype=(tmpfs,proc,devpts),
+  mount fstype=(tmpfs,devpts),
   mount options=(rw,bind),
   mount options=(rw,rbind),
   mount options=(rw,bind,silent),
