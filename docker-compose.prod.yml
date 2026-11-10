@@ -113,7 +113,7 @@ services:
     tmpfs: ["/tmp:size=64m,mode=1777"]
     volumes: !override ["resume_storage:/var/lib/jobapp/uploads:ro"]
     cap_drop: [ALL]
-    security_opt: ["no-new-privileges:true", "seccomp=./infra/security/parser-seccomp.json"]
+    security_opt: ["no-new-privileges:true", "seccomp=./infra/security/parser-seccomp.json", "apparmor=jobslahfinder-parser"]
     networks: !override [data, outbound]
     env_file: !reset []
     logging: *default-logging

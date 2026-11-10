@@ -837,6 +837,7 @@ A task is only done when:
 
 ## Security review remediation — November 2026
 
+- [~] Repair Linux CI Python-version and AppArmor compatibility; verify the actual GitHub Actions run before marking complete.
 - [x] Atomic password-reset consumption, verified email changes, encrypted mail outbox, and session revocation.
 - [x] Shared fail-closed rate limits, bounded upload quotas, private parser sandbox, and sensitive-log filtering.
 - [x] Restricted database/Redis credentials, separate private/scraping workers, browser sandbox, and egress allowlist.
