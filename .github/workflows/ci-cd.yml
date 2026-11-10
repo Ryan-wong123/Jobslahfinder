@@ -380,6 +380,10 @@ jobs:
       - name: Verify parser filesystem and credential isolation
         run: python infra/scripts/test-parser-sandbox.py
 
+      - name: Report parser AppArmor denials
+        if: failure()
+        run: sudo dmesg | grep 'apparmor="DENIED".*profile="jobslahfinder-parser"' | tail -n 40 || true
+
       - name: Verify native Chromium sandbox
         run: python infra/scripts/test-scraper-sandbox.py
 

@@ -17,6 +17,8 @@ set -a; . ./.env; set +a
 : "${MIGRATION_DATABASE_URL:?Run configure-env.sh before this release}"
 PREVIOUS_SHA="${PREVIOUS_SHA:-$(git rev-parse HEAD)}"
 COMPOSE="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
+# The named worker policy must be loaded before replacing any service.
+sudo -n bash infra/scripts/install-sandbox-apparmor.sh --require
 mkdir -p .releases
 # A legacy release has a different Redis/worker/environment contract. Never
 # pretend its images can roll back safely under the new security architecture.

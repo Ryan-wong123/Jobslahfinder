@@ -29,7 +29,8 @@ on the target host; neither grants SYS_ADMIN or disables seccomp.
 Docker's `docker-default` AppArmor policy denies mounts even inside a new user
 namespace. The parser worker therefore uses `jobslahfinder-parser.apparmor`,
 based on the same pinned Moby AppArmor template. It retains the proc/sys
-protections, limits networking to Unix/IP sockets, and permits only the tmpfs,
+protections, limits networking to Unix/IP sockets plus the netlink socket needed
+to configure private loopback, and permits only the tmpfs,
 proc/devpts, bind/remount, propagation, and pivot operations Bubblewrap needs.
 Container capabilities stay dropped; kernel namespace ownership still constrains
 every mount. The profile is applied only to the private worker.

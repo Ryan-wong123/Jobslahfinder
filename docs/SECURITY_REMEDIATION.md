@@ -98,6 +98,8 @@ the browser sandbox. Test the profile on the target AWS kernel before release.
    The bootstrap also loads the parser's scoped AppArmor policy. On an existing
    prepared VM, run `sudo bash infra/scripts/install-sandbox-apparmor.sh` before
    starting the upgraded worker; see `infra/security/README.md`.
+   Release deployment reloads that same policy before replacing services and
+   fails early if the host lacks AppArmor support or its policy loader.
 4. Configure read access to the GHCR release packages for the deploy user, or
    deliberately make the packages public. CI publishes scanned images using its
    short-lived GitHub token. A VM credential, if needed, must have read-packages

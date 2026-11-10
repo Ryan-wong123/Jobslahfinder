@@ -12,6 +12,8 @@ profile jobslahfinder-parser flags=(attach_disconnected,mediate_deleted) {
   network inet6 stream,
   network inet6 dgram,
   network unix,
+  # Bubblewrap configures loopback through NETLINK_ROUTE inside its private netns.
+  network netlink raw,
   capability,
   file,
   umount,
