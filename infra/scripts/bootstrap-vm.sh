@@ -11,7 +11,7 @@ RUN_USER="${SUDO_USER:-$USER}"
 echo "==> Updating packages"
 sudo apt-get update -y
 sudo apt-get upgrade -y
-sudo apt-get install -y git gnupg curl ca-certificates cron openssl unattended-upgrades logrotate
+sudo apt-get install -y git gnupg curl ca-certificates cron openssl unattended-upgrades logrotate apparmor
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "==> Installing Docker"
@@ -25,6 +25,7 @@ if ! command -v docker >/dev/null 2>&1; then
 fi
 sudo usermod -aG docker "$RUN_USER"
 sudo systemctl enable --now docker
+sudo bash "$REPO_DIR/infra/scripts/install-sandbox-apparmor.sh"
 
 if ! command -v aws >/dev/null 2>&1; then
   echo "==> Installing AWS CLI"
