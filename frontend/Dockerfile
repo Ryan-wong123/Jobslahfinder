@@ -23,6 +23,8 @@ COPY . .
 RUN npm run build
 
 FROM base AS runner
+LABEL org.opencontainers.image.source="https://github.com/Ryan-wong123/Jobslahfinder"
+
 WORKDIR /app
 ENV NODE_ENV=production
 
