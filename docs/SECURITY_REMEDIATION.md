@@ -37,7 +37,9 @@ modify the deployed AWS VM, IAM policies, registry permissions, DNS, or producti
   Linux memory/CPU limits, bounded input/output, and synthetic bootstrap settings.
   Linux production adds a Bubblewrap filesystem/PID/network sandbox, exposing
   only read-only code/libraries and the single document on stdin. Parent process
-  environments and uploaded volumes are hidden. It receives no real database,
+  environments and uploaded volumes are hidden.
+  `/proc` stays empty, preserving Docker system-path masks without exposing
+  inherited process information. The parser receives no real database,
   session, SMTP, or AI credentials. Gemini calls
   use transport timeouts rather than unkillable timeout threads.
 
@@ -95,6 +97,11 @@ the browser sandbox. Test the profile on the target AWS kernel before release.
 3. Run `bootstrap-vm.sh` to install the protected backup-key file, log rotation,
    and monitoring cron if those are not already provisioned. Securely escrow the
    key; generating a replacement does not decrypt old backups.
+   The bootstrap also loads the parser's scoped AppArmor policy. On an existing
+   prepared VM, run `sudo bash infra/scripts/install-sandbox-apparmor.sh` before
+   starting the upgraded worker; see `infra/security/README.md`.
+   Release deployment reloads that same policy before replacing services and
+   fails early if the host lacks AppArmor support or its policy loader.
 4. Configure read access to the GHCR release packages for the deploy user, or
    deliberately make the packages public. CI publishes scanned images using its
    short-lived GitHub token. A VM credential, if needed, must have read-packages
@@ -169,6 +176,15 @@ backup-key escrow, alarm subscriptions, and target-kernel sandbox behavior
 remain operator deployment checks. They have not been represented as completed
 by local tests. Registration email verification and a nonce-based CSP remain
 separate hardening items; the existing CSP limitation is documented below.
+
+The Linux CI compatibility repair was verified in
+[GitHub Actions run 42829760254](https://github.com/Ryan-wong123/Jobslahfinder/actions/runs/42829760254):
+backend, frontend, migrations, security, and container verification/scanning all
+passed. The parser profile was loaded and confirmed in enforce mode on the
+runner; empty-procfs isolation and real DOCX extraction passed alongside the
+native Chromium sandbox. EC2 deployment was intentionally skipped for this pull
+request. The CI fix also supplies the image digests required by SSM deployment
+and loads the worker policy during deployment preflight.
 
 Use `infra/scripts/test-backend.py` with the locked test environment. Coverage
 excludes tests themselves and CI enforces 70%. The additional infrastructure

@@ -1219,10 +1219,13 @@ def parser_sandbox_prefix(settings: Settings) -> list[str]:
         raise RuntimeError("Production resume parser sandbox unavailable")
     # Hide the worker's environment via a new PID namespace and expose only
     # code/libraries. Uploaded volumes, database files and network are absent.
+    # The parser needs no procfs. An empty /proc also avoids Docker's deliberate
+    # restriction on mounting nested procfs over its masked system paths.
     return [executable, "--unshare-user", "--unshare-pid", "--unshare-net", "--unshare-ipc", "--unshare-uts",
             "--die-with-parent", "--new-session", "--ro-bind", "/usr", "/usr",
+            "--setenv", "LD_LIBRARY_PATH", "/usr/local/lib",
             "--symlink", "usr/lib", "/lib", "--symlink", "usr/lib64", "/lib64",
-            "--ro-bind", "/app", "/app", "--proc", "/proc", "--dev", "/dev",
+            "--ro-bind", "/app", "/app", "--dir", "/proc", "--dev", "/dev",
             "--tmpfs", "/tmp", "--dir", "/var", "--dir", "/var/lib", "--chdir", "/app"]
 
 
