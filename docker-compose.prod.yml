@@ -95,7 +95,7 @@ services:
       RISK_ENGINE_DATA_DIR: /var/lib/jobapp/risk-engine
       RISK_ENGINE_BASE_PATH: /risk-engine
       TRUST_PROXY_HEADERS: "true"
-      TRUSTED_PROXY_CIDRS: 172.28.0.0/24
+      TRUSTED_PROXY_CIDRS: 172.29.0.0/24
       RISK_ENGINE_GEOIP_DB_PATH: /var/lib/jobapp/geoip/GeoLite2-City.mmdb
     volumes:
       - resume_storage:/var/lib/jobapp/uploads
@@ -113,7 +113,7 @@ services:
     tmpfs: ["/tmp:size=64m,mode=1777"]
     volumes: !override ["resume_storage:/var/lib/jobapp/uploads:ro"]
     cap_drop: [ALL]
-    security_opt: ["no-new-privileges:true", "seccomp=./infra/security/parser-seccomp.json"]
+    security_opt: ["no-new-privileges:true", "seccomp=./infra/security/parser-seccomp.json", "apparmor=jobslahfinder-parser"]
     networks: !override [data, outbound]
     env_file: !reset []
     logging: *default-logging
@@ -274,7 +274,8 @@ networks:
     internal: true
     ipam:
       config:
-        - subnet: 172.28.0.0/24
+        # The legacy internal network uses 172.28.0.0/24 during upgrades.
+        - subnet: 172.29.0.0/24
   outbound: {}
   edge: {}
   scrape:
