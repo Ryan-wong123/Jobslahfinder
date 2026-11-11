@@ -441,12 +441,14 @@ jobs:
         run: |
           prefix="ghcr.io/${GITHUB_REPOSITORY,,}"
           for role in backend scraper frontend; do
-            tag="$prefix/$role:$GITHUB_SHA"
+            repository="$prefix/$role"
+            tag="$repository:$GITHUB_SHA"
             docker tag "jobslahfinder-$role:local" "$tag"
             docker push "$tag"
-            digest=$(docker image inspect "$tag" --format '{{index .RepoDigests 0}}')
-            [[ "$digest" =~ @sha256:[0-9a-f]{64}$ ]]
-            echo "${role}_image=$digest" >> "$GITHUB_OUTPUT"
+            references=$(docker image inspect "$tag" --format '{{range .RepoDigests}}{{println .}}{{end}}')
+            reference=$(grep -F "${repository}@sha256:" <<< "$references")
+            [[ "${reference#"${repository}@"}" =~ ^sha256:[0-9a-f]{64}$ ]]
+            echo "${role}_image=$reference" >> "$GITHUB_OUTPUT"
           done
 
   deploy:

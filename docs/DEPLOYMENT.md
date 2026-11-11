@@ -1,6 +1,6 @@
 # Production Deployment Runbook (AWS EC2 + Docker Compose + Let's Encrypt)
 
-> **Security upgrade (10 November 2026):** follow [the remediation and upgrade runbook](SECURITY_REMEDIATION.md) before using older build/migration examples below. Production now deploys scanned image digests, uses restricted database/Redis roles, and requires encrypted backups. Administrator credentials belong only in one-shot migration processes.
+> **Security upgrade (10 November 2026):** follow [the remediation and upgrade runbook](SECURITY_REMEDIATION.md#existing-production-upgrade) for an existing VM. Production deploys scanned image digests, uses restricted database/Redis roles, and requires encrypted backups. Administrator credentials belong only in one-shot migration processes.
 
 A start-to-finish guide for putting Jobslahfinder on the internet, from creating the accounts to automatic
 deploys from GitHub. It contains no secrets: wherever a value is secret you generate or paste it yourself on
@@ -292,17 +292,14 @@ Save with `Ctrl+O`, Enter, then exit with `Ctrl+X`. Leave `APP_ENV=production`, 
 grep -nE 'change-me|your-domain|example' .env | sed -E 's/=.*/=<hidden>/'
 ```
 
-Expected: **no output**. Any line shown is a placeholder to replace. Then let the backend validate the settings:
+Review any matching lines for placeholders. Validate the Compose configuration without printing
+resolved secrets:
 
 ```bash
-docker compose run --rm --no-deps backend python -c "from app.core.config import get_settings; get_settings(); print('CONFIG OK')"
+docker compose config --quiet
 ```
 
-The first run builds the backend image (about 3 minutes, it installs Chromium). Expected last line: `CONFIG OK`.
-A `ValueError` names the setting to fix. In production the backend refuses to start if: `FRONTEND_BASE_URL` is not
-`https://` or points at localhost; any secret still contains a placeholder (`change-me`, `replace-with`, ...);
-the session and reset secrets are identical or shorter than 32 characters; SMTP is not configured; or Gemini is
-enabled without a key.
+The deployment verification script checks the backend settings once the scanned release is running.
 
 Do not paste `.env` contents anywhere. Do not commit it (it is git-ignored).
 
@@ -310,11 +307,25 @@ Do not paste `.env` contents anywhere. Do not commit it (it is git-ignored).
 
 ## 9. Get the HTTPS certificate
 
+On a new VM, configure [GHCR access](SECURITY_REMEDIATION.md#existing-production-upgrade) for
+the `ubuntu` deploy user and set `FRONTEND_IMAGE` in `.env` to a published, CI-scanned
+frontend digest for this repository. The certificate bootstrap starts the frontend and
+Nginx before the full stack is deployed. An existing HTTPS deployment can skip certificate
+bootstrap.
+
+Run `docker login ghcr.io --username YOUR_GITHUB_USERNAME` as `ubuntu` and enter a
+token with package read access at the password prompt. Renew the credential before it
+expires. If this is the repository's first release, complete the GitHub Actions setup
+and run CI/CD on `main` to publish the images. The deploy job log lists the frontend
+digest. Use it for certificate bootstrap, then run CI/CD again to verify the full
+deployment over HTTPS.
+
 **(server)** Do a dry run against Let's Encrypt's **staging** server first. Failed real attempts are limited (5 per
 hostname per hour); staging has no such limit.
 
 ```bash
 cd /opt/jobslahfinder
+docker compose pull frontend
 LETSENCRYPT_STAGING=1 sh infra/scripts/init-letsencrypt.sh
 ```
 
@@ -338,7 +349,7 @@ curl -sI https://jobs.yourdomain.com | head -3
 echo | openssl s_client -connect jobs.yourdomain.com:443 -servername jobs.yourdomain.com 2>/dev/null | openssl x509 -noout -issuer -dates
 ```
 
-Expected: `HTTP/2 200`, an `issuer=C = US, O = Let's Encrypt, CN = ...` line (not `STAGING` and not your own
+Confirm that HTTPS connects successfully. Check for an `issuer=C = US, O = Let's Encrypt, CN = ...` line (not `STAGING` and not your own
 domain name) and a `notAfter` about 90 days away. Renewal runs automatically from the root cron job.
 
 If `issuer` equals your domain and `notAfter` is tomorrow, you are still on the temporary self-signed certificate:
@@ -348,20 +359,21 @@ see [Certificates](#certificates-and-the-browser).
 
 ## 10. Create the database and admin, start everything
 
-**(server)**
+Complete [GitHub Actions setup](#13-automatic-deploys-from-github-aws-systems-manager) before the first production
+deployment, along with [backup encryption](#123-configure-backup-encryption). Run **CI/CD**
+from `main` or merge to `main`. The workflow publishes scanned images
+and runs the production deployment over SSM. It starts PostgreSQL and Redis, applies migrations
+with a one-shot administrator connection, provisions application roles, and starts the stack.
+
+After CI/CD succeeds, create the initial admin as the deploy user:
 
 ```bash
 cd /opt/jobslahfinder
-DATABASE_URL="$MIGRATION_DATABASE_URL" docker compose run --rm --no-deps -e DATABASE_URL backend alembic upgrade head
-bash infra/scripts/provision-db-roles.sh
-docker compose run --rm backend python -m app.cli create-initial-admin --email you@yourmail.com
-docker compose up -d --build
+docker compose exec backend python -m app.cli create-initial-admin --email you@yourmail.com
 docker compose ps
 ```
 
-- `alembic upgrade head` prints a series of `Running upgrade ... -> 0010_security_recovery` lines and ends without error.
-- `create-initial-admin` asks for a password twice (nothing is echoed) and prints `Initial admin created for you@yourmail.com.` Choose a long password and store it in a password manager. There is no default password.
-- `docker compose ps` shows every service `Up` and `healthy` (nginx has no health status).
+The command prompts for a password. Store it in a password manager.
 
 Run the automatic checks:
 
@@ -369,7 +381,7 @@ Run the automatic checks:
 bash infra/scripts/verify-deploy.sh
 ```
 
-Expected: 19 lines starting with `PASS` and `Result: 19 passed, 0 failed`:
+Expected: each check prints `PASS` and the result reports zero failures.
 
 ```
 PASS  DNS for jobs.yourdomain.com resolves to this VM (...)
@@ -428,7 +440,7 @@ docker compose up -d backend
 ### 12.1 What is backed up
 
 `infra/scripts/backup-prod.sh` writes a timestamped folder under `/var/backups/jobapp` containing the PostgreSQL
-dump, the resume-storage and risk-engine volumes, and `SHA256SUMS`. The folder is root-only (mode 700) on purpose,
+dump and archives for resume storage and risk-engine data, all encrypted, plus `SHA256SUMS`. The folder is root-only (mode 700) on purpose,
 so **run it with `sudo`**. The nightly cron job (02:30) already runs as root. Backups older than
 `BACKUP_RETENTION_DAYS` (default 14) are removed.
 
@@ -440,38 +452,36 @@ so **run it with `sudo`**. The nightly cron job (02:30) already runs as root. Ba
 cd /opt/jobslahfinder
 sudo bash infra/scripts/backup-prod.sh
 NEWEST=$(sudo ls -1 /var/backups/jobapp | tail -1)
-sudo bash infra/scripts/restore-test.sh /var/backups/jobapp/$NEWEST
+sudo BACKUP_PASSPHRASE_FILE=/etc/jobapp/backup-passphrase bash infra/scripts/restore-test.sh "/var/backups/jobapp/$NEWEST"
 ```
 
 Expected from the restore test (it restores into a throwaway container and never touches production):
 
 ```
-/var/backups/jobapp/2026....Z/postgres.dump: OK
-/var/backups/jobapp/2026....Z/resume_storage.tar.gz: OK
-/var/backups/jobapp/2026....Z/risk_engine_data.tar.gz: OK
+/var/backups/jobapp/2026....Z/postgres.dump.gpg: OK
+/var/backups/jobapp/2026....Z/resume_storage.tar.gz.gpg: OK
+/var/backups/jobapp/2026....Z/risk_engine_data.tar.gz.gpg: OK
 Restore OK: 16 public tables, 2 users.
 ```
 
-For encrypted backups the file names end in `.gpg` and the test needs the passphrase (see 12.3). `<newest-folder>` in
-older notes is a placeholder: the `NEWEST=` line fills it in.
+The restore test needs the passphrase that encrypted the selected backup.
 
-### 12.3 Encrypt the backups (recommended)
+### 12.3 Configure backup encryption
 
-Backups contain user data and resume files. Encrypt them with a passphrase that lives only on the server and in
-your password manager (never in git, S3 or chat).
+Production backups require a passphrase file. Set it up before the first deployment. Keep a
+protected copy in your password manager so you can restore backups if the server is lost.
 
 ```bash
 sudo mkdir -p /etc/jobapp && sudo chmod 700 /etc/jobapp
-sudo sh -c 'umask 077; openssl rand -base64 32 > /etc/jobapp/backup-passphrase'
+sudo sh -c 'umask 077; set -C; openssl rand -base64 32 > /etc/jobapp/backup-passphrase'
 sudo cat /etc/jobapp/backup-passphrase          # copy it into your password manager NOW
-echo 'BACKUP_PASSPHRASE_FILE=/etc/jobapp/backup-passphrase' >> .env
-sudo bash infra/scripts/backup-prod.sh
+nano .env
 ```
 
-Without that passphrase an encrypted backup **cannot** be restored, so store a copy somewhere that survives the
+Set `BACKUP_PASSPHRASE_FILE=/etc/jobapp/backup-passphrase` in `.env`. Reuse the existing
+passphrase file on an established VM. Without that passphrase an encrypted backup **cannot** be restored, so store a copy somewhere that survives the
 server. Encrypted backups contain `postgres.dump.gpg`, `resume_storage.tar.gz.gpg` and
-`risk_engine_data.tar.gz.gpg` (plus `SHA256SUMS`). Backups made before you turned encryption on stay plaintext until
-they expire. `restore-test.sh` does not read `.env`, so pass the passphrase file explicitly:
+`risk_engine_data.tar.gz.gpg` (plus `SHA256SUMS`). `restore-test.sh` does not read `.env`, so pass the passphrase file explicitly:
 
 ```bash
 NEWEST=$(sudo ls -1 /var/backups/jobapp | tail -1)
@@ -518,10 +528,11 @@ every nightly backup fail at the upload step before the old-backup cleanup runs.
 
 The deploy job does **not** use SSH, so port 22 stays restricted to your own IP. GitHub assumes a short-lived AWS
 role through OpenID Connect (no long-lived AWS keys), then tells the instance, through Systems Manager (SSM), to
-run `infra/scripts/deploy.sh` as the `ubuntu` user. `deploy.sh` takes a pre-deploy backup, checks out the commit,
-pulls scanned image digests, runs migrations and role provisioning, waits for readiness, and verifies HTTPS and **rolls the code back
-automatically** if the smoke test fails. (Migrations are not reverted: restore the pre-deploy backup if a schema
-change must be undone.)
+run `infra/scripts/deploy.sh` as `ubuntu`. The SSM wrapper checks out the requested commit.
+The deploy script pulls the scanned GHCR digests, takes an encrypted backup, runs migrations
+and role provisioning, and verifies readiness over HTTPS. On a failed rollout after service
+replacement, it can restore the previous compatible images. Without a compatible release,
+it stops application writers for recovery. Migrations stay applied.
 
 ### 13.1 One-time AWS setup (console, Singapore)
 
@@ -599,7 +610,7 @@ Optional repository **variable** `AWS_REGION` (defaults to `ap-southeast-1`). Th
 
 ### 13.3 Test deploy
 
-GitHub -> Actions -> **CI/CD** -> **Run workflow** -> branch `production` (or `main`) -> Run. Always start a **new**
+GitHub -> Actions -> **CI/CD** -> **Run workflow** -> branch `main` -> Run. Always start a **new**
 run after changing code: "Re-run failed jobs" reuses the old commit. Expected in the **Deploy To EC2** log:
 
 ```
@@ -612,13 +623,12 @@ SSM command id: <uuid>
 Deploy succeeded.
 ```
 
-A full deploy takes a few minutes (it builds images). Afterwards on the server `git log -1 --oneline` shows the
-deployed commit, a new folder exists in `/var/backups/jobapp`, and `bash infra/scripts/verify-deploy.sh` still
-passes 19/19.
+GitHub Actions builds, scans, and publishes the images. After a successful deployment, check the
+commit with `git log -1 --oneline` on EC2 and run `bash infra/scripts/verify-deploy.sh`.
 
 ### 13.4 Lock it down
 
-- Settings -> Environments -> `production` -> Deployment branches and tags -> **Selected branches: `main`**, so only `main` can use the role (do this after testing from another branch).
+- Settings -> Environments -> `production` -> Deployment branches and tags -> **Selected branches: `main`**, so only `main` can use the role.
 - Optional: Required reviewers on the `production` environment for a manual approval step; protect `main` (require a pull request and passing checks).
 - From then on every merge or push to `main` runs the full CI and then deploys. The deploy job only runs after backend, migration, frontend, security and Docker checks pass.
 
@@ -630,8 +640,8 @@ passes 19/19.
 | --- | --- |
 | Status of all services | `docker compose ps` |
 | Logs | `docker compose logs --tail=80 backend` (also `worker`, `nginx`, `frontend`, `beat`) |
-| Restart backend and worker | `docker compose up -d backend worker` |
-| Manual deploy of a commit | `DEPLOY_SHA=$(git rev-parse origin/main) bash infra/scripts/deploy.sh` (run `git fetch origin` first) |
+| Restart backend and worker | `docker compose up -d --no-build backend worker` |
+| Deploy current `main` on demand | GitHub Actions → **CI/CD** → **Run workflow** → `main` |
 | Take a backup now | `sudo bash infra/scripts/backup-prod.sh` |
 | Check the health checks | `bash infra/scripts/verify-deploy.sh` |
 | Test certificate renewal | `docker compose run --rm certbot renew --dry-run` |
@@ -639,7 +649,7 @@ passes 19/19.
 | Backup/renewal logs | `sudo tail /var/log/jobapp-backup.log /var/log/jobapp-cert-renew.log` |
 
 - **Your IP changed** (new network, hotspot): SSH stops working. Edit the security group's SSH rule (EC2 -> instance -> Security -> the group -> Edit inbound rules) and set the source to **My IP** again.
-- **Resume extraction suddenly fails** with `parser_failed` and the worker log shows `404 Not Found` from `generativelanguage.googleapis.com`: the Gemini model was retired. Re-run the model test in 7.2 and update `GEMINI_RESUME_MODEL` and `GEMINI_COVER_LETTER_MODEL` in `.env`, then `docker compose up -d backend worker`.
+- **Resume extraction suddenly fails** with `parser_failed` and the worker log shows `404 Not Found` from `generativelanguage.googleapis.com`: the Gemini model was retired. Re-run the model test in 7.2 and update `GEMINI_RESUME_MODEL` and `GEMINI_COVER_LETTER_MODEL` in `.env`, then `docker compose up -d --no-build backend worker`.
 - **Never re-generate secrets** once the database exists. `configure-env.sh` already protects the database password; do not edit `POSTGRES_PASSWORD` by hand.
 - **Scheduled jobs:** weekly scraping runs Sundays 18:00 UTC (Celery beat). Check `/admin` -> scraping runs.
 - **Updating the risk-engine key or other secrets:** edit `.env` on the server, then `docker compose up -d`.
@@ -721,7 +731,7 @@ Find your symptom. Each entry says what it means and how to fix it.
 | `AccessDeniedException ... ssm:SendCommand` | The inline policy has a wrong account ID, instance ID or region in its ARNs. |
 | `InvalidInstanceId` / the command never starts | The instance is not **Online** in Fleet Manager: the instance role lacks `AmazonSSMManagedInstanceCore` or is not attached, or the SSM agent is not running (`sudo snap list amazon-ssm-agent`). |
 | Remote error `set: Illegal option -o pipefail` | SSM runs command lines with `sh` (dash), which has no `pipefail`. Fixed in `infra/scripts/ssm-deploy.sh` (POSIX wrapper; the real script runs under `bash`). Make sure you are running a commit that includes the fix, and start a **new** workflow run. |
-| Status `Failed` with "Rolling back" in the output | The new commit failed the `/health` smoke test; the code was rolled back automatically. Read the remote output, fix, redeploy. Migrations are not reverted. |
+| Deploy job fails | Read the SSM output for the failed stage. After service replacement, the script can restore compatible prior images. Without a compatible release, writers stop for recovery. Migrations stay applied. |
 | Permission denied on `/var/backups/jobapp` inside the deploy | `deploy.sh` runs the backup with `sudo`; check the `ubuntu` user has passwordless sudo (`sudo -n true`). |
 | Re-running a failed job does not pick up your fix | "Re-run failed jobs" reuses the old commit. Use **Run workflow** for a new run on the branch. |
 | Security Checks fail on `npm audit` | A dependency vulnerability. Run `npm audit fix` in `frontend/`, then lint, typecheck, tests and build, and commit `package-lock.json`. |
@@ -748,10 +758,10 @@ Find your symptom. Each entry says what it means and how to fix it.
 | `configure-env.sh` | Fill `.env` with domain, URL and random secrets (idempotent, protects the DB password) | `ubuntu` |
 | `init-letsencrypt.sh` | Issue the HTTPS certificate (`LETSENCRYPT_STAGING=1` for a dry run) | `ubuntu` |
 | `renew-certs.sh` | Renew certificates and reload Nginx (cron, twice daily) | root (cron) |
-| `verify-deploy.sh` | 19 post-deploy checks | `ubuntu` |
-| `backup-prod.sh` | Backup (Postgres, volumes; optional encryption and S3) | `sudo` / root |
+| `verify-deploy.sh` | Post-deploy checks | `ubuntu` |
+| `backup-prod.sh` | Encrypted backup of PostgreSQL and protected storage, with optional S3 upload | `sudo` / root |
 | `restore-test.sh <folder>` | Verify a backup restores into a throwaway database | `sudo` |
-| `deploy.sh` | Backup, checkout, build, migrate, restart, smoke test, rollback | `ubuntu` |
+| `deploy.sh` | Pull scanned digests, back up, migrate, provision roles, and verify readiness | `ubuntu` |
 | `ssm-deploy.sh` | CI helper: runs `deploy.sh` on the instance through SSM | GitHub Actions |
 | `download-geolite.sh` | Optional MaxMind GeoLite2 download | `ubuntu` |
 

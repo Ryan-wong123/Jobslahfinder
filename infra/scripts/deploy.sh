@@ -32,7 +32,7 @@ export BACKEND_IMAGE="$RELEASE_BACKEND_IMAGE" FRONTEND_IMAGE="$RELEASE_FRONTEND_
 $COMPOSE pull backend frontend scraper postgres redis nginx scraper-proxy
 PREDEPLOY_BACKUP_TAKEN=0
 if $COMPOSE ps --status running postgres 2>/dev/null | grep -q postgres; then
-  sudo -n bash infra/scripts/backup-prod.sh
+  sudo -n bash infra/scripts/backup-prod.sh "$BACKEND_IMAGE"
   PREDEPLOY_BACKUP_TAKEN=1
 fi
 
@@ -54,7 +54,7 @@ deploy_release() {
   bash infra/scripts/provision-db-roles.sh || return 1
   $COMPOSE up -d --no-build --wait --wait-timeout 240 --remove-orphans || return 1
   if [ "$PREDEPLOY_BACKUP_TAKEN" = 0 ]; then
-    sudo -n bash infra/scripts/backup-prod.sh || return 1
+    sudo -n bash infra/scripts/backup-prod.sh "$BACKEND_IMAGE" || return 1
   fi
   smoke_test
 }
