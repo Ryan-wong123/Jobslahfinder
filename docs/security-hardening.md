@@ -76,7 +76,7 @@ Mount the scripts and backup directory into the appropriate maintenance containe
 
 - **TLS:** `infra/nginx/templates/production.conf.template` serves HTTPS (TLS 1.2/1.3) with Let's Encrypt certificates, redirects HTTP to HTTPS, sends HSTS, and returns 444 for requests that do not use the configured hostname.
 - **Rate limiting:** Nginx limits `/api/auth/*` (30 req/min per IP, burst 10) and `/api/*` (20 req/s), on top of application-level limits. Requests over the limit get HTTP 429.
-- **Proxy trust:** Nginx overwrites `X-Forwarded-For` with the real client address, and the backend trusts only the Compose subnet (`172.28.0.0/24`).
+- **Proxy trust:** Nginx overwrites `X-Forwarded-For` with the real client address, and the backend trusts only the Compose subnet (`172.29.0.0/24`).
 - **Startup validation:** in `APP_ENV=production` the backend refuses to start with placeholder or short secrets, identical session/reset secrets, non-HTTPS or localhost `FRONTEND_BASE_URL`, `DEBUG=true`, or missing SMTP/Gemini configuration.
 - **Resource safety:** per-service memory limits, log rotation (10 MB x 5), and healthchecks for every service.
 
