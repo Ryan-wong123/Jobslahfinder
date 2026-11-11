@@ -278,7 +278,7 @@ jobs:
         run: docker run --rm -v "${{ github.workspace }}:/repo" zricethezav/gitleaks@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f detect --source=/repo --config=/repo/.gitleaks.toml --redact --no-banner --verbose
 
       - name: Run Trivy vulnerability, secret, and config scan
-        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
           scan-type: fs
           scan-ref: .
@@ -394,7 +394,7 @@ jobs:
         run: python infra/scripts/test-deployment.py
 
       - name: Scan built backend image
-        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
           scan-type: image
           timeout: 15m
@@ -405,7 +405,7 @@ jobs:
           ignore-unfixed: true
 
       - name: Scan built scraper image
-        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
           scan-type: image
           timeout: 15m
@@ -416,7 +416,7 @@ jobs:
           ignore-unfixed: true
 
       - name: Scan built frontend image
-        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
           scan-type: image
           timeout: 15m
