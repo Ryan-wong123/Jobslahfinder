@@ -10,6 +10,13 @@ umask 077
 
 cd "$(dirname "$0")/../.."
 set -a; . ./.env; set +a
+if [ "$#" -gt 0 ]; then
+  [[ "$#" -eq 1 && "$1" =~ ^ghcr\.io/[a-z0-9._/-]+@sha256:[0-9a-f]{64}$ ]] || {
+    echo "Expected one scanned backend image digest." >&2
+    exit 1
+  }
+  export BACKEND_IMAGE="$1"
+fi
 
 COMPOSE="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
 BACKUP_DIR="${BACKUP_DIR:-/var/backups/jobapp}"
@@ -38,7 +45,7 @@ $COMPOSE exec -T postgres pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc > "$
 
 echo "[$STAMP] Archiving resume storage and risk-engine data..."
 # SQLite must be backed up through its backup API, not copied mid-transaction.
-$COMPOSE run --rm -T --no-deps backend python - < backend/app/workers/backup_risk.py > "$DEST/risk_engine_data.tar.gz"
+$COMPOSE run --rm -T --no-deps --pull never backend python - < backend/app/workers/backup_risk.py > "$DEST/risk_engine_data.tar.gz"
 for vol in resume_storage; do
   docker run --rm -v "${PROJECT}_${vol}:/data:ro" -v "$DEST:/out" alpine:3.20 \
     tar -C /data -czf "/out/${vol}.tar.gz" .
