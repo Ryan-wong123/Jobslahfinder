@@ -1,161 +1,59 @@
 # Deployment Commands
 
-> **Security upgrade (10 November 2026):** follow [the remediation and upgrade runbook](SECURITY_REMEDIATION.md) before using older build/migration examples below. Production now deploys scanned image digests, uses restricted database/Redis roles, and requires encrypted backups. Administrator credentials belong only in one-shot migration processes.
+Use the [production deployment guide](DEPLOYMENT.md) for a new EC2 host and the
+[security upgrade runbook](SECURITY_REMEDIATION.md#existing-production-upgrade)
+for an existing installation.
 
-Short command reference for deploying the app on the Ubuntu EC2 instance.
+## Deploy a release
 
-## EC2 Project Directory
+Merge or push to `main`. To deploy the current `main` on demand, open **Actions**,
+select **CI/CD**, and choose **Run workflow** on `main`. Rerunning failed jobs
+uses the original commit.
 
-```bash
-cd /home/student4/ssd-project
-```
+GitHub Actions builds, scans, and publishes the backend, scraper, and frontend
+images to GHCR. The EC2 deploy user needs read access to pull the exact digests.
+The workflow assumes the AWS deploy role through OIDC and invokes
+`infra/scripts/ssm-deploy.sh`. The remote deploy script takes an encrypted backup,
+runs migrations with a one-shot administrator connection, provisions database
+roles, and verifies the release over HTTPS.
 
-## First-Time Server Setup
+## Inspect production from Systems Manager
 
-Install Docker, Docker Compose, and Git:
-
-```bash
-sudo apt update
-sudo apt install -y ca-certificates curl gnupg git
-sudo install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-sudo chmod a+r /etc/apt/keyrings/docker.gpg
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-sudo apt update
-sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-sudo systemctl enable docker
-sudo systemctl start docker
-sudo usermod -aG docker $USER
-```
-
-Log out of PuTTY and log back in, then check:
+Run as the `ubuntu` deploy user:
 
 ```bash
-docker --version
-docker compose version
+cd /opt/jobslahfinder
+git log -1 --oneline
+docker compose ps
+docker compose logs --tail=100 nginx frontend backend
+bash infra/scripts/verify-deploy.sh
 ```
 
-## Clone The Repository
+Check the live endpoints from outside the VM:
 
 ```bash
-mkdir -p /home/student4/ssd-project
-cd /home/student4/ssd-project
-git clone https://github.com/Ryan-wong123/ICT2216_P1_Group4_Jobslahfinder.git .
+curl -fsS https://jobs.jobslahfinder.com/health
+curl -fsS https://jobs.jobslahfinder.com/api/ready
 ```
 
-For a private repo, use your GitHub username and a classic personal access token as the password.
+## Start the installed release after a VM restart
 
-## Create The EC2 `.env`
+Run as the `ubuntu` deploy user in the deployed checkout. The production
+`.env` contains the image references saved by the last successful deployment.
 
 ```bash
-cd /home/student4/ssd-project
-cp .env.example .env
-nano .env
+cd /opt/jobslahfinder
+test -s .release.env && docker compose up -d --no-build --wait --wait-timeout 240
 ```
 
-Minimum EC2 values to check:
+Use GitHub Actions to apply a new release and its migrations.
 
-```env
-APP_ENV=production
-DEBUG=false
-API_HOST=0.0.0.0
-NEXT_PUBLIC_API_BASE_URL=/api
-FRONTEND_BASE_URL=https://jobs.your-domain.example
-DOMAIN=jobs.your-domain.example
-```
-
-Do not commit `.env`.
-
-## Deploy With HTTPS Ports 80/443
+## Take an encrypted backup
 
 ```bash
-cd /home/student4/ssd-project
-git fetch --prune origin
-git checkout main
-git pull origin main
-docker compose -f docker-compose.yml -f docker-compose.local-tls.yml up -d --build --force-recreate --remove-orphans
-docker compose -f docker-compose.yml -f docker-compose.local-tls.yml exec -T backend alembic upgrade head
-docker compose -f docker-compose.yml -f docker-compose.local-tls.yml ps
+cd /opt/jobslahfinder
+sudo -n bash infra/scripts/backup-prod.sh
 ```
 
-## Normal Start After Restart
-
-Use this when the EC2 instance was stopped/restarted, or when you just want to host the existing deployed code again.
-
-```bash
-cd /home/student4/ssd-project
-docker compose -f docker-compose.yml -f docker-compose.local-tls.yml up -d
-docker compose -f docker-compose.yml -f docker-compose.local-tls.yml ps
-```
-
-If containers do not start correctly, rebuild and recreate them:
-
-```bash
-cd /home/student4/ssd-project
-docker compose -f docker-compose.yml -f docker-compose.local-tls.yml up -d --build --force-recreate --remove-orphans
-docker compose -f docker-compose.yml -f docker-compose.local-tls.yml ps
-```
-
-If the backend starts but database tables are missing or outdated, run migrations:
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.local-tls.yml exec -T backend alembic upgrade head
-```
-
-Visit:
-
-```text
-http://YOUR_EC2_PUBLIC_IP
-```
-
-It should redirect to:
-
-```text
-https://YOUR_EC2_PUBLIC_IP
-```
-
-## Logs
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.local-tls.yml logs --tail=100 nginx
-docker compose -f docker-compose.yml -f docker-compose.local-tls.yml logs --tail=100 frontend
-docker compose -f docker-compose.yml -f docker-compose.local-tls.yml logs --tail=100 backend
-```
-
-## GitHub Actions Deploy Command
-
-Use this inside the SSH deploy step:
-
-```bash
-cd /home/student4/ssd-project
-
-git fetch --prune origin
-git checkout --force "$DEPLOY_SHA"
-
-docker compose -f docker-compose.yml -f docker-compose.local-tls.yml up -d --build --force-recreate --remove-orphans
-docker compose -f docker-compose.yml -f docker-compose.local-tls.yml exec -T backend alembic upgrade head
-docker compose -f docker-compose.yml -f docker-compose.local-tls.yml ps
-```
-
-## AWS Security Group
-
-Allow inbound:
-
-```text
-22   SSH    your IP only if possible
-80   HTTP   0.0.0.0/0
-443  HTTPS  0.0.0.0/0
-```
-
-Do not expose:
-
-```text
-5432 PostgreSQL
-6379 Redis
-8080 old HTTP port
-8443 old HTTPS port
-```
-
-## Notes
-
-Using an EC2 IP with the local/self-signed certificate will show a browser certificate warning. For trusted HTTPS, use a domain name and a valid certificate such as Let's Encrypt.
+See the [backup and monitoring runbook](SECURITY_REMEDIATION.md#backups-and-monitoring)
+for restore testing and scheduled checks.
